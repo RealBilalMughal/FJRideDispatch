@@ -8,7 +8,7 @@ keys, tables or deploy targets with any other project.
 
 - Folder: `E:\FJRideDispatch`
 - GitHub: https://github.com/RealBilalMughal/FJRideDispatch  (remote `origin`, branch `main`)
-- Supabase: _(not created yet)_
+- Supabase: https://dyjgrxeqdvnxwcbwzkql.supabase.co  (project ref `dyjgrxeqdvnxwcbwzkql`)
 - Vercel: _(not created yet)_
 
 ## Stack

@@ -1,111 +1,112 @@
-import { Component, useEffect, useState } from 'react'
-import { APIProvider, AdvancedMarker, Map } from '@vis.gl/react-google-maps'
+import { useEffect } from 'react'
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import { MapPin } from 'lucide-react'
 import './stop-map.css'
 
-const KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-// Google's public map id for development (needed by AdvancedMarker).
-const MAP_ID = 'DEMO_MAP_ID'
-// Roughly the centre of Pakistan - used only before a pin is set.
-const FALLBACK = { lat: 30.3753, lng: 69.3451 }
+// Vite serves the icon PNGs as URLs - wire them into Leaflet's default icon so
+// the marker isn't a broken image. Deleting `_getIconUrl` stops Leaflet's own
+// path-guessing from mangling these URLs.
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+})
 
-function Hint({ height, children }) {
+const STOP_ICON = new L.Icon.Default()
+
+// Roughly the centre of Pakistan - used only before a pin is set.
+const FALLBACK = [30.3753, 69.3451]
+
+/**
+ * Free OpenStreetMap (Leaflet) map for the crew stop. `lat` / `lng` are
+ * numbers | null. When `interactive`, clicking the map or dragging the pin ->
+ * onChange({ lat, lng }). No API key needed.
+ */
+export default function StopMap({ lat, lng, onChange, interactive = true, height = 240 }) {
+  const has = Number.isFinite(lat) && Number.isFinite(lng)
+  const center = has ? [lat, lng] : FALLBACK
+
   return (
-    <div className="stop-map placeholder" style={{ height }}>
-      <MapPin size={18} />
-      {children}
+    <div className="stop-map" style={{ height }}>
+      <MapContainer
+        center={center}
+        zoom={has ? 14 : 5}
+        scrollWheelZoom
+        style={{ height: '100%', width: '100%' }}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        />
+        <FixSize />
+        <Recenter has={has} lat={lat} lng={lng} />
+        {interactive && <ClickToSet onChange={onChange} />}
+        {has && (
+          <Marker
+            position={[lat, lng]}
+            icon={STOP_ICON}
+            draggable={interactive}
+            eventHandlers={
+              interactive && onChange
+                ? {
+                    dragend: (e) => {
+                      const p = e.target.getLatLng()
+                      onChange({ lat: p.lat, lng: p.lng })
+                    },
+                  }
+                : undefined
+            }
+          />
+        )}
+      </MapContainer>
+      {!has && (
+        <span className="stop-map-hint">
+          <MapPin size={13} /> Click the map or paste coordinates to set the stop
+        </span>
+      )}
     </div>
   )
 }
 
-// A map failure (bad key, blocked API, SDK change) must never white-screen the page.
-class MapBoundary extends Component {
-  state = { failed: false }
-  static getDerivedStateFromError() {
-    return { failed: true }
-  }
-  componentDidCatch(err) {
-    // eslint-disable-next-line no-console
-    console.warn('StopMap disabled:', err)
-  }
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children
-  }
-}
-
-/**
- * Shows the crew stop on a Google map. `lat` / `lng` are numbers | null.
- * When `interactive`, clicking the map or dragging the pin -> onChange({ lat, lng }).
- * Degrades to a hint box with no key, or if the Maps SDK errors out.
- */
-export default function StopMap({ lat, lng, onChange, interactive = true, height = 240 }) {
-  const has = Number.isFinite(lat) && Number.isFinite(lng)
-  const pinText = has ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : 'No location set'
-
-  if (!KEY) {
-    return (
-      <Hint height={height}>
-        <span>{has ? `Pin: ${pinText}` : pinText}</span>
-        <small>Add VITE_GOOGLE_MAPS_API_KEY to show the map.</small>
-      </Hint>
-    )
-  }
-
-  const fallback = (
-    <Hint height={height}>
-      <span>{has ? `Pin: ${pinText}` : pinText}</span>
-      <small>Map unavailable — check the Google Maps API key restrictions.</small>
-    </Hint>
-  )
-
-  return (
-    <MapBoundary fallback={fallback}>
-      <div className="stop-map" style={{ height }}>
-        <APIProvider apiKey={KEY}>
-          <MapInner
-            lat={has ? lat : null}
-            lng={has ? lng : null}
-            onChange={onChange}
-            interactive={interactive}
-          />
-        </APIProvider>
-      </div>
-    </MapBoundary>
-  )
-}
-
-function MapInner({ lat, lng, onChange, interactive }) {
-  const has = lat != null && lng != null
-  const [center, setCenter] = useState(has ? { lat, lng } : FALLBACK)
-
-  // primitive deps - never loops even if the parent recreates objects each render
+// A Leaflet map rendered inside a modal / freshly-shown container often paints
+// grey tiles until it recomputes its size. Nudge it after mount and on resize.
+function FixSize() {
+  const map = useMap()
   useEffect(() => {
-    if (has) setCenter({ lat, lng })
-  }, [has, lat, lng])
+    const fix = () => map.invalidateSize()
+    const t1 = setTimeout(fix, 0)
+    const t2 = setTimeout(fix, 250)
+    const el = map.getContainer()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fix) : null
+    ro?.observe(el)
+    window.addEventListener('resize', fix)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      ro?.disconnect()
+      window.removeEventListener('resize', fix)
+    }
+  }, [map])
+  return null
+}
 
-  const pick = (latLng) => {
-    if (!interactive || !latLng || !onChange) return
-    const a = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat
-    const b = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng
-    if (Number.isFinite(a) && Number.isFinite(b)) onChange({ lat: a, lng: b })
-  }
+function Recenter({ has, lat, lng }) {
+  const map = useMap()
+  useEffect(() => {
+    if (has) map.setView([lat, lng], Math.max(map.getZoom(), 14))
+  }, [has, lat, lng, map])
+  return null
+}
 
-  return (
-    <Map
-      mapId={MAP_ID}
-      defaultZoom={has ? 14 : 6}
-      center={center}
-      onCenterChanged={(e) => setCenter(e.detail.center)}
-      gestureHandling="greedy"
-      onClick={(e) => pick(e.detail?.latLng)}
-    >
-      {has && (
-        <AdvancedMarker
-          position={{ lat, lng }}
-          draggable={interactive}
-          onDragEnd={(e) => pick(e.latLng)}
-        />
-      )}
-    </Map>
-  )
+function ClickToSet({ onChange }) {
+  useMapEvents({
+    click: (e) => onChange?.({ lat: e.latlng.lat, lng: e.latlng.lng }),
+  })
+  return null
 }

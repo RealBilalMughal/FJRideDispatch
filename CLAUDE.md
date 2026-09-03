@@ -18,8 +18,9 @@ keys, tables or deploy targets with any other project.
 - Deploy: Vercel (separate project)
 
 ## Security
-- `.env`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_API_KEY`
-  (all public / browser keys, gitignored). Restrict the Maps key by HTTP referrer.
+- `.env`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public, gitignored).
+  `VITE_ORS_API_KEY` is optional - only for routing/optimisation (OpenRouteService)
+  once the trip feature exists. The map itself (Leaflet + OSM) needs no key.
 - The `service_role` key must NEVER be in this frontend repo, never in a `VITE_`
   var, never committed. Server-only (Supabase Edge Function secrets) if ever needed.
 
@@ -96,8 +97,16 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - `Dashboard` - placeholder, always visible
 - `Crew` (`crew` perm, sidebar group "Dispatch") - table + advanced filters, CSV
   export/import (`crew-sample.csv`). Add/Edit modal: name, contact, designation
-  (free text), city, stop name + **coordinates** ("31.9279, 74.9738" -> Google map
-  pin via `src/components/StopMap.jsx`, draggable). One stop per crew. City-scoped.
+  (free text), city, stop name + **coordinates** ("31.9279, 74.9738" -> Leaflet /
+  OpenStreetMap pin via `src/components/StopMap.jsx` - draggable, click-to-set,
+  no API key). One stop per crew. City-scoped.
+
+## Maps & routing
+- Map display: **Leaflet + react-leaflet + OpenStreetMap tiles** - free, no key.
+  `src/components/StopMap.jsx`. (Google Maps was dropped - key/billing friction.)
+- Routing / distance-in-km / multi-stop route optimisation (TSP/VRP): planned on
+  **OpenRouteService** (free key, no card - `/optimization`, `/directions`,
+  `/matrix`). Add `VITE_ORS_API_KEY` when that feature is built. Geocoding: Nominatim.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -116,7 +125,7 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
       (auth id `5e8fba49-b6f5-4acc-8c70-b4c7ca126886`, `user_roles` -> super_admin)
 - [x] Public sign-up turned OFF
 - [x] City scoping + shared ref series + Crew page (migration `..._cities_crew.sql`)
-- [x] `VITE_GOOGLE_MAPS_API_KEY` set in `.env` (restrict it by HTTP referrer in
-      Google Cloud - key was shared in plain text and ships in the client bundle)
+- [x] Crew stop map on Leaflet + OpenStreetMap (no key)
 - [ ] Next dispatch tables (vendor, ...) - each uses `ref_no_seq` + `has_city`
-- [ ] Create Vercel project, link repo (env: `VITE_SUPABASE_*` + `VITE_GOOGLE_MAPS_API_KEY`)
+- [ ] Trip/route feature -> wire OpenRouteService (`VITE_ORS_API_KEY`)
+- [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

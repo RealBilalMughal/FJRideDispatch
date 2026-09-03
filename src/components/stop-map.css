@@ -1,4 +1,5 @@
 .stop-map {
+  position: relative;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -9,6 +10,26 @@
 .stop-map > div {
   width: 100%;
   height: 100%;
+}
+
+.stop-map .leaflet-container {
+  font: inherit;
+}
+
+.stop-map-hint {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--muted);
 }
 
 .stop-map.placeholder {

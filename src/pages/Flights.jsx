@@ -34,7 +34,35 @@ const blockFromLabel = (s) => {
 // "Check in time" when picking up, "Check out time" when dropping off, else "Flight time"
 const timeLabel = (block) =>
   block === 'pickup' ? 'Check in time' : block === 'dropoff' ? 'Check out time' : 'Flight time'
-const fmtTime = (t) => (t ? String(t).slice(0, 5) : '') // 14:30:00 -> 14:30
+
+// 24h "14:30:00" -> "14:30" (for the native <input type="time"> value)
+const toTime24 = (t) => (t ? String(t).slice(0, 5) : '')
+
+// 24h "14:30:00" -> "2:30 PM" (for display)
+const fmtTime12 = (t) => {
+  if (!t) return ''
+  const [h, m] = String(t).split(':')
+  const hh = Number(h)
+  if (!Number.isFinite(hh)) return ''
+  const ampm = hh >= 12 ? 'PM' : 'AM'
+  return `${hh % 12 || 12}:${m} ${ampm}`
+}
+
+// "14:30" or "2:30 pm" -> "14:30" (24h) | null
+const parseTime = (s) => {
+  const mt = String(s ?? '').trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
+  if (!mt) return null
+  let h = Number(mt[1])
+  const min = mt[2]
+  const ap = mt[3]?.toLowerCase()
+  if (Number(min) > 59) return null
+  if (ap) {
+    if (h < 1 || h > 12) return null
+    if (ap === 'pm' && h !== 12) h += 12
+    if (ap === 'am' && h === 12) h = 0
+  } else if (h > 23) return null
+  return `${String(h).padStart(2, '0')}:${min}`
+}
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -56,8 +84,8 @@ const SAMPLE_COLS = [
   { key: 'city', label: 'city' },
 ]
 const SAMPLE = [
-  { flight_no: '9P841', flight_code: 'LHE-DXB', route: 'Lahore - Dubai', block_type: 'Pickup', flight_time: '14:30', city: 'Lahore' },
-  { flight_no: 'PK309', flight_code: 'ISB-JED', route: 'Islamabad - Jeddah', block_type: 'Drop Off', flight_time: '09:05', city: 'Islamabad' },
+  { flight_no: '9P841', flight_code: 'LHE-DXB', route: 'Lahore - Dubai', block_type: 'Pickup', flight_time: '2:30 PM', city: 'Lahore' },
+  { flight_no: 'PK309', flight_code: 'ISB-JED', route: 'Islamabad - Jeddah', block_type: 'Drop Off', flight_time: '9:05 AM', city: 'Islamabad' },
 ]
 
 export default function Flights() {
@@ -136,7 +164,7 @@ export default function Flights() {
       flight_code: r.flight_code ?? '',
       route: r.route ?? '',
       block_type: r.block_type ? blockLabel(r.block_type) : '',
-      flight_time: fmtTime(r.flight_time),
+      flight_time: fmtTime12(r.flight_time),
       city: r.city_name,
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
@@ -164,7 +192,7 @@ export default function Flights() {
     { key: 'code', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'route', header: 'Route', render: (r) => r.route || '—' },
     { key: 'block', header: 'Block Type', render: (r) => blockLabel(r.block_type) },
-    { key: 'time', header: 'Time', render: (r) => fmtTime(r.flight_time) || '—' },
+    { key: 'time', header: 'Time', render: (r) => fmtTime12(r.flight_time) || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
     {
       key: 'status',
@@ -379,7 +407,7 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
     flight_code: row?.flight_code ?? '',
     route: row?.route ?? '',
     block_type: row?.block_type ?? '',
-    flight_time: fmtTime(row?.flight_time),
+    flight_time: toTime24(row?.flight_time),
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
   })
   const [err, setErr] = useState('')
@@ -420,7 +448,7 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
             ['Flight Code', row.flight_code || '—'],
             ['Route', row.route || '—'],
             ['Block Type', blockLabel(row.block_type)],
-            [timeLabel(row.block_type), fmtTime(row.flight_time) || '—'],
+            [timeLabel(row.block_type), fmtTime12(row.flight_time) || '—'],
             ['City', cityNm],
             ['Status', row.is_active ? 'Active' : 'Inactive'],
           ].map(([k, v]) => (
@@ -551,8 +579,8 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
       let flight_time = null
       const rawTime = (r.flight_time || '').trim()
       if (rawTime) {
-        if (!/^\d{1,2}:\d{2}$/.test(rawTime)) return skipped.push({ line, reason: `bad time "${rawTime}" (use HH:MM)` })
-        flight_time = rawTime
+        flight_time = parseTime(rawTime)
+        if (!flight_time) return skipped.push({ line, reason: `bad time "${rawTime}" (use 14:30 or 2:30 PM)` })
       }
 
       ok.push({
@@ -584,7 +612,8 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
         {err && <div className="modal-error">{err}</div>}
         <p className="confirm-msg">
           CSV columns: <b>flight_no, flight_code, route, block_type, flight_time, city</b>. Block
-          type is one of Deadhead / Pickup / Drop Off / Return leg; time is HH:MM.
+          type is one of Deadhead / Pickup / Drop Off / Return leg; time can be 24h
+          (14:30) or 12h (2:30 PM).
         </p>
         <button
           type="button"

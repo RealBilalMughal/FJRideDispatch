@@ -128,7 +128,9 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - `Flights` (`flights` perm, sidebar group "Dispatch") - city-scoped, CSV
   export/import. Fields: flight_no (`9P841`), flight_code (`LHE-DXB`), route
   (`Lahore - Dubai`), **block_type** (deadhead / pickup / dropoff / return_leg,
-  CHECK-constrained), **flight_time** (`time`, HH:MM), city. The flight-time
+  CHECK-constrained), **flight_time** (`time`), city. Time is stored 24h but
+  **displayed 12h with AM/PM** (`fmtTime12`); the `<input type="time">` uses 24h
+  (`toTime24`); CSV import accepts either format (`parseTime`). The flight-time
   field's label is dynamic: "Check in time" for Pickup, "Check out time" for
   Drop Off, else "Flight time" (`timeLabel()` in `Flights.jsx`). No unique
   constraint (a flight recurs).

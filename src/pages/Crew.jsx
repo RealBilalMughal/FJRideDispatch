@@ -21,11 +21,13 @@ import { fmtDate } from '../lib/format'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
 import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import { downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
+import { useSelection } from '../lib/useSelection'
 import Modal from '../components/Modal'
-import ConfirmDialog from '../components/ConfirmDialog'
+import ConfirmDelete from '../components/ConfirmDelete'
 import PkPhoneInput from '../components/PkPhoneInput'
 import StopMap from '../components/StopMap'
 import DataTable from '../components/data/DataTable'
+import BulkDeleteBar from '../components/data/BulkDeleteBar'
 import FilterBar from '../components/data/FilterBar'
 import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
@@ -114,8 +116,9 @@ export default function Crew() {
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit: bool }
   const [importOpen, setImportOpen] = useState(false)
-  const [toDelete, setToDelete] = useState(null)
+  const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
+  const { selected, toggle, toggleAll, clear } = useSelection()
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -188,14 +191,15 @@ export default function Crew() {
     fetchRows()
   }
 
-  const confirmDelete = async () => {
-    if (!toDelete) return
+  const doDelete = async () => {
+    if (!pending) return
     setDeleting(true)
-    const { error } = await supabase.from('crew').delete().eq('id', toDelete.id)
+    const { error } = await supabase.from('crew').delete().in('id', pending.ids)
     setDeleting(false)
     if (error) return toast.error(error.message)
-    toast.success('Crew deleted')
-    setToDelete(null)
+    toast.success(`Deleted ${pending.ids.length} crew`)
+    setPending(null)
+    clear()
     fetchRows()
   }
 
@@ -286,7 +290,11 @@ export default function Crew() {
             </button>
           )}
           {canDelete && (
-            <button title="Delete" className="danger" onClick={() => setToDelete(r)}>
+            <button
+              title="Delete"
+              className="danger"
+              onClick={() => setPending({ ids: [r.id], label: `"${r.name}" (ID ${r.ref_no})` })}
+            >
               <Trash2 size={13} />
             </button>
           )}
@@ -395,12 +403,25 @@ export default function Crew() {
         }
       />
 
+      {canDelete && (
+        <BulkDeleteBar
+          count={selected.size}
+          busy={deleting}
+          onDelete={() => setPending({ ids: [...selected], label: `${selected.size} selected crew` })}
+          onClear={clear}
+        />
+      )}
+
       <DataTable
         columns={columns}
         rows={pageRows}
         rowKey={(r) => r.id}
         loading={loading}
         emptyLabel="No crew match these filters"
+        selectable={canDelete}
+        selected={selected}
+        onToggle={toggle}
+        onToggleAll={() => toggleAll(pageRows)}
         title="Crew"
         subtitle={`${filtered.length} shown`}
       />
@@ -446,15 +467,13 @@ export default function Crew() {
         />
       )}
 
-      <ConfirmDialog
-        open={Boolean(toDelete)}
+      <ConfirmDelete
+        open={Boolean(pending)}
         title="Delete crew"
-        tone="danger"
-        confirmLabel="Delete"
         busy={deleting}
-        message={toDelete ? `Delete "${toDelete.name}" (ID ${toDelete.ref_no})? This cannot be undone.` : ''}
-        onConfirm={confirmDelete}
-        onClose={() => !deleting && setToDelete(null)}
+        message={pending ? `Permanently delete ${pending.label}? This cannot be undone.` : ''}
+        onConfirm={doDelete}
+        onClose={() => !deleting && setPending(null)}
       />
     </div>
   )

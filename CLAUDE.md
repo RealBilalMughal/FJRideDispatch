@@ -92,6 +92,10 @@ keys, tables or deploy targets with any other project.
 - City-scoped list pages share `src/lib/useEntityRows.js` (fetch by `ref_no` desc,
   scoped to `useCity().cityId`). Each has a View (eye, read-only) + Edit + Delete
   row action; the View modal has an Edit button.
+- **Delete = type-`DELETE` confirm** (`ConfirmDelete.jsx`), single row or bulk.
+  Every list page has select-all + `BulkDeleteBar` (shown when `canDelete`);
+  `useSelection()` holds the row Set. Single + bulk share one `pending`
+  `{ ids, label }` state -> one `ConfirmDelete`.
 
 ## Edge Function `admin-users` - DEPLOYED (dyjgrxeqdvnxwcbwzkql)
 `supabase/functions/admin-users/index.ts`. The ONLY place the service_role key is

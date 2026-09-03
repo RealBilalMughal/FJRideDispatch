@@ -5,16 +5,18 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
+import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
 import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import { downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
-import ConfirmDialog from '../components/ConfirmDialog'
+import ConfirmDelete from '../components/ConfirmDelete'
 import PkPhoneInput from '../components/PkPhoneInput'
 import DataTable from '../components/data/DataTable'
 import FilterBar from '../components/data/FilterBar'
 import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
+import BulkDeleteBar from '../components/data/BulkDeleteBar'
 
 const PAGE_SIZE = 15
 const SELECT = 'id, ref_no, name, contact, city_id, is_active, created_at, city:cities(name)'
@@ -59,8 +61,9 @@ export default function Vendors() {
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
-  const [toDelete, setToDelete] = useState(null)
+  const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
+  const { selected, toggle, toggleAll, clear } = useSelection()
 
   const list = useMemo(
     () => rows.map((r) => ({ ...r, city_name: r.city?.name ?? '' })),
@@ -94,20 +97,21 @@ export default function Vendors() {
     fetchRows()
   }
 
-  const confirmDelete = async () => {
-    if (!toDelete) return
+  const doDelete = async () => {
+    if (!pending) return
     setDeleting(true)
-    const { error } = await supabase.from('vendors').delete().eq('id', toDelete.id)
+    const { error } = await supabase.from('vendors').delete().in('id', pending.ids)
     setDeleting(false)
     if (error) {
       return toast.error(
         error.code === '23503'
-          ? 'This vendor has drivers linked to it — reassign or remove them first.'
+          ? 'A selected vendor has drivers linked to it — reassign or remove them first.'
           : error.message,
       )
     }
-    toast.success('Vendor deleted')
-    setToDelete(null)
+    toast.success(`Deleted ${pending.ids.length} vendor(s)`)
+    setPending(null)
+    clear()
     fetchRows()
   }
 
@@ -181,7 +185,11 @@ export default function Vendors() {
             </button>
           )}
           {canDelete && (
-            <button title="Delete" className="danger" onClick={() => setToDelete(r)}>
+            <button
+              title="Delete"
+              className="danger"
+              onClick={() => setPending({ ids: [r.id], label: `"${r.name}" (ID ${r.ref_no})` })}
+            >
               <Trash2 size={13} />
             </button>
           )}
@@ -255,12 +263,25 @@ export default function Vendors() {
         }
       />
 
+      {canDelete && (
+        <BulkDeleteBar
+          count={selected.size}
+          busy={deleting}
+          onDelete={() => setPending({ ids: [...selected], label: `${selected.size} selected vendor(s)` })}
+          onClear={clear}
+        />
+      )}
+
       <DataTable
         columns={columns}
         rows={pageRows}
         rowKey={(r) => r.id}
         loading={loading}
         emptyLabel="No vendors match these filters"
+        selectable={canDelete}
+        selected={selected}
+        onToggle={toggle}
+        onToggleAll={() => toggleAll(pageRows)}
         title="Vendors"
         subtitle={`${filtered.length} shown`}
       />
@@ -304,15 +325,13 @@ export default function Vendors() {
         />
       )}
 
-      <ConfirmDialog
-        open={Boolean(toDelete)}
+      <ConfirmDelete
+        open={Boolean(pending)}
         title="Delete vendor"
-        tone="danger"
-        confirmLabel="Delete"
         busy={deleting}
-        message={toDelete ? `Delete "${toDelete.name}" (ID ${toDelete.ref_no})?` : ''}
-        onConfirm={confirmDelete}
-        onClose={() => !deleting && setToDelete(null)}
+        message={pending ? `Permanently delete ${pending.label}? This cannot be undone.` : ''}
+        onConfirm={doDelete}
+        onClose={() => !deleting && setPending(null)}
       />
     </div>
   )

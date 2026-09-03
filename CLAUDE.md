@@ -116,6 +116,7 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
       (auth id `5e8fba49-b6f5-4acc-8c70-b4c7ca126886`, `user_roles` -> super_admin)
 - [x] Public sign-up turned OFF
 - [x] City scoping + shared ref series + Crew page (migration `..._cities_crew.sql`)
-- [ ] Add `VITE_GOOGLE_MAPS_API_KEY` to `.env` (crew stop map; blank = placeholder)
+- [x] `VITE_GOOGLE_MAPS_API_KEY` set in `.env` (restrict it by HTTP referrer in
+      Google Cloud - key was shared in plain text and ships in the client bundle)
 - [ ] Next dispatch tables (vendor, ...) - each uses `ref_no_seq` + `has_city`
 - [ ] Create Vercel project, link repo (env: `VITE_SUPABASE_*` + `VITE_GOOGLE_MAPS_API_KEY`)

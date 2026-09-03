@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ChevronDown, LogOut, Menu } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ChevronDown, IdCard, LogOut, Menu } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
+import { ROLE_LABEL_FALLBACK } from '../lib/permissions'
 
 function initials(name, email) {
   const src = (name || '').trim() || (email || '').trim()
@@ -12,7 +13,7 @@ function initials(name, email) {
 }
 
 export default function Topbar({ onToggleSidebar }) {
-  const { profile, session, signOut } = useAuth()
+  const { profile, roles, session, signOut } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -31,8 +32,13 @@ export default function Topbar({ onToggleSidebar }) {
     }
   }, [menuOpen])
 
+  const name = profile?.full_name || session?.user?.email || 'Account'
   const email = profile?.email || session?.user?.email || ''
-  const name = profile?.full_name || email || 'Account'
+  const prettyRole = (r) =>
+    ROLE_LABEL_FALLBACK[r] ?? r.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  const list = roles?.length ? roles : profile?.role ? [profile.role] : []
+  const roleLabel =
+    list.length > 1 ? `${prettyRole(list[0])} +${list.length - 1}` : list.map(prettyRole).join('')
 
   const handleSignOut = async () => {
     await signOut()
@@ -59,9 +65,16 @@ export default function Topbar({ onToggleSidebar }) {
           aria-expanded={menuOpen}
           aria-label="Account menu"
         >
-          <span className="avatar">{initials(profile?.full_name, email)}</span>
+          <span className="avatar">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" />
+            ) : (
+              initials(profile?.full_name, email)
+            )}
+          </span>
           <span className="who">
             <b>{name}</b>
+            <span>{roleLabel}</span>
           </span>
           <ChevronDown size={14} />
         </button>
@@ -72,6 +85,10 @@ export default function Topbar({ onToggleSidebar }) {
               <b>{name}</b>
               <span>{email}</span>
             </div>
+            <Link to="/profile" role="menuitem" onClick={() => setMenuOpen(false)}>
+              <IdCard size={15} />
+              Profile
+            </Link>
             <button type="button" className="danger" role="menuitem" onClick={handleSignOut}>
               <LogOut size={15} />
               Logout

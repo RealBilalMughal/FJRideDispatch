@@ -4,8 +4,8 @@
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 100% 0%, rgba(31, 111, 92, 0.1), transparent 60%),
-    radial-gradient(900px 500px at 0% 100%, rgba(31, 111, 92, 0.08), transparent 55%),
+    radial-gradient(1200px 600px at 100% 0%, rgba(52, 113, 184, 0.1), transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, rgba(52, 113, 184, 0.08), transparent 55%),
     var(--surface);
 }
 
@@ -27,8 +27,9 @@
 }
 
 .login-brand .mark {
-  width: 36px;
+  min-width: 34px;
   height: 34px;
+  padding: 0 7px;
   border-radius: 9px;
   background: var(--accent);
   display: grid;
@@ -36,7 +37,7 @@
   color: #fff;
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .login-brand .name {

@@ -34,13 +34,14 @@
   align-items: center;
   gap: 10px;
   padding: 0 18px;
-  background: #e9ecec;
+  background: #e6e6e6;
   border-bottom: 1px solid var(--border);
 }
 
 .sidebar-brand .brand-mark {
-  width: 30px;
+  min-width: 30px;
   height: 30px;
+  padding: 0 6px;
   border-radius: 8px;
   background: var(--accent);
   color: #fff;
@@ -143,7 +144,7 @@
   color: var(--muted);
 }
 
-/* ---------- topbar (just a floating profile chip) ---------- */
+/* ---------- topbar (removed - just a floating profile chip) ---------- */
 .topbar {
   flex-shrink: 0;
   display: flex;
@@ -191,6 +192,12 @@
   font-size: 12.5px;
   font-weight: 600;
   color: var(--heading);
+}
+
+.profile-trigger .who > span {
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: capitalize;
 }
 
 .avatar {
@@ -274,6 +281,11 @@
 
 .dropdown .danger {
   color: var(--danger);
+}
+
+.dropdown .danger:hover {
+  color: var(--danger);
+  text-decoration: none;
 }
 
 /* ---------- content ---------- */

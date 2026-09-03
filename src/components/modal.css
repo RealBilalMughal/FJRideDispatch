@@ -1,0 +1,191 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(16, 24, 40, 0.45);
+  /* flex-column + flex-start keeps a tall modal fully scrollable on short screens */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal-card {
+  width: 100%;
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  animation: modal-in 0.16s ease;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+/* shared form layout inside modals */
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.modal-form .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+@media (max-width: 520px) {
+  .modal-form .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-backdrop {
+    padding: 16px 10px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .modal-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modal-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid rgba(192, 57, 43, 0.25);
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+}
+
+.field-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.field-error {
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+.input.invalid {
+  border-color: var(--danger);
+}
+
+/* checkbox + label line */
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--heading);
+  cursor: pointer;
+}
+
+.check-line input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* plain confirm popup */
+.confirm-msg {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--body);
+  margin: 2px 0 6px;
+}
+
+/* type-to-confirm delete */
+.confirm-danger {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.confirm-danger svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* read-only view rows (e.g. the Profile details view) */
+.view-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.view-row:last-of-type {
+  border-bottom: 0;
+}
+
+.view-row .view-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+.view-row .view-value {
+  font-size: 13.5px;
+  color: var(--heading);
+  white-space: pre-wrap;
+}
+
+/* password field with a generate affordance */
+.pw-field {
+  display: flex;
+  gap: 8px;
+}
+
+.pw-field .input {
+  flex: 1;
+  font-family: var(--mono, ui-monospace, monospace);
+  letter-spacing: 0.5px;
+}

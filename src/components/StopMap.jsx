@@ -1,42 +1,76 @@
-import { useEffect, useRef, useState } from 'react'
-import { APIProvider, Map, useMap, useMapsLibrary } from '@vis.gl/react-google-maps'
+import { Component, useEffect, useState } from 'react'
+import { APIProvider, AdvancedMarker, Map } from '@vis.gl/react-google-maps'
 import { MapPin } from 'lucide-react'
 import './stop-map.css'
 
 const KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+// Google's public map id for development (needed by AdvancedMarker).
+const MAP_ID = 'DEMO_MAP_ID'
 // Roughly the centre of Pakistan - used only before a pin is set.
 const FALLBACK = { lat: 30.3753, lng: 69.3451 }
+
+function Hint({ height, children }) {
+  return (
+    <div className="stop-map placeholder" style={{ height }}>
+      <MapPin size={18} />
+      {children}
+    </div>
+  )
+}
+
+// A map failure (bad key, blocked API, SDK change) must never white-screen the page.
+class MapBoundary extends Component {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  componentDidCatch(err) {
+    // eslint-disable-next-line no-console
+    console.warn('StopMap disabled:', err)
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
 
 /**
  * Shows the crew stop on a Google map. `lat` / `lng` are numbers | null.
  * When `interactive`, clicking the map or dragging the pin -> onChange({ lat, lng }).
- * With no VITE_GOOGLE_MAPS_API_KEY it degrades to a hint box (the coordinate
- * field in the form still works).
+ * Degrades to a hint box with no key, or if the Maps SDK errors out.
  */
 export default function StopMap({ lat, lng, onChange, interactive = true, height = 240 }) {
   const has = Number.isFinite(lat) && Number.isFinite(lng)
+  const pinText = has ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : 'No location set'
 
   if (!KEY) {
     return (
-      <div className="stop-map placeholder" style={{ height }}>
-        <MapPin size={18} />
-        <span>{has ? `Pin: ${lat.toFixed(6)}, ${lng.toFixed(6)}` : 'No location set'}</span>
+      <Hint height={height}>
+        <span>{has ? `Pin: ${pinText}` : pinText}</span>
         <small>Add VITE_GOOGLE_MAPS_API_KEY to show the map.</small>
-      </div>
+      </Hint>
     )
   }
 
+  const fallback = (
+    <Hint height={height}>
+      <span>{has ? `Pin: ${pinText}` : pinText}</span>
+      <small>Map unavailable — check the Google Maps API key restrictions.</small>
+    </Hint>
+  )
+
   return (
-    <div className="stop-map" style={{ height }}>
-      <APIProvider apiKey={KEY}>
-        <MapInner
-          lat={has ? lat : null}
-          lng={has ? lng : null}
-          onChange={onChange}
-          interactive={interactive}
-        />
-      </APIProvider>
-    </div>
+    <MapBoundary fallback={fallback}>
+      <div className="stop-map" style={{ height }}>
+        <APIProvider apiKey={KEY}>
+          <MapInner
+            lat={has ? lat : null}
+            lng={has ? lng : null}
+            onChange={onChange}
+            interactive={interactive}
+          />
+        </APIProvider>
+      </div>
+    </MapBoundary>
   )
 }
 
@@ -53,39 +87,25 @@ function MapInner({ lat, lng, onChange, interactive }) {
     if (!interactive || !latLng || !onChange) return
     const a = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat
     const b = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng
-    onChange({ lat: a, lng: b })
+    if (Number.isFinite(a) && Number.isFinite(b)) onChange({ lat: a, lng: b })
   }
 
   return (
     <Map
+      mapId={MAP_ID}
       defaultZoom={has ? 14 : 6}
       center={center}
       onCenterChanged={(e) => setCenter(e.detail.center)}
       gestureHandling="greedy"
       onClick={(e) => pick(e.detail?.latLng)}
     >
-      <StopMarker lat={has ? lat : null} lng={has ? lng : null} draggable={interactive} onPick={pick} />
+      {has && (
+        <AdvancedMarker
+          position={{ lat, lng }}
+          draggable={interactive}
+          onDragEnd={(e) => pick(e.latLng)}
+        />
+      )}
     </Map>
   )
-}
-
-// Imperative marker with real cleanup - avoids the <Marker> component's
-// IntersectionObserver churn under React 19 StrictMode.
-function StopMarker({ lat, lng, draggable, onPick }) {
-  const map = useMap()
-  const mapsLib = useMapsLibrary('maps')
-  const pickRef = useRef(onPick)
-  pickRef.current = onPick
-
-  useEffect(() => {
-    if (!map || !mapsLib || lat == null || lng == null) return
-    const marker = new mapsLib.Marker({ map, position: { lat, lng }, draggable })
-    const listener = draggable ? marker.addListener('dragend', (e) => pickRef.current(e.latLng)) : null
-    return () => {
-      listener?.remove()
-      marker.setMap(null)
-    }
-  }, [map, mapsLib, lat, lng, draggable])
-
-  return null
 }

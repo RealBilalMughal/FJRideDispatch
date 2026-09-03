@@ -134,9 +134,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   field's label is dynamic: "Check in time" for Pickup, "Check out time" for
   Drop Off, else "Flight time" (`timeLabel()` in `Flights.jsx`). No unique
   constraint (a flight recurs).
-- **Phone** = PK mobile only (`src/lib/phone.js` + `PkPhoneInput.jsx`). Stored as
-  `+92XXXXXXXXXX` (`contact` column), shown as `+92 3XX XXXXXXX`. Input is a fixed
-  `+92` prefix + 10-digit local starting with 3, with a clipboard-paste button.
+- **Phone** = PK mobile only, EVERYWHERE there's a phone field (`src/lib/phone.js`
+  + `PkPhoneInput.jsx`): Crew / Vendors / Drivers (`contact` col), Users + Profile
+  (`profiles.phone`). Stored `+92XXXXXXXXXX`, shown `+92 3XX XXXXXXX`. Input = fixed
+  `+92` prefix + 10-digit local starting with 3, clipboard-paste button.
 
 ## Maps & routing
 - Map display: **Leaflet + react-leaflet + OpenStreetMap tiles** - free, no key.

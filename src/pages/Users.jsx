@@ -16,8 +16,10 @@ import { useAuth } from '../context/useAuth'
 import { PRIVILEGED_ROLES } from '../lib/permissions'
 import { fetchRoles, roleLabel } from '../lib/roles'
 import { fmtDate } from '../lib/format'
+import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
+import PkPhoneInput from '../components/PkPhoneInput'
 import DataTable from '../components/data/DataTable'
 import FilterBar from '../components/data/FilterBar'
 import Pagination from '../components/data/Pagination'
@@ -124,7 +126,7 @@ export default function Users() {
       if (statusFilter === 'deactivated' && u.is_active) return false
       if (
         q &&
-        !`${u.full_name} ${u.email} ${u.phone ?? ''}`.toLowerCase().includes(q)
+        !`${u.full_name} ${u.email} ${u.phone ?? ''} ${formatPkPhone(u.phone)}`.toLowerCase().includes(q)
       )
         return false
       return true
@@ -248,7 +250,7 @@ export default function Users() {
       ),
     },
     { key: 'email', header: 'Email', render: (u) => u.email },
-    { key: 'phone', header: 'Contact', render: (u) => u.phone || '—' },
+    { key: 'phone', header: 'Contact', render: (u) => (u.phone ? formatPkPhone(u.phone) : '—') },
     {
       key: 'role',
       header: 'Roles',
@@ -431,6 +433,7 @@ function AddUserModal({ assignableRoles, onClose, onDone }) {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const phoneErr = pkPhoneError(form.phone)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -438,13 +441,14 @@ function AddUserModal({ assignableRoles, onClose, onDone }) {
     if (!form.full_name.trim()) return setErr('Name is required')
     if (!form.email.trim()) return setErr('Email is required')
     if (form.roles.length === 0) return setErr('Pick at least one role')
+    if (form.phone && !isValidPkMobile(form.phone)) return setErr(phoneErr || 'Invalid phone number')
     if (form.password.length < 8) return setErr('Password must be at least 8 characters')
     setBusy(true)
     try {
       await adminUsers.create({
         full_name: form.full_name.trim(),
         email: form.email.trim(),
-        phone: form.phone.trim() || null,
+        phone: toStored(form.phone),
         roles: form.roles,
         password: form.password,
       })
@@ -484,13 +488,13 @@ function AddUserModal({ assignableRoles, onClose, onDone }) {
           </div>
           <div className="field">
             <label htmlFor="u-phone">Contact</label>
-            <input
+            <PkPhoneInput
               id="u-phone"
-              className="input"
               value={form.phone}
-              onChange={(e) => set('phone', e.target.value)}
-              autoComplete="off"
+              onChange={(v) => set('phone', toLocal(v))}
+              invalid={Boolean(form.phone) && Boolean(phoneErr)}
             />
+            {form.phone && phoneErr && <span className="field-error">{phoneErr}</span>}
           </div>
         </div>
         <div className="field">
@@ -542,12 +546,13 @@ function EditUserModal({ user, assignableRoles, onClose, onDone }) {
   const initialRoles = user.roles?.length ? user.roles : user.role ? [user.role] : []
   const [form, setForm] = useState({
     full_name: user.full_name ?? '',
-    phone: user.phone ?? '',
+    phone: fromStored(user.phone),
     roles: initialRoles,
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const phoneErr = pkPhoneError(form.phone)
 
   const rolesChanged =
     form.roles.length !== initialRoles.length ||
@@ -557,11 +562,12 @@ function EditUserModal({ user, assignableRoles, onClose, onDone }) {
     e.preventDefault()
     setErr('')
     if (form.roles.length === 0) return setErr('Pick at least one role')
+    if (form.phone && !isValidPkMobile(form.phone)) return setErr(phoneErr || 'Invalid phone number')
     setBusy(true)
     try {
       await adminUsers.update(user.id, {
         full_name: form.full_name.trim(),
-        phone: form.phone.trim() || null,
+        phone: toStored(form.phone),
         ...(rolesChanged ? { roles: form.roles } : {}),
       })
       toast.success('User updated')
@@ -587,12 +593,13 @@ function EditUserModal({ user, assignableRoles, onClose, onDone }) {
         </div>
         <div className="field">
           <label htmlFor="e-phone">Contact</label>
-          <input
+          <PkPhoneInput
             id="e-phone"
-            className="input"
             value={form.phone}
-            onChange={(e) => set('phone', e.target.value)}
+            onChange={(v) => set('phone', toLocal(v))}
+            invalid={Boolean(form.phone) && Boolean(phoneErr)}
           />
+          {form.phone && phoneErr && <span className="field-error">{phoneErr}</span>}
         </div>
         <div className="field">
           <label>Roles</label>

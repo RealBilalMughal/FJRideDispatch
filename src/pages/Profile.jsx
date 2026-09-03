@@ -5,7 +5,9 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { ROLE_LABEL_FALLBACK } from '../lib/permissions'
 import { roleLabel } from '../lib/roles'
+import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import Avatar from '../components/Avatar'
+import PkPhoneInput from '../components/PkPhoneInput'
 import './Profile.css'
 
 const MIN_PASSWORD = 8
@@ -46,8 +48,9 @@ export default function Profile() {
 function DetailsCard({ profile, roles, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [fullName, setFullName] = useState(profile.full_name ?? '')
-  const [phone, setPhone] = useState(profile.phone ?? '')
+  const [phone, setPhone] = useState(fromStored(profile.phone)) // 10-digit local
   const [busy, setBusy] = useState(false)
+  const phoneErr = pkPhoneError(phone)
 
   const roleList = roles?.length ? roles : profile.role ? [profile.role] : []
   const roleText =
@@ -55,7 +58,7 @@ function DetailsCard({ profile, roles, onSaved }) {
 
   const startEdit = () => {
     setFullName(profile.full_name ?? '')
-    setPhone(profile.phone ?? '')
+    setPhone(fromStored(profile.phone))
     setEditing(true)
   }
 
@@ -64,15 +67,16 @@ function DetailsCard({ profile, roles, onSaved }) {
   }
 
   const dirty =
-    fullName.trim() !== (profile.full_name ?? '') || phone.trim() !== (profile.phone ?? '')
+    fullName.trim() !== (profile.full_name ?? '') || phone !== fromStored(profile.phone)
 
   const save = async (e) => {
     e.preventDefault()
     if (!fullName.trim()) return toast.error('Name is required')
+    if (phone && !isValidPkMobile(phone)) return toast.error(phoneErr || 'Invalid phone number')
     setBusy(true)
     const { error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName.trim(), phone: phone.trim() || null })
+      .update({ full_name: fullName.trim(), phone: toStored(phone) })
       .eq('id', profile.id)
     setBusy(false)
     if (error) return toast.error(error.message)
@@ -110,13 +114,13 @@ function DetailsCard({ profile, roles, onSaved }) {
           </div>
           <div className="field">
             <label htmlFor="pf-phone">Contact</label>
-            <input
+            <PkPhoneInput
               id="pf-phone"
-              className="input"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Phone number"
+              onChange={(v) => setPhone(toLocal(v))}
+              invalid={Boolean(phone) && Boolean(phoneErr)}
             />
+            {phone && phoneErr && <span className="field-error">{phoneErr}</span>}
           </div>
           <div className="field">
             <label htmlFor="pf-email">Email</label>
@@ -141,7 +145,7 @@ function DetailsCard({ profile, roles, onSaved }) {
           </div>
           <div className="view-row">
             <span className="view-label">Contact</span>
-            <span className="view-value">{profile.phone || '—'}</span>
+            <span className="view-value">{profile.phone ? formatPkPhone(profile.phone) : '—'}</span>
           </div>
           <div className="view-row">
             <span className="view-label">Email</span>

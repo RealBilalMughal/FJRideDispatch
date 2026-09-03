@@ -15,13 +15,32 @@ import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
 
 const PAGE_SIZE = 15
-const SELECT = 'id, ref_no, flight_no, flight_code, route, city_id, is_active, created_at, city:cities(name)'
+const SELECT =
+  'id, ref_no, flight_no, flight_code, route, block_type, flight_time, city_id, is_active, created_at, city:cities(name)'
+
+const BLOCK_TYPES = [
+  { value: 'deadhead', label: 'Deadhead' },
+  { value: 'pickup', label: 'Pickup' },
+  { value: 'dropoff', label: 'Drop Off' },
+  { value: 'return_leg', label: 'Return leg' },
+]
+const blockLabel = (v) => BLOCK_TYPES.find((b) => b.value === v)?.label || '—'
+const blockFromLabel = (s) => {
+  const t = String(s || '').trim().toLowerCase().replace(/\s+/g, '')
+  return BLOCK_TYPES.find((b) => b.value === t || b.label.toLowerCase().replace(/\s+/g, '') === t)?.value
+}
+// "Check in time" when picking up, "Check out time" when dropping off, else "Flight time"
+const timeLabel = (block) =>
+  block === 'pickup' ? 'Check in time' : block === 'dropoff' ? 'Check out time' : 'Flight time'
+const fmtTime = (t) => (t ? String(t).slice(0, 5) : '') // 14:30:00 -> 14:30
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
   { key: 'flight_no', label: 'Flight No' },
   { key: 'flight_code', label: 'Flight Code' },
   { key: 'route', label: 'Route' },
+  { key: 'block_type', label: 'Block Type' },
+  { key: 'flight_time', label: 'Time' },
   { key: 'city', label: 'City' },
   { key: 'is_active', label: 'Active' },
   { key: 'created_at', label: 'Created' },
@@ -30,11 +49,13 @@ const SAMPLE_COLS = [
   { key: 'flight_no', label: 'flight_no' },
   { key: 'flight_code', label: 'flight_code' },
   { key: 'route', label: 'route' },
+  { key: 'block_type', label: 'block_type' },
+  { key: 'flight_time', label: 'flight_time' },
   { key: 'city', label: 'city' },
 ]
 const SAMPLE = [
-  { flight_no: '9P841', flight_code: 'LHE-DXB', route: 'Lahore - Dubai', city: 'Lahore' },
-  { flight_no: 'PK309', flight_code: 'ISB-JED', route: 'Islamabad - Jeddah', city: 'Islamabad' },
+  { flight_no: '9P841', flight_code: 'LHE-DXB', route: 'Lahore - Dubai', block_type: 'Pickup', flight_time: '14:30', city: 'Lahore' },
+  { flight_no: 'PK309', flight_code: 'ISB-JED', route: 'Islamabad - Jeddah', block_type: 'Drop Off', flight_time: '09:05', city: 'Islamabad' },
 ]
 
 export default function Flights() {
@@ -56,6 +77,7 @@ export default function Flights() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [blockFilter, setBlockFilter] = useState('all')
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
@@ -69,6 +91,7 @@ export default function Flights() {
     return list.filter((r) => {
       if (statusFilter === 'active' && !r.is_active) return false
       if (statusFilter === 'inactive' && r.is_active) return false
+      if (blockFilter !== 'all' && r.block_type !== blockFilter) return false
       if (
         s &&
         !`${r.ref_no} ${r.flight_no} ${r.flight_code ?? ''} ${r.route ?? ''}`.toLowerCase().includes(s)
@@ -76,7 +99,7 @@ export default function Flights() {
         return false
       return true
     })
-  }, [list, search, statusFilter])
+  }, [list, search, statusFilter, blockFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const stats = useMemo(
@@ -108,6 +131,8 @@ export default function Flights() {
       flight_no: r.flight_no,
       flight_code: r.flight_code ?? '',
       route: r.route ?? '',
+      block_type: r.block_type ? blockLabel(r.block_type) : '',
+      flight_time: fmtTime(r.flight_time),
       city: r.city_name,
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
@@ -134,6 +159,8 @@ export default function Flights() {
     { key: 'no', header: 'Flight No', render: (r) => <span className="primary">{r.flight_no}</span> },
     { key: 'code', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'route', header: 'Route', render: (r) => r.route || '—' },
+    { key: 'block', header: 'Block Type', render: (r) => blockLabel(r.block_type) },
+    { key: 'time', header: 'Time', render: (r) => fmtTime(r.flight_time) || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
     {
       key: 'status',
@@ -222,25 +249,43 @@ export default function Flights() {
           setPage(1)
         }}
         searchPlaceholder="Search ID, flight no, code or route..."
-        activeCount={statusFilter !== 'all' ? 1 : 0}
+        activeCount={(statusFilter !== 'all' ? 1 : 0) + (blockFilter !== 'all' ? 1 : 0)}
         onClear={() => {
           setStatusFilter('all')
+          setBlockFilter('all')
           setSearch('')
           setPage(1)
         }}
         inline={
-          <select
-            className="filter-select"
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value)
-              setPage(1)
-            }}
-          >
-            <option value="all">All status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          <>
+            <select
+              className="filter-select"
+              value={blockFilter}
+              onChange={(e) => {
+                setBlockFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="all">All block types</option>
+              {BLOCK_TYPES.map((b) => (
+                <option key={b.value} value={b.value}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="filter-select"
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="all">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </>
         }
       />
 
@@ -314,6 +359,8 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
     flight_no: row?.flight_no ?? '',
     flight_code: row?.flight_code ?? '',
     route: row?.route ?? '',
+    block_type: row?.block_type ?? '',
+    flight_time: fmtTime(row?.flight_time),
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
   })
   const [err, setErr] = useState('')
@@ -331,6 +378,8 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
       flight_no: form.flight_no.trim(),
       flight_code: form.flight_code.trim() || null,
       route: form.route.trim() || null,
+      block_type: form.block_type || null,
+      flight_time: form.flight_time || null,
       city_id: Number(form.city_id),
     }
     const res = isAdd
@@ -351,6 +400,8 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
             ['ID', row.ref_no],
             ['Flight Code', row.flight_code || '—'],
             ['Route', row.route || '—'],
+            ['Block Type', blockLabel(row.block_type)],
+            [timeLabel(row.block_type), fmtTime(row.flight_time) || '—'],
             ['City', cityNm],
             ['Status', row.is_active ? 'Active' : 'Inactive'],
           ].map(([k, v]) => (
@@ -389,6 +440,34 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
         <div className="field">
           <label htmlFor="f-route">Route</label>
           <input id="f-route" className="input" value={form.route} onChange={(e) => set('route', e.target.value)} placeholder="e.g. Lahore - Dubai" autoComplete="off" />
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="f-block">Block type</label>
+            <select
+              id="f-block"
+              className="select"
+              value={form.block_type}
+              onChange={(e) => set('block_type', e.target.value)}
+            >
+              <option value="">—</option>
+              {BLOCK_TYPES.map((b) => (
+                <option key={b.value} value={b.value}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="f-time">{timeLabel(form.block_type)}</label>
+            <input
+              id="f-time"
+              className="input"
+              type="time"
+              value={form.flight_time}
+              onChange={(e) => set('flight_time', e.target.value)}
+            />
+          </div>
         </div>
         <div className="field">
           <label htmlFor="f-city">City</label>
@@ -444,10 +523,25 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
       const cityId = cityByName.get((r.city || '').trim().toLowerCase())
       if (!flight_no) return skipped.push({ line, reason: 'missing flight_no' })
       if (!cityId) return skipped.push({ line, reason: `city "${r.city}" not allowed / unknown` })
+
+      let block_type = null
+      if ((r.block_type || '').trim()) {
+        block_type = blockFromLabel(r.block_type)
+        if (!block_type) return skipped.push({ line, reason: `bad block type "${r.block_type}"` })
+      }
+      let flight_time = null
+      const rawTime = (r.flight_time || '').trim()
+      if (rawTime) {
+        if (!/^\d{1,2}:\d{2}$/.test(rawTime)) return skipped.push({ line, reason: `bad time "${rawTime}" (use HH:MM)` })
+        flight_time = rawTime
+      }
+
       ok.push({
         flight_no,
         flight_code: (r.flight_code || '').trim() || null,
         route: (r.route || '').trim() || null,
+        block_type,
+        flight_time,
         city_id: cityId,
         created_by: createdBy ?? null,
       })
@@ -470,7 +564,8 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
       <div className="modal-form">
         {err && <div className="modal-error">{err}</div>}
         <p className="confirm-msg">
-          CSV columns: <b>flight_no, flight_code, route, city</b>. City must be one you have access to.
+          CSV columns: <b>flight_no, flight_code, route, block_type, flight_time, city</b>. Block
+          type is one of Deadhead / Pickup / Drop Off / Return leg; time is HH:MM.
         </p>
         <button
           type="button"

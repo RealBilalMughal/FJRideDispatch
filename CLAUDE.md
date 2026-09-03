@@ -57,7 +57,7 @@ keys, tables or deploy targets with any other project.
   `can('<key>', ...)`, (3) point its table RLS at `has_perm('<key>', ...)`, (4) seed
   the built-in `admin` row in a migration so plain admins keep access.
 - Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
-  `..._fleet.sql`, `20260903150000_flights.sql` (all APPLIED).
+  `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -122,8 +122,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     a pre-save check -> "already assigned to vehicle <no>". `drivers.vendor_id`
     is `on delete restrict`; `vehicles.driver_id` is `on delete set null`.
 - `Flights` (`flights` perm, sidebar group "Dispatch") - city-scoped, CSV
-  export/import. Fields: flight_no (e.g. `9P841`), flight_code (e.g. `LHE-DXB`),
-  route (e.g. `Lahore - Dubai`), city. No unique constraint (a flight recurs).
+  export/import. Fields: flight_no (`9P841`), flight_code (`LHE-DXB`), route
+  (`Lahore - Dubai`), **block_type** (deadhead / pickup / dropoff / return_leg,
+  CHECK-constrained), **flight_time** (`time`, HH:MM), city. The flight-time
+  field's label is dynamic: "Check in time" for Pickup, "Check out time" for
+  Drop Off, else "Flight time" (`timeLabel()` in `Flights.jsx`). No unique
+  constraint (a flight recurs).
 - **Phone** = PK mobile only (`src/lib/phone.js` + `PkPhoneInput.jsx`). Stored as
   `+92XXXXXXXXXX` (`contact` column), shown as `+92 3XX XXXXXXX`. Input is a fixed
   `+92` prefix + 10-digit local starting with 3, with a clipboard-paste button.

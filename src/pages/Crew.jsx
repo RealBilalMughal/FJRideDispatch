@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
+  Copy,
   Download,
   Eye,
   MapPin,
+  Navigation,
   Pencil,
   Plus,
   RefreshCw,
@@ -17,34 +19,79 @@ import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
+import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import { downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import PkPhoneInput from '../components/PkPhoneInput'
 import StopMap from '../components/StopMap'
 import DataTable from '../components/data/DataTable'
 import FilterBar from '../components/data/FilterBar'
 import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
+import './Crew.css'
 
 const PAGE_SIZE = 15
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
   { key: 'name', label: 'Name' },
-  { key: 'contact', label: 'Contact' },
+  { key: 'phone', label: 'Phone' },
   { key: 'designation', label: 'Designation' },
   { key: 'city', label: 'City' },
   { key: 'stop_name', label: 'Stop' },
-  { key: 'stop_lat', label: 'Latitude' },
-  { key: 'stop_lng', label: 'Longitude' },
+  { key: 'latitude', label: 'Latitude' },
+  { key: 'longitude', label: 'Longitude' },
   { key: 'is_active', label: 'Active' },
   { key: 'created_at', label: 'Created' },
 ]
 
-const SAMPLE = [
-  { name: 'Ahmed Raza', contact: '0300-1234567', designation: 'Driver', city: 'Lahore', stop_name: 'Model Town Gate', coordinates: '31.478100, 74.328700' },
-  { name: 'Bilal Khan', contact: '0321-7654321', designation: 'Captain', city: 'Islamabad', stop_name: 'F-7 Markaz', coordinates: '33.719400, 73.055300' },
+const SAMPLE_COLS = [
+  { key: 'name', label: 'name' },
+  { key: 'phone', label: 'phone' },
+  { key: 'designation', label: 'designation' },
+  { key: 'city', label: 'city' },
+  { key: 'stop_name', label: 'stop_name' },
+  { key: 'latitude', label: 'latitude' },
+  { key: 'longitude', label: 'longitude' },
 ]
+
+const SAMPLE = [
+  { name: 'Ahmed Raza', phone: '03001234567', designation: 'Driver', city: 'Lahore', stop_name: 'Model Town Gate', latitude: '31.478100', longitude: '74.328700' },
+  { name: 'Bilal Khan', phone: '03217654321', designation: 'Captain', city: 'Islamabad', stop_name: 'F-7 Markaz', latitude: '33.719400', longitude: '73.055300' },
+]
+
+const gmapsUrl = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+
+// coordinates cell: value + copy + open-in-Google-Maps
+function CoordCell({ lat, lng }) {
+  if (lat == null || lng == null) return <span className="secondary">—</span>
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(`${lat}, ${lng}`)
+      toast.success('Coordinates copied')
+    } catch {
+      toast.error('Could not copy')
+    }
+  }
+  return (
+    <span className="coord-cell">
+      <span className="coord-val">{fmtLatLng(lat, lng)}</span>
+      <button type="button" className="coord-btn" title="Copy coordinates" onClick={copy}>
+        <Copy size={13} />
+      </button>
+      <a
+        className="coord-btn"
+        href={gmapsUrl(lat, lng)}
+        target="_blank"
+        rel="noreferrer"
+        title="Open in Google Maps"
+      >
+        <Navigation size={13} />
+      </a>
+    </span>
+  )
+}
 
 export default function Crew() {
   const { can, profile } = useAuth()
@@ -103,7 +150,9 @@ export default function Crew() {
       if (stopFilter === 'no' && hasStop) return false
       if (
         s &&
-        !`${r.ref_no} ${r.name} ${r.contact ?? ''} ${r.stop_name ?? ''}`.toLowerCase().includes(s)
+        !`${r.ref_no} ${r.name} ${r.contact ?? ''} ${formatPkPhone(r.contact)} ${r.stop_name ?? ''}`
+          .toLowerCase()
+          .includes(s)
       )
         return false
       return true
@@ -154,12 +203,12 @@ export default function Crew() {
     const data = filtered.map((r) => ({
       ref_no: r.ref_no,
       name: r.name,
-      contact: r.contact ?? '',
+      phone: r.contact ?? '',
       designation: r.designation ?? '',
       city: r.city_name,
       stop_name: r.stop_name ?? '',
-      stop_lat: r.stop_lat ?? '',
-      stop_lng: r.stop_lng ?? '',
+      latitude: r.stop_lat ?? '',
+      longitude: r.stop_lng ?? '',
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
     }))
@@ -183,29 +232,20 @@ export default function Crew() {
 
   const columns = [
     { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
+    { key: 'name', header: 'Name', render: (r) => <span className="primary">{r.name}</span> },
     {
-      key: 'name',
-      header: 'Crew',
-      render: (r) => (
-        <div className="stack">
-          <span className="primary">{r.name}</span>
-          {r.contact && <span className="secondary">{r.contact}</span>}
-        </div>
-      ),
+      key: 'phone',
+      header: 'Phone',
+      render: (r) =>
+        r.contact ? <span className="phone-link">{formatPkPhone(r.contact)}</span> : '—',
     },
     { key: 'designation', header: 'Designation', render: (r) => r.designation || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
+    { key: 'stop', header: 'Stop', render: (r) => r.stop_name || '—' },
     {
-      key: 'stop',
-      header: 'Stop',
-      render: (r) => (
-        <div className="stack">
-          <span>{r.stop_name || '—'}</span>
-          {r.stop_lat != null && r.stop_lng != null && (
-            <span className="secondary">{fmtLatLng(r.stop_lat, r.stop_lng)}</span>
-          )}
-        </div>
-      ),
+      key: 'coords',
+      header: 'Coordinates',
+      render: (r) => <CoordCell lat={r.stop_lat} lng={r.stop_lng} />,
     },
     {
       key: 'status',
@@ -439,7 +479,7 @@ function CrewModal({
   const firstCity = allowedCities[0]?.id ?? ''
   const [form, setForm] = useState({
     name: row?.name ?? '',
-    contact: row?.contact ?? '',
+    phone: fromStored(row?.contact), // 10-digit local part
     designation: row?.designation ?? '',
     city_id: row?.city_id ?? defaultCityId ?? firstCity,
     stop_name: row?.stop_name ?? '',
@@ -450,6 +490,7 @@ function CrewModal({
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   const pin = useMemo(() => parseLatLng(form.coordinates), [form.coordinates])
+  const phoneErr = pkPhoneError(form.phone)
   const title = isAdd ? 'Add Crew' : editing ? `Edit ${row.name}` : `${row.name} · ID ${row.ref_no}`
 
   const submit = async (e) => {
@@ -457,11 +498,12 @@ function CrewModal({
     setErr('')
     if (!form.name.trim()) return setErr('Crew name is required')
     if (!form.city_id) return setErr('Pick a city')
+    if (form.phone && !isValidPkMobile(form.phone)) return setErr(phoneErr || 'Invalid phone number')
     if (form.coordinates.trim() && !pin) return setErr('Coordinates must look like "31.9279, 74.9738"')
     setBusy(true)
     const payload = {
       name: form.name.trim(),
-      contact: form.contact.trim() || null,
+      contact: toStored(form.phone),
       designation: form.designation.trim() || null,
       city_id: Number(form.city_id),
       stop_name: form.stop_name.trim() || null,
@@ -488,8 +530,8 @@ function CrewModal({
             <span className="view-value">{row.ref_no}</span>
           </div>
           <div className="view-row">
-            <span className="view-label">Contact</span>
-            <span className="view-value">{row.contact || '—'}</span>
+            <span className="view-label">Phone</span>
+            <span className="view-value">{row.contact ? formatPkPhone(row.contact) : '—'}</span>
           </div>
           <div className="view-row">
             <span className="view-label">Designation</span>
@@ -505,7 +547,9 @@ function CrewModal({
           </div>
           <div className="view-row">
             <span className="view-label">Coordinates</span>
-            <span className="view-value">{fmtLatLng(row.stop_lat, row.stop_lng) || '—'}</span>
+            <span className="view-value">
+              <CoordCell lat={row.stop_lat} lng={row.stop_lng} />
+            </span>
           </div>
           <div className="view-row">
             <span className="view-label">Status</span>
@@ -548,14 +592,14 @@ function CrewModal({
 
         <div className="field-row">
           <div className="field">
-            <label htmlFor="c-contact">Contact</label>
-            <input
-              id="c-contact"
-              className="input"
-              value={form.contact}
-              onChange={(e) => set('contact', e.target.value)}
-              autoComplete="off"
+            <label htmlFor="c-phone">Phone</label>
+            <PkPhoneInput
+              id="c-phone"
+              value={form.phone}
+              onChange={(v) => set('phone', toLocal(v))}
+              invalid={Boolean(form.phone) && Boolean(phoneErr)}
             />
+            {form.phone && phoneErr && <span className="field-error">{phoneErr}</span>}
           </div>
           <div className="field">
             <label htmlFor="c-desig">Designation</label>
@@ -647,17 +691,7 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
     return m
   }, [allowedCities])
 
-  const downloadSample = () => {
-    const cols = [
-      { key: 'name', label: 'name' },
-      { key: 'contact', label: 'contact' },
-      { key: 'designation', label: 'designation' },
-      { key: 'city', label: 'city' },
-      { key: 'stop_name', label: 'stop_name' },
-      { key: 'coordinates', label: 'coordinates' },
-    ]
-    downloadCsv('crew-sample.csv', toCsv(cols, SAMPLE))
-  }
+  const downloadSample = () => downloadCsv('crew-sample.csv', toCsv(SAMPLE_COLS, SAMPLE))
 
   const onFile = async (e) => {
     setErr('')
@@ -678,11 +712,25 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
       const cityId = cityByName.get((r.city || '').trim().toLowerCase())
       if (!name) return skipped.push({ line, reason: 'missing name' })
       if (!cityId) return skipped.push({ line, reason: `city "${r.city}" not allowed / unknown` })
-      const pin = r.coordinates ? parseLatLng(r.coordinates) : null
-      if (r.coordinates && !pin) return skipped.push({ line, reason: 'bad coordinates' })
+
+      // phone: accept "phone" or legacy "contact"; PK mobile only
+      const rawPhone = (r.phone ?? r.contact ?? '').trim()
+      let contact = null
+      if (rawPhone) {
+        const local = toLocal(rawPhone)
+        if (!isValidPkMobile(local)) return skipped.push({ line, reason: `bad phone "${rawPhone}"` })
+        contact = toStored(local)
+      }
+
+      // coordinates: separate latitude/longitude, else a combined "coordinates" cell
+      const combined =
+        r.latitude && r.longitude ? `${r.latitude}, ${r.longitude}` : r.coordinates || ''
+      const pin = combined ? parseLatLng(combined) : null
+      if (combined && !pin) return skipped.push({ line, reason: 'bad coordinates' })
+
       ok.push({
         name,
-        contact: (r.contact || '').trim() || null,
+        contact,
         designation: (r.designation || '').trim() || null,
         city_id: cityId,
         stop_name: (r.stop_name || '').trim() || null,
@@ -710,8 +758,9 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
         {err && <div className="modal-error">{err}</div>}
 
         <p className="confirm-msg">
-          Upload a CSV with columns <b>name, contact, designation, city, stop_name, coordinates</b>.
-          City must be one you have access to. Coordinates look like “31.9279, 74.9738”.
+          Upload a CSV with columns{' '}
+          <b>name, phone, designation, city, stop_name, latitude, longitude</b>. City must be one you
+          have access to. Phone is a Pakistan mobile (e.g. 03001234567).
         </p>
 
         <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={downloadSample}>

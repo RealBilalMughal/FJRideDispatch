@@ -95,11 +95,17 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Pages
 - `Dashboard` - placeholder, always visible
-- `Crew` (`crew` perm, sidebar group "Dispatch") - table + advanced filters, CSV
-  export/import (`crew-sample.csv`). Add/Edit modal: name, contact, designation
-  (free text), city, stop name + **coordinates** ("31.9279, 74.9738" -> Leaflet /
-  OpenStreetMap pin via `src/components/StopMap.jsx` - draggable, click-to-set,
-  no API key). One stop per crew. City-scoped.
+- `Crew` (`crew` perm, sidebar group "Dispatch") - table (ID / Name / Phone /
+  Designation / City / Stop / Coordinates), advanced filters, CSV export + import
+  (`crew-sample.csv`: name, phone, designation, city, stop_name, latitude,
+  longitude). Coordinates cell has a copy button + a pin that opens Google Maps.
+  Add/Edit modal: name, phone, designation (free text), city, stop name +
+  **coordinates** ("31.9279, 74.9738" -> Leaflet / OpenStreetMap pin via
+  `src/components/StopMap.jsx` - draggable, click-to-set, no key). One stop per
+  crew. City-scoped.
+- **Phone** = PK mobile only (`src/lib/phone.js` + `PkPhoneInput.jsx`). Stored as
+  `+92XXXXXXXXXX` (`contact` column), shown as `+92 3XX XXXXXXX`. Input is a fixed
+  `+92` prefix + 10-digit local starting with 3, with a clipboard-paste button.
 
 ## Maps & routing
 - Map display: **Leaflet + react-leaflet + OpenStreetMap tiles** - free, no key.

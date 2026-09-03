@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   Download,
+  Eye,
   MapPin,
   Pencil,
   Plus,
@@ -64,7 +65,7 @@ export default function Crew() {
   const [stopFilter, setStopFilter] = useState('all')
 
   const [addOpen, setAddOpen] = useState(false)
-  const [editRow, setEditRow] = useState(null)
+  const [detail, setDetail] = useState(null) // { row, edit: bool }
   const [importOpen, setImportOpen] = useState(false)
   const [toDelete, setToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
@@ -236,8 +237,11 @@ export default function Crew() {
       align: 'right',
       render: (r) => (
         <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+          <button title="View" onClick={() => setDetail({ row: r, edit: false })}>
+            <Eye size={13} />
+          </button>
           {canEdit && (
-            <button title="Edit" onClick={() => setEditRow(r)}>
+            <button title="Edit" onClick={() => setDetail({ row: r, edit: true })}>
               <Pencil size={13} />
             </button>
           )}
@@ -376,13 +380,15 @@ export default function Crew() {
         />
       )}
 
-      {editRow && (
+      {detail && (
         <CrewModal
-          row={editRow}
+          row={detail.row}
+          startInEdit={detail.edit}
+          canEdit={canEdit}
           allowedCities={allowedCities}
-          onClose={() => setEditRow(null)}
+          onClose={() => setDetail(null)}
           onDone={() => {
-            setEditRow(null)
+            setDetail(null)
             fetchRows()
           }}
         />
@@ -414,9 +420,22 @@ export default function Crew() {
   )
 }
 
-// ── Add / Edit ────────────────────────────────────────────────────────────
-function CrewModal({ row, allowedCities, defaultCityId, createdBy, onClose, onDone }) {
-  const editing = Boolean(row)
+// ── View / Add / Edit ─────────────────────────────────────────────────────
+// Opened as a read-only view (eye) with an "Edit" button, straight into edit
+// (pencil), or as a blank Add form.
+function CrewModal({
+  row,
+  startInEdit = false,
+  canEdit = true,
+  allowedCities,
+  defaultCityId,
+  createdBy,
+  onClose,
+  onDone,
+}) {
+  const isAdd = !row
+  const [editing, setEditing] = useState(isAdd || startInEdit)
+
   const firstCity = allowedCities[0]?.id ?? ''
   const [form, setForm] = useState({
     name: row?.name ?? '',
@@ -430,7 +449,8 @@ function CrewModal({ row, allowedCities, defaultCityId, createdBy, onClose, onDo
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
-  const pin = parseLatLng(form.coordinates)
+  const pin = useMemo(() => parseLatLng(form.coordinates), [form.coordinates])
+  const title = isAdd ? 'Add Crew' : editing ? `Edit ${row.name}` : `${row.name} · ID ${row.ref_no}`
 
   const submit = async (e) => {
     e.preventDefault()
@@ -448,17 +468,70 @@ function CrewModal({ row, allowedCities, defaultCityId, createdBy, onClose, onDo
       stop_lat: pin ? pin.lat : null,
       stop_lng: pin ? pin.lng : null,
     }
-    const res = editing
-      ? await supabase.from('crew').update(payload).eq('id', row.id)
-      : await supabase.from('crew').insert({ ...payload, created_by: createdBy ?? null })
+    const res = isAdd
+      ? await supabase.from('crew').insert({ ...payload, created_by: createdBy ?? null })
+      : await supabase.from('crew').update(payload).eq('id', row.id)
     setBusy(false)
     if (res.error) return setErr(res.error.message)
-    toast.success(editing ? 'Crew updated' : 'Crew added')
+    toast.success(isAdd ? 'Crew added' : 'Crew updated')
     onDone()
   }
 
+  // ---- read-only view ----
+  if (!editing) {
+    const cityName = allowedCities.find((c) => c.id === row.city_id)?.name || row.city_name || '—'
+    return (
+      <Modal open onClose={onClose} title={title} width={520}>
+        <div className="modal-form">
+          <div className="view-row">
+            <span className="view-label">ID</span>
+            <span className="view-value">{row.ref_no}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Contact</span>
+            <span className="view-value">{row.contact || '—'}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Designation</span>
+            <span className="view-value">{row.designation || '—'}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">City</span>
+            <span className="view-value">{cityName}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Stop</span>
+            <span className="view-value">{row.stop_name || '—'}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Coordinates</span>
+            <span className="view-value">{fmtLatLng(row.stop_lat, row.stop_lng) || '—'}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Status</span>
+            <span className="view-value">{row.is_active ? 'Active' : 'Inactive'}</span>
+          </div>
+
+          {pin && <StopMap lat={pin.lat} lng={pin.lng} interactive={false} height={200} />}
+
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+              Close
+            </button>
+            {canEdit && (
+              <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
+                <Pencil size={13} /> Edit
+              </button>
+            )}
+          </div>
+        </div>
+      </Modal>
+    )
+  }
+
+  // ---- add / edit form ----
   return (
-    <Modal open onClose={onClose} title={editing ? `Edit ${row.name}` : 'Add Crew'} width={520}>
+    <Modal open onClose={onClose} title={title} width={520}>
       <form className="modal-form" onSubmit={submit}>
         {err && <div className="modal-error">{err}</div>}
 
@@ -544,7 +617,8 @@ function CrewModal({ row, allowedCities, defaultCityId, createdBy, onClose, onDo
         </div>
 
         <StopMap
-          value={pin}
+          lat={pin?.lat ?? null}
+          lng={pin?.lng ?? null}
           onChange={({ lat, lng }) => set('coordinates', fmtLatLng(lat, lng))}
         />
 
@@ -553,7 +627,7 @@ function CrewModal({ row, allowedCities, defaultCityId, createdBy, onClose, onDo
             Cancel
           </button>
           <button type="submit" className="btn btn-square" disabled={busy}>
-            {busy ? 'Saving…' : editing ? 'Save' : 'Add crew'}
+            {busy ? 'Saving…' : isAdd ? 'Add crew' : 'Save'}
           </button>
         </div>
       </form>

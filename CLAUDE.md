@@ -50,14 +50,14 @@ keys, tables or deploy targets with any other project.
 - `private.has_perm(page, action)` ORs `allowed` across the caller's `user_roles`;
   super_admin bypasses. Helpers: `is_admin()`, `current_user_role()`, `is_active_user()`.
 - `AuthContext.can(page, action)` is the single client gate. Catalogue:
-  `src/lib/permissions.js` `PERMISSION_PAGES` (`dashboard`, `crew`, `vendors`,
-  `drivers`, `vehicles`, `users`, `roles`).
+  `src/lib/permissions.js` `PERMISSION_PAGES` (`dashboard`, `crew`, `flights`,
+  `vendors`, `drivers`, `vehicles`, `users`, `roles`).
 - **RULE - EVERY new navigable page gets a Role Access row**: (1) add to
   `PERMISSION_PAGES` with its sidebar `group`, (2) gate the nav item + page with
   `can('<key>', ...)`, (3) point its table RLS at `has_perm('<key>', ...)`, (4) seed
   the built-in `admin` row in a migration so plain admins keep access.
 - Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
-  `20260903140000_fleet.sql` (all APPLIED).
+  `..._fleet.sql`, `20260903150000_flights.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -121,6 +121,9 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     can be on ONE vehicle only: `vehicles_driver_uniq` partial unique index +
     a pre-save check -> "already assigned to vehicle <no>". `drivers.vendor_id`
     is `on delete restrict`; `vehicles.driver_id` is `on delete set null`.
+- `Flights` (`flights` perm, sidebar group "Dispatch") - city-scoped, CSV
+  export/import. Fields: flight_no (e.g. `9P841`), flight_code (e.g. `LHE-DXB`),
+  route (e.g. `Lahore - Dubai`), city. No unique constraint (a flight recurs).
 - **Phone** = PK mobile only (`src/lib/phone.js` + `PkPhoneInput.jsx`). Stored as
   `+92XXXXXXXXXX` (`contact` column), shown as `+92 3XX XXXXXXX`. Input is a fixed
   `+92` prefix + 10-digit local starting with 3, with a clipboard-paste button.
@@ -151,7 +154,8 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] Public sign-up turned OFF
 - [x] City scoping + shared ref series + Crew page (migration `..._cities_crew.sql`)
 - [x] Crew stop map on Leaflet + OpenStreetMap (no key)
-- [x] Fleet: Vendors, Drivers, Vehicles (migration `20260903140000_fleet.sql`)
+- [x] Fleet: Vendors, Drivers, Vehicles (`..._fleet.sql`)
+- [x] Flights page (`20260903150000_flights.sql`)
 - [x] `VITE_ORS_API_KEY` set + verified (directions + optimization)
 - [ ] Trip/route feature -> build the UI on top of OpenRouteService
 - [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

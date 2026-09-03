@@ -78,9 +78,8 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 ## TODO
 - [x] Theme + Login + permission model + User Management + Role Access + Profile
 - [x] DB schema migration applied; `admin-users` EF deployed
-- [ ] Create the first super_admin: user adds `bilal.mughal@buscaro.com` in the
-      Supabase dashboard (Authentication > Users, auto-confirm), then insert a
-      `user_roles` row (user_id, 'super_admin') - the trigger syncs `profiles.role`.
-- [ ] Turn OFF public sign-up (Supabase > Authentication > Sign In / Providers)
+- [x] First super_admin: `bilal.mughal@buscaro.com`
+      (auth id `5e8fba49-b6f5-4acc-8c70-b4c7ca126886`, `user_roles` -> super_admin)
+- [x] Public sign-up turned OFF
 - [ ] Get the dispatch data model + workflow, then design tables/RLS + pages
 - [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

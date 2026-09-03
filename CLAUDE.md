@@ -104,9 +104,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 ## Maps & routing
 - Map display: **Leaflet + react-leaflet + OpenStreetMap tiles** - free, no key.
   `src/components/StopMap.jsx`. (Google Maps was dropped - key/billing friction.)
-- Routing / distance-in-km / multi-stop route optimisation (TSP/VRP): planned on
-  **OpenRouteService** (free key, no card - `/optimization`, `/directions`,
-  `/matrix`). Add `VITE_ORS_API_KEY` when that feature is built. Geocoding: Nominatim.
+- Routing / distance-in-km / multi-stop route optimisation (TSP/VRP):
+  **OpenRouteService**. `VITE_ORS_API_KEY` is set + verified working
+  (`/v2/directions/driving-car` and `/optimization` both return). No routing UI
+  yet - build it when the trip/route workflow is defined. Geocoding: Nominatim.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -127,5 +128,6 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] City scoping + shared ref series + Crew page (migration `..._cities_crew.sql`)
 - [x] Crew stop map on Leaflet + OpenStreetMap (no key)
 - [ ] Next dispatch tables (vendor, ...) - each uses `ref_no_seq` + `has_city`
-- [ ] Trip/route feature -> wire OpenRouteService (`VITE_ORS_API_KEY`)
+- [x] `VITE_ORS_API_KEY` set + verified (directions + optimization)
+- [ ] Trip/route feature -> build the UI on top of OpenRouteService
 - [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

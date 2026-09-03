@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { APIProvider, Map, useMap, useMapsLibrary } from '@vis.gl/react-google-maps'
 import { MapPin } from 'lucide-react'
 import './stop-map.css'
 
@@ -31,42 +31,59 @@ export default function StopMap({ value, onChange, height = 240 }) {
   return (
     <div className="stop-map" style={{ height }}>
       <APIProvider apiKey={KEY}>
-        <MapInner value={value} has={has} onChange={onChange} />
+        <MapInner value={has ? value : null} onChange={onChange} />
       </APIProvider>
     </div>
   )
 }
 
-function MapInner({ value, has, onChange }) {
-  const [center, setCenter] = useState(has ? value : FALLBACK)
+function MapInner({ value, onChange }) {
+  const [center, setCenter] = useState(value ?? FALLBACK)
 
   useEffect(() => {
-    if (has) setCenter(value)
-  }, [has, value])
+    if (value) setCenter(value)
+  }, [value])
 
-  const pick = (latLng) => {
-    if (!latLng) return
-    const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat
-    const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng
-    onChange({ lat, lng })
-  }
+  const pick = useCallback(
+    (latLng) => {
+      if (!latLng) return
+      const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat
+      const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng
+      onChange({ lat, lng })
+    },
+    [onChange],
+  )
 
   return (
     <Map
-      defaultZoom={has ? 14 : 6}
+      defaultZoom={value ? 14 : 6}
       center={center}
       onCenterChanged={(e) => setCenter(e.detail.center)}
       gestureHandling="greedy"
-      disableDefaultUI={false}
       onClick={(e) => pick(e.detail?.latLng)}
     >
-      {has && (
-        <Marker
-          position={value}
-          draggable
-          onDragEnd={(e) => pick(e.latLng)}
-        />
-      )}
+      <StopMarker position={value} onPick={pick} />
     </Map>
   )
+}
+
+// Imperative marker with a real cleanup - avoids the <Marker> component's
+// IntersectionObserver churn under React 19 StrictMode.
+function StopMarker({ position, onPick }) {
+  const map = useMap()
+  const mapsLib = useMapsLibrary('maps')
+  const pickRef = useRef(onPick)
+  pickRef.current = onPick
+
+  useEffect(() => {
+    if (!map || !mapsLib || !position) return
+    const marker = new mapsLib.Marker({ map, position, draggable: true })
+    const listener = marker.addListener('dragend', (e) => pickRef.current(e.latLng))
+    return () => {
+      listener.remove()
+      marker.setMap(null)
+    }
+  }, [map, mapsLib, position?.lat, position?.lng])
+
+  return null
 }

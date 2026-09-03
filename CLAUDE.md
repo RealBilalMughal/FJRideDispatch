@@ -50,12 +50,14 @@ keys, tables or deploy targets with any other project.
 - `private.has_perm(page, action)` ORs `allowed` across the caller's `user_roles`;
   super_admin bypasses. Helpers: `is_admin()`, `current_user_role()`, `is_active_user()`.
 - `AuthContext.can(page, action)` is the single client gate. Catalogue:
-  `src/lib/permissions.js` `PERMISSION_PAGES` (currently `dashboard`, `crew`, `users`, `roles`).
+  `src/lib/permissions.js` `PERMISSION_PAGES` (`dashboard`, `crew`, `vendors`,
+  `drivers`, `vehicles`, `users`, `roles`).
 - **RULE - EVERY new navigable page gets a Role Access row**: (1) add to
   `PERMISSION_PAGES` with its sidebar `group`, (2) gate the nav item + page with
   `can('<key>', ...)`, (3) point its table RLS at `has_perm('<key>', ...)`, (4) seed
   the built-in `admin` row in a migration so plain admins keep access.
-- Migrations: `20260903120000_init_auth_permissions.sql`, `20260903130000_cities_crew.sql` (APPLIED).
+- Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
+  `20260903140000_fleet.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -84,7 +86,12 @@ keys, tables or deploy targets with any other project.
   as a report (`src/lib/csv.js` `toCsv` + `downloadCsv`). Import (where it makes
   sense) uses `parseCsvObjects` + a "Download sample" button.
 - `src/components/data/` kit: `DataTable`, `FilterBar` (search + `advanced` grid),
-  `Pagination`, `BulkBar`, `StatCards`.
+  `Pagination`, `BulkBar`, `StatCards`. `SearchSelect` for type-to-search pickers.
+- **RULE - one value per column.** No stacked sub-text under a cell; every field
+  is its own column.
+- City-scoped list pages share `src/lib/useEntityRows.js` (fetch by `ref_no` desc,
+  scoped to `useCity().cityId`). Each has a View (eye, read-only) + Edit + Delete
+  row action; the View modal has an Edit button.
 
 ## Edge Function `admin-users` - DEPLOYED (dyjgrxeqdvnxwcbwzkql)
 `supabase/functions/admin-users/index.ts`. The ONLY place the service_role key is
@@ -103,6 +110,17 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   **coordinates** ("31.9279, 74.9738" -> Leaflet / OpenStreetMap pin via
   `src/components/StopMap.jsx` - draggable, click-to-set, no key). One stop per
   crew. City-scoped.
+- `Vendors` / `Drivers` / `Vehicles` (`vendors`/`drivers`/`vehicles` perms, sidebar
+  group **"Fleet"**) - Crew-style: city-scoped table, advanced filters, CSV
+  export/import (`*-sample.csv`), View/Edit/Delete. All have a mandatory City.
+  - **Vendor**: name, contact (PK phone), city.
+  - **Driver**: name, contact, city, **vendor (required)** - `SearchSelect`
+    filtered to the driver's city; shown as `(refNo) Vendor Name`.
+  - **Vehicle**: vehicle_no (unique), company, model, year (4 digits), color, city,
+    **driver (optional)** - `SearchSelect` filtered to the vehicle's city. A driver
+    can be on ONE vehicle only: `vehicles_driver_uniq` partial unique index +
+    a pre-save check -> "already assigned to vehicle <no>". `drivers.vendor_id`
+    is `on delete restrict`; `vehicles.driver_id` is `on delete set null`.
 - **Phone** = PK mobile only (`src/lib/phone.js` + `PkPhoneInput.jsx`). Stored as
   `+92XXXXXXXXXX` (`contact` column), shown as `+92 3XX XXXXXXX`. Input is a fixed
   `+92` prefix + 10-digit local starting with 3, with a clipboard-paste button.
@@ -133,7 +151,7 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] Public sign-up turned OFF
 - [x] City scoping + shared ref series + Crew page (migration `..._cities_crew.sql`)
 - [x] Crew stop map on Leaflet + OpenStreetMap (no key)
-- [ ] Next dispatch tables (vendor, ...) - each uses `ref_no_seq` + `has_city`
+- [x] Fleet: Vendors, Drivers, Vehicles (migration `20260903140000_fleet.sql`)
 - [x] `VITE_ORS_API_KEY` set + verified (directions + optimization)
 - [ ] Trip/route feature -> build the UI on top of OpenRouteService
 - [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

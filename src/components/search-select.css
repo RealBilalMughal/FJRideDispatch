@@ -1,0 +1,132 @@
+.ss {
+  position: relative;
+}
+
+.ss-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--heading);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ss-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ss-trigger > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.ss-placeholder {
+  color: var(--muted);
+}
+
+.ss-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-menu {
+  position: absolute;
+  z-index: 60;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.ss-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ss-search svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.ss-search input {
+  border: 0;
+  outline: 0;
+  background: none;
+  width: 100%;
+  font-size: 13px;
+  color: var(--heading);
+}
+
+.ss-list {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.ss-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ss-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--body);
+}
+
+.ss-opt:hover {
+  background: var(--surface);
+}
+
+.ss-opt.on {
+  color: var(--accent);
+}
+
+.ss-opt-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ss-opt-main > span:first-child {
+  font-size: 13px;
+  color: var(--heading);
+}
+
+.ss-opt.on .ss-opt-main > span:first-child {
+  color: var(--accent);
+}
+
+.ss-opt-sub {
+  font-size: 11px;
+  color: var(--muted);
+}

@@ -7,7 +7,7 @@ own git repo, GitHub remote, Supabase project and Vercel project. Do not share
 keys, tables or deploy targets with any other project.
 
 - Folder: `E:\FJRideDispatch`
-- GitHub: _(not created yet)_
+- GitHub: https://github.com/RealBilalMughal/FJRideDispatch  (remote `origin`, branch `main`)
 - Supabase: _(not created yet)_
 - Vercel: _(not created yet)_
 

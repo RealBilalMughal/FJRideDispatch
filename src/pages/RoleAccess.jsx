@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Check, Pencil, Plus, RotateCcw, Save, Search, Shield, Trash2, User, Users, X } from 'lucide-react'
+import { Check, MapPin, Pencil, Plus, RotateCcw, Save, Search, Shield, Trash2, User, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { PERMISSION_GROUPS, PERMISSION_PAGES, PERM_ACTIONS } from '../lib/permissions'
@@ -32,15 +32,28 @@ export default function RoleAccess() {
   const [activeUserRoles, setActiveUserRoles] = useState([]) // string[]
   const [overrides, setOverrides] = useState({}) // { page: { action: bool } } (draft)
 
+  // city access
+  const [allCities, setAllCities] = useState([]) // [{ id, name }]
+  const [roleCityMap, setRoleCityMap] = useState({}) // { role: number[] }  (missing/empty = all)
+  const [userCityIds, setUserCityIds] = useState([]) // number[] for the active user (empty = all)
+  const [cityDraft, setCityDraft] = useState({ all: true, ids: [] })
+  const [savingCity, setSavingCity] = useState(false)
+
   const label = useCallback((key) => roleLabel(roleList, key), [roleList])
 
   const fetchAll = useCallback(async () => {
-    const [rolesRes, permsRes, usageRes] = await Promise.all([
+    const [rolesRes, permsRes, usageRes, citiesRes, roleCitiesRes] = await Promise.all([
       fetchRoles().catch(() => []),
       supabase.from('role_permissions').select('role, page, action, allowed'),
       supabase.from('user_roles').select('role'),
+      supabase.from('cities').select('id, name, sort').order('sort').order('name'),
+      supabase.from('role_cities').select('role, city_id'),
     ])
     setRoleList(rolesRes)
+    setAllCities(citiesRes.data ?? [])
+    const rcMap = {}
+    for (const r of roleCitiesRes.data ?? []) (rcMap[r.role] ??= []).push(r.city_id)
+    setRoleCityMap(rcMap)
     const map = {}
     for (const r of permsRes.data ?? []) {
       ;((map[r.role] ??= {})[r.page] ??= {})[r.action] = r.allowed
@@ -73,13 +86,26 @@ export default function RoleAccess() {
     Promise.all([
       supabase.from('user_permissions').select('page, action, allowed').eq('user_id', activeUserId),
       supabase.from('user_roles').select('role').eq('user_id', activeUserId),
-    ]).then(([permRes, roleRes]) => {
+      supabase.from('user_cities').select('city_id').eq('user_id', activeUserId),
+    ]).then(([permRes, roleRes, cityRes]) => {
       const map = {}
       for (const r of permRes.data ?? []) (map[r.page] ??= {})[r.action] = r.allowed
       setOverrides(map)
       setActiveUserRoles((roleRes.data ?? []).map((r) => r.role))
+      setUserCityIds((cityRes.data ?? []).map((r) => r.city_id))
     })
   }, [activeUserId])
+
+  // load the city-access draft whenever the target (role / user) changes
+  useEffect(() => {
+    const ids =
+      mode === 'roles'
+        ? activeRole
+          ? roleCityMap[activeRole] ?? []
+          : []
+        : userCityIds
+    setCityDraft(ids.length ? { all: false, ids: [...ids] } : { all: true, ids: [] })
+  }, [mode, activeRole, activeUserId, roleCityMap, userCityIds])
 
   const selectUser = (id) => {
     setOverrides({})
@@ -232,6 +258,43 @@ export default function RoleAccess() {
     }
     setSaving(false)
     toast.success(`${activeUser.full_name || 'User'} permissions saved`)
+  }
+
+  // ── city access ────────────────────────────────────────────────────────
+  const toggleCity = (id) =>
+    setCityDraft((d) => ({
+      all: false,
+      ids: d.ids.includes(id) ? d.ids.filter((x) => x !== id) : [...d.ids, id],
+    }))
+
+  const setAllCitiesDraft = (all) => setCityDraft((d) => ({ all, ids: all ? [] : d.ids }))
+
+  const saveCityAccess = async () => {
+    const isRole = mode === 'roles'
+    const table = isRole ? 'role_cities' : 'user_cities'
+    const keyCol = isRole ? 'role' : 'user_id'
+    const keyVal = isRole ? activeRole : activeUserId
+    if (!keyVal) return
+    const ids = cityDraft.all ? [] : cityDraft.ids
+    setSavingCity(true)
+    const del = await supabase.from(table).delete().eq(keyCol, keyVal)
+    if (del.error) {
+      setSavingCity(false)
+      return toast.error(del.error.message)
+    }
+    if (ids.length) {
+      const ins = await supabase
+        .from(table)
+        .insert(ids.map((city_id) => ({ [keyCol]: keyVal, city_id })))
+      if (ins.error) {
+        setSavingCity(false)
+        return toast.error(ins.error.message)
+      }
+    }
+    setSavingCity(false)
+    if (isRole) setRoleCityMap((m) => ({ ...m, [activeRole]: ids }))
+    else setUserCityIds(ids)
+    toast.success('City access saved')
   }
 
   // ── shared grid ────────────────────────────────────────────────────────
@@ -532,7 +595,58 @@ export default function RoleAccess() {
               Select a user on the left to view or override their access.
             </div>
           ) : (
-            grid
+            <>
+              {grid}
+
+              {isSuperAdmin &&
+                allCities.length > 0 &&
+                (mode === 'roles' ? activeRole && activeRole !== 'super_admin' : activeUser && !userIsSuper) && (
+                  <div className="ra-cities">
+                    <div className="ra-cities-head">
+                      <span className="ra-page-name">
+                        <MapPin size={14} /> City access
+                      </span>
+                      <button
+                        className="btn btn-square btn-sm"
+                        onClick={saveCityAccess}
+                        disabled={savingCity}
+                      >
+                        <Save size={13} /> {savingCity ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                    <p className="ra-cities-hint">
+                      {mode === 'roles'
+                        ? 'Which cities this role can see. Leave "All cities" on for no restriction.'
+                        : 'Overrides the city access this user gets from their roles.'}
+                    </p>
+                    <div className="ra-cities-list">
+                      <label className="check-line">
+                        <input
+                          type="checkbox"
+                          checked={cityDraft.all}
+                          onChange={(e) => setAllCitiesDraft(e.target.checked)}
+                        />
+                        All cities
+                      </label>
+                      {allCities.map((c) => (
+                        <label
+                          key={c.id}
+                          className="check-line"
+                          style={cityDraft.all ? { opacity: 0.5 } : undefined}
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={cityDraft.all}
+                            checked={!cityDraft.all && cityDraft.ids.includes(c.id)}
+                            onChange={() => toggleCity(c.id)}
+                          />
+                          {c.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </>
           )}
         </div>
       </div>

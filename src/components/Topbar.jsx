@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ChevronDown, IdCard, LogOut, Menu } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { ROLE_LABEL_FALLBACK } from '../lib/permissions'
+import CityFilter from './CityFilter'
 
 function initials(name, email) {
   const src = (name || '').trim() || (email || '').trim()
@@ -55,6 +56,8 @@ export default function Topbar({ onToggleSidebar }) {
       >
         <Menu size={18} />
       </button>
+
+      <CityFilter />
 
       <div className="profile-menu" ref={menuRef}>
         <button

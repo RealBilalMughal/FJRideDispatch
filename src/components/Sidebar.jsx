@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { IdCard, LayoutDashboard, ShieldCheck, UsersRound } from 'lucide-react'
+import { IdCard, LayoutDashboard, ShieldCheck, Users2, UsersRound } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 // Grouped like the BlackDrivo / GraphicSpark admin left panel: labelled
@@ -8,6 +8,10 @@ const NAV_SECTIONS = [
   {
     label: null,
     items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true }],
+  },
+  {
+    label: 'Dispatch',
+    items: [{ to: '/crew', label: 'Crew', icon: Users2, page: 'crew' }],
   },
   {
     label: 'Administration',

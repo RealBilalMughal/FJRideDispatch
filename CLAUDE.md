@@ -18,7 +18,8 @@ keys, tables or deploy targets with any other project.
 - Deploy: Vercel (separate project)
 
 ## Security
-- `.env` holds only `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (public, gitignored)
+- `.env`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_API_KEY`
+  (all public / browser keys, gitignored). Restrict the Maps key by HTTP referrer.
 - The `service_role` key must NEVER be in this frontend repo, never in a `VITE_`
   var, never committed. Server-only (Supabase Edge Function secrets) if ever needed.
 
@@ -48,12 +49,41 @@ keys, tables or deploy targets with any other project.
 - `private.has_perm(page, action)` ORs `allowed` across the caller's `user_roles`;
   super_admin bypasses. Helpers: `is_admin()`, `current_user_role()`, `is_active_user()`.
 - `AuthContext.can(page, action)` is the single client gate. Catalogue:
-  `src/lib/permissions.js` `PERMISSION_PAGES` (currently `dashboard`, `users`, `roles`).
+  `src/lib/permissions.js` `PERMISSION_PAGES` (currently `dashboard`, `crew`, `users`, `roles`).
 - **RULE - EVERY new navigable page gets a Role Access row**: (1) add to
   `PERMISSION_PAGES` with its sidebar `group`, (2) gate the nav item + page with
   `can('<key>', ...)`, (3) point its table RLS at `has_perm('<key>', ...)`, (4) seed
   the built-in `admin` row in a migration so plain admins keep access.
-- Migration: `supabase/migrations/20260903120000_init_auth_permissions.sql` (APPLIED).
+- Migrations: `20260903120000_init_auth_permissions.sql`, `20260903130000_cities_crew.sql` (APPLIED).
+
+## City scoping (a permission dimension)
+- `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
+  `user_cities (user_id, city_id)`. **No rows anywhere = every city** (permissive);
+  rows present = restricted to exactly those; `user_cities` overrides `role_cities`;
+  super_admin = every city. RLS helper `private.has_city(city_id)`.
+- **RULE - every city-scoped table's RLS ANDs `has_city(city_id)`** on top of
+  `has_perm(...)` (see `public.crew`). The row's `city_id` is checked on
+  insert/update too, so a Lahore-only user can only write Lahore rows.
+- Client: `src/context/CityProvider.jsx` + `useCity()`. `<CityFilter>` sits in the
+  topbar - a dropdown of "All + the user's cities", or a **locked** label when the
+  user can see exactly one city. `useCity().cityId` (null = All) -> list pages add
+  `.eq('city_id', cityId)`; add-forms default to it. Role Access has a "City access"
+  panel (By Role + By User) that writes `role_cities` / `user_cities`.
+
+## Shared display-ID series
+- ONE sequence `public.ref_no_seq` (starts 1001) feeds every entity table's
+  `ref_no bigint not null unique default nextval('public.ref_no_seq')`. Whatever
+  record is created next gets the next number regardless of type (crew 1001 ->
+  vendor 1002 -> ...). Shown as a **plain number** - no prefix, no `#`.
+- `grant usage, select on sequence public.ref_no_seq to authenticated, service_role`
+  in the migration that first uses it (already granted).
+
+## List-page conventions
+- Every list page has an **Export CSV** button - dumps the currently filtered rows
+  as a report (`src/lib/csv.js` `toCsv` + `downloadCsv`). Import (where it makes
+  sense) uses `parseCsvObjects` + a "Download sample" button.
+- `src/components/data/` kit: `DataTable`, `FilterBar` (search + `advanced` grid),
+  `Pagination`, `BulkBar`, `StatCards`.
 
 ## Edge Function `admin-users` - DEPLOYED (dyjgrxeqdvnxwcbwzkql)
 `supabase/functions/admin-users/index.ts`. The ONLY place the service_role key is
@@ -64,6 +94,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Pages
 - `Dashboard` - placeholder, always visible
+- `Crew` (`crew` perm, sidebar group "Dispatch") - table + advanced filters, CSV
+  export/import (`crew-sample.csv`). Add/Edit modal: name, contact, designation
+  (free text), city, stop name + **coordinates** ("31.9279, 74.9738" -> Google map
+  pin via `src/components/StopMap.jsx`, draggable). One stop per crew. City-scoped.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -81,5 +115,7 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] First super_admin: `bilal.mughal@buscaro.com`
       (auth id `5e8fba49-b6f5-4acc-8c70-b4c7ca126886`, `user_roles` -> super_admin)
 - [x] Public sign-up turned OFF
-- [ ] Get the dispatch data model + workflow, then design tables/RLS + pages
-- [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)
+- [x] City scoping + shared ref series + Crew page (migration `..._cities_crew.sql`)
+- [ ] Add `VITE_GOOGLE_MAPS_API_KEY` to `.env` (crew stop map; blank = placeholder)
+- [ ] Next dispatch tables (vendor, ...) - each uses `ref_no_seq` + `has_city`
+- [ ] Create Vercel project, link repo (env: `VITE_SUPABASE_*` + `VITE_GOOGLE_MAPS_API_KEY`)

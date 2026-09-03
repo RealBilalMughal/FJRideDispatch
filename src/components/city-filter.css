@@ -1,0 +1,44 @@
+.city-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 6px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--heading);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.city-filter svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.city-filter select {
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--heading);
+  cursor: pointer;
+  padding-right: 4px;
+}
+
+.city-filter.locked {
+  padding: 0 12px;
+  color: var(--body);
+  background: var(--surface);
+}
+
+@media (max-width: 560px) {
+  .city-filter {
+    padding-left: 8px;
+  }
+  .city-filter select {
+    max-width: 92px;
+  }
+}

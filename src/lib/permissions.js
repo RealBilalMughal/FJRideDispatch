@@ -50,6 +50,7 @@ export const ACTION_LABELS = {
 // `delete` on the users page means "deactivate".
 export const PERMISSION_PAGES = [
   { key: 'dashboard', label: 'Dashboard', group: 'Overview', actions: ['view'] },
+  { key: 'crew', label: 'Crew', group: 'Dispatch', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'users', label: 'User Management', group: 'Administration', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'roles', label: 'Role Access', group: 'Administration', actions: ['view', 'edit'] },
 ]

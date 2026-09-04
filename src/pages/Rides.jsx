@@ -32,6 +32,7 @@ import {
   statusLabel,
 } from '../lib/rideRoute'
 import { gmapsRoute, optimizeCrewOrder, routeInfo } from '../lib/ors'
+import { DEFAULT_SHIFT, shiftForTime, shiftLabel } from '../lib/shift'
 import { downloadCsv, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -54,9 +55,10 @@ const SELECT = `
   ride_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
   vehicle_id, airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
-  waypoints, distance_km, duration_min, status, return_of_ride_id, notes, created_at,
+  waypoints, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
   city:cities(name),
-  vehicle:vehicles(ref_no, vehicle_no, driver:drivers(ref_no, name)),
+  vehicle:vehicles(ref_no, vehicle_no),
+  driver:drivers!rides_driver_id_fkey(ref_no, name),
   ride_crew(seq, crew:crew(id, ref_no, name, stop_name, stop_lat, stop_lng))
 `
 
@@ -74,6 +76,8 @@ const EXPORT_COLS = [
   { key: 'origin', label: 'Origin' },
   { key: 'dest', label: 'Destination' },
   { key: 'vehicle', label: 'Vehicle' },
+  { key: 'shift', label: 'Shift' },
+  { key: 'driver', label: 'Driver' },
   { key: 'km', label: 'KM' },
   { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
@@ -114,6 +118,8 @@ export default function Rides() {
   const [flights, setFlights] = useState([])
   const [crew, setCrew] = useState([])
   const [vehicles, setVehicles] = useState([])
+  const [drivers, setDrivers] = useState([])
+  const [shiftWin, setShiftWin] = useState(DEFAULT_SHIFT)
   useEffect(() => {
     if (!canView) return
     supabase
@@ -126,8 +132,19 @@ export default function Rides() {
       .then(({ data }) => setCrew((data ?? []).filter((c) => c.is_active)))
     supabase
       .from('vehicles')
-      .select('id, ref_no, vehicle_no, city_id, is_active, driver:drivers(ref_no, name)')
+      .select('id, ref_no, vehicle_no, city_id, is_active, driver_id, night_driver_id')
       .then(({ data }) => setVehicles((data ?? []).filter((v) => v.is_active)))
+    supabase
+      .from('drivers')
+      .select('id, ref_no, name')
+      .then(({ data }) => setDrivers(data ?? []))
+    supabase
+      .from('dispatch_settings')
+      .select('day_start, night_start')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setShiftWin({ day_start: data.day_start.slice(0, 5), night_start: data.night_start.slice(0, 5) })
+      })
   }, [canView])
 
   const today = new Date().toISOString().slice(0, 10)
@@ -218,6 +235,11 @@ export default function Rides() {
       const dur = (info?.durationMin ?? 30) + BUFFER_MIN
       const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
 
+      // same vehicle, shift + driver by the return's start time
+      const rShift = shiftForTime(start_at, shiftWin)
+      const rVeh = vehicles.find((v) => v.id === r.vehicle_id)
+      const rDriverId = rVeh ? (rShift === 'night' ? rVeh.night_driver_id : rVeh.driver_id) : null
+
       const { data: ride, error } = await supabase
         .from('rides')
         .insert({
@@ -228,6 +250,8 @@ export default function Rides() {
           block_type: 'return_leg',
           ride_date: r.ride_date,
           vehicle_id: r.vehicle_id,
+          shift: r.vehicle_id ? rShift : null,
+          driver_id: rDriverId || null,
           airport_name: airport.name,
           airport_lat: airport.lat,
           airport_lng: airport.lng,
@@ -281,6 +305,8 @@ export default function Rides() {
       origin: r.origin_label ?? '',
       dest: r.dest_label ?? '',
       vehicle: r.vehicle?.vehicle_no ?? '',
+      shift: shiftLabel(r.shift),
+      driver: r.driver?.name ?? '',
       km: r.distance_km ?? '',
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
@@ -318,6 +344,8 @@ export default function Rides() {
     { key: 'origin', header: 'Origin', render: (r) => r.origin_label || '—' },
     { key: 'dest', header: 'Destination', render: (r) => r.dest_label || '—' },
     { key: 'veh', header: 'Vehicle', render: (r) => r.vehicle_text },
+    { key: 'shift', header: 'Shift', render: (r) => shiftLabel(r.shift) },
+    { key: 'rdriver', header: 'Driver', render: (r) => r.driver?.name || '—' },
     {
       key: 'km',
       header: 'KM',
@@ -495,6 +523,8 @@ export default function Rides() {
           flights={flights}
           crew={crew}
           vehicles={vehicles}
+          drivers={drivers}
+          shiftWin={shiftWin}
           allowedCities={allowedCities}
           defaultCityId={cityId}
           createdBy={profile?.id}
@@ -526,6 +556,8 @@ export default function Rides() {
           flights={flights}
           crew={crew}
           vehicles={vehicles}
+          drivers={drivers}
+          shiftWin={shiftWin}
           allowedCities={allowedCities}
           createdBy={profile?.id}
           onClose={() => setDetail(null)}
@@ -573,6 +605,8 @@ function RideModal({
   flights,
   crew,
   vehicles,
+  drivers = [],
+  shiftWin = DEFAULT_SHIFT,
   allowedCities,
   defaultCityId,
   createdBy,
@@ -587,6 +621,7 @@ function RideModal({
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
   const [startTouched, setStartTouched] = useState(false)
+  const [shiftOverride, setShiftOverride] = useState(null) // null = auto from Ride Time
 
   const initialCrew = [...(row?.ride_crew || [])]
     .sort((a, b) => a.seq - b.seq)
@@ -611,6 +646,17 @@ function RideModal({
   })
   const [crewList, setCrewList] = useState(initialCrew)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+
+  // day / night shift: auto from Ride Time, dispatcher can flip it
+  const autoShift = form.start_time ? shiftForTime(form.start_time, shiftWin) : row?.shift || 'day'
+  const shift = shiftOverride ?? autoShift
+  const selVehicle = vehicles.find((v) => v.id === form.vehicle_id)
+  const driverId = selVehicle
+    ? shift === 'night'
+      ? selVehicle.night_driver_id
+      : selVehicle.driver_id
+    : null
+  const driverName = driverId ? drivers.find((d) => d.id === driverId)?.name || '—' : ''
 
   const cityId = Number(form.city_id) || null
   const airport = useMemo(() => {
@@ -801,6 +847,8 @@ function RideModal({
       start_at: startAt,
       end_at: endAt,
       vehicle_id: form.vehicle_id || null,
+      shift: form.vehicle_id ? shift : null,
+      driver_id: driverId || null,
       airport_name: airport.name || null,
       airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
       airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
@@ -875,7 +923,8 @@ function RideModal({
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
             ['Vehicle', row.vehicle?.vehicle_no || '—'],
-            ['Driver', row.vehicle?.driver?.name || '—'],
+            ['Shift', shiftLabel(row.shift)],
+            ['Driver', row.driver?.name || '—'],
             ['Distance', row.distance_km != null ? `${row.distance_km} km` : '—'],
             ['Ride Time', row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
             ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
@@ -1138,6 +1187,37 @@ function RideModal({
             </span>
           )}
         </div>
+
+        {form.vehicle_id && (
+          <div className="field">
+            <label>Shift &amp; driver</label>
+            <div className="ra-modeswitch" style={{ marginBottom: 6 }}>
+              {['day', 'night'].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={shift === s ? 'on' : ''}
+                  onClick={() => setShiftOverride(shift === s ? null : s)}
+                >
+                  {shiftLabel(s)}
+                </button>
+              ))}
+            </div>
+            <input
+              className="input"
+              value={
+                driverName
+                  ? `${driverName} (${shiftLabel(shift).toLowerCase()} shift)`
+                  : `No ${shift} driver on this vehicle`
+              }
+              disabled
+            />
+            <span className="field-hint">
+              {shiftOverride ? 'Manually set. ' : 'Auto from Ride Time. '}
+              Day {fmtTime12(shiftWin.day_start)}–{fmtTime12(shiftWin.night_start)}.
+            </span>
+          </div>
+        )}
 
         <div className="field-row">
           <div className="field">

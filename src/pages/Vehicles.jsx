@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Car, Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
+import { Car, Clock, Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -8,6 +8,8 @@ import { useEntityRows } from '../lib/useEntityRows'
 import { fmtDate } from '../lib/format'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { useSelection } from '../lib/useSelection'
+import { DEFAULT_SHIFT } from '../lib/shift'
+import { fmtTime12 } from '../lib/time'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import SearchSelect from '../components/SearchSelect'
@@ -19,7 +21,7 @@ import StatCards from '../components/data/StatCards'
 
 const PAGE_SIZE = 15
 const SELECT =
-  'id, ref_no, vehicle_no, company, model, year, color, city_id, driver_id, is_active, created_at, city:cities(name), driver:drivers(ref_no, name)'
+  'id, ref_no, vehicle_no, company, model, year, color, city_id, driver_id, night_driver_id, is_active, created_at, city:cities(name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -29,7 +31,8 @@ const EXPORT_COLS = [
   { key: 'year', label: 'Year' },
   { key: 'color', label: 'Color' },
   { key: 'city', label: 'City' },
-  { key: 'driver', label: 'Driver' },
+  { key: 'day_driver', label: 'Day Driver' },
+  { key: 'night_driver', label: 'Night Driver' },
   { key: 'is_active', label: 'Active' },
   { key: 'created_at', label: 'Created' },
 ]
@@ -40,15 +43,19 @@ const SAMPLE_COLS = [
   { key: 'year', label: 'year' },
   { key: 'color', label: 'color' },
   { key: 'city', label: 'city' },
-  { key: 'driver', label: 'driver' },
+  { key: 'day_driver', label: 'day_driver' },
+  { key: 'night_driver', label: 'night_driver' },
 ]
 const SAMPLE = [
-  { vehicle_no: 'LEA-1234', company: 'Toyota', model: 'Corolla', year: '2019', color: 'White', city: 'Lahore', driver: 'Kamran Ali' },
-  { vehicle_no: 'ICT-5678', company: 'Honda', model: 'City', year: '2021', color: 'Silver', city: 'Islamabad', driver: '' },
+  { vehicle_no: 'LEA-1234', company: 'Toyota', model: 'Corolla', year: '2019', color: 'White', city: 'Lahore', day_driver: 'Kamran Ali', night_driver: 'Bilal Ahmed' },
+  { vehicle_no: 'ICT-5678', company: 'Honda', model: 'City', year: '2021', color: 'Silver', city: 'Islamabad', day_driver: '', night_driver: '' },
 ]
 
-const driverLabel = (d) => (d ? `(${d.ref_no}) ${d.name}` : '—')
 const NIL = '00000000-0000-0000-0000-000000000000'
+const nameOf = (drivers, id) => {
+  const d = drivers.find((x) => x.id === id)
+  return d ? d.name : ''
+}
 
 export default function Vehicles() {
   const { can, profile } = useAuth()
@@ -84,32 +91,57 @@ export default function Vehicles() {
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [shiftOpen, setShiftOpen] = useState(false)
+  const [shift, setShift] = useState(DEFAULT_SHIFT)
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
 
+  useEffect(() => {
+    if (!canView) return
+    supabase
+      .from('dispatch_settings')
+      .select('day_start, night_start')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setShift({ day_start: data.day_start.slice(0, 5), night_start: data.night_start.slice(0, 5) })
+      })
+  }, [canView])
+
   const list = useMemo(
-    () => rows.map((r) => ({ ...r, city_name: r.city?.name ?? '', driver_text: driverLabel(r.driver) })),
-    [rows],
+    () =>
+      rows.map((r) => ({
+        ...r,
+        city_name: r.city?.name ?? '',
+        day_driver_name: nameOf(drivers, r.driver_id),
+        night_driver_name: nameOf(drivers, r.night_driver_id),
+      })),
+    [rows, drivers],
   )
 
-  // which driver -> which vehicle_no (for the picker hint, within accessible rows)
-  const takenBy = useMemo(() => {
+  // driver -> vehicle_no, per shift (for the picker hint + pre-save clash checks)
+  const takenDay = useMemo(() => {
     const m = new Map()
-    for (const v of list) if (v.driver_id) m.set(v.driver_id, v.vehicle_no)
+    for (const v of rows) if (v.driver_id) m.set(v.driver_id, v.vehicle_no)
     return m
-  }, [list])
+  }, [rows])
+  const takenNight = useMemo(() => {
+    const m = new Map()
+    for (const v of rows) if (v.night_driver_id) m.set(v.night_driver_id, v.vehicle_no)
+    return m
+  }, [rows])
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase()
     return list.filter((r) => {
       if (statusFilter === 'active' && !r.is_active) return false
       if (statusFilter === 'inactive' && r.is_active) return false
-      if (driverFilter === 'assigned' && !r.driver_id) return false
-      if (driverFilter === 'unassigned' && r.driver_id) return false
+      const anyDriver = r.driver_id || r.night_driver_id
+      if (driverFilter === 'assigned' && !anyDriver) return false
+      if (driverFilter === 'unassigned' && anyDriver) return false
       if (
         s &&
-        !`${r.ref_no} ${r.vehicle_no} ${r.company ?? ''} ${r.model ?? ''} ${r.driver?.name ?? ''}`
+        !`${r.ref_no} ${r.vehicle_no} ${r.company ?? ''} ${r.model ?? ''} ${r.day_driver_name} ${r.night_driver_name}`
           .toLowerCase()
           .includes(s)
       )
@@ -123,7 +155,7 @@ export default function Vehicles() {
     () => ({
       total: list.length,
       active: list.filter((r) => r.is_active).length,
-      assigned: list.filter((r) => r.driver_id).length,
+      assigned: list.filter((r) => r.driver_id || r.night_driver_id).length,
     }),
     [list],
   )
@@ -156,7 +188,8 @@ export default function Vehicles() {
       year: r.year ?? '',
       color: r.color ?? '',
       city: r.city_name,
-      driver: r.driver ? r.driver.name : '',
+      day_driver: r.day_driver_name,
+      night_driver: r.night_driver_name,
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
     }))
@@ -185,7 +218,8 @@ export default function Vehicles() {
     { key: 'year', header: 'Year', render: (r) => r.year || '—' },
     { key: 'color', header: 'Color', render: (r) => r.color || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
-    { key: 'driver', header: 'Driver', render: (r) => r.driver_text },
+    { key: 'dday', header: 'Day Driver', render: (r) => r.day_driver_name || '—' },
+    { key: 'dnight', header: 'Night Driver', render: (r) => r.night_driver_name || '—' },
     {
       key: 'status',
       header: 'Status',
@@ -247,6 +281,15 @@ export default function Vehicles() {
           <button className="icon-btn" onClick={fetchRows} title="Refresh">
             <RefreshCw size={15} />
           </button>
+          {canEdit && (
+            <button
+              className="btn btn-ghost btn-square btn-sm"
+              onClick={() => setShiftOpen(true)}
+              title="Global day / night shift window"
+            >
+              <Clock size={14} /> Shift times
+            </button>
+          )}
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export
           </button>
@@ -343,7 +386,7 @@ export default function Vehicles() {
       {addOpen && (
         <VehicleModal
           drivers={drivers}
-          takenBy={takenBy}
+          takenDay={takenDay} takenNight={takenNight}
           allowedCities={allowedCities}
           defaultCityId={cityId}
           createdBy={profile?.id}
@@ -360,7 +403,7 @@ export default function Vehicles() {
           startInEdit={detail.edit}
           canEdit={canEdit}
           drivers={drivers}
-          takenBy={takenBy}
+          takenDay={takenDay} takenNight={takenNight}
           allowedCities={allowedCities}
           onClose={() => setDetail(null)}
           onDone={() => {
@@ -382,6 +425,17 @@ export default function Vehicles() {
         />
       )}
 
+      {shiftOpen && (
+        <ShiftTimesModal
+          value={shift}
+          onClose={() => setShiftOpen(false)}
+          onSaved={(v) => {
+            setShift(v)
+            setShiftOpen(false)
+          }}
+        />
+      )}
+
       <ConfirmDelete
         open={Boolean(pending)}
         title="Delete vehicle"
@@ -394,7 +448,64 @@ export default function Vehicles() {
   )
 }
 
-function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, takenBy, allowedCities, defaultCityId, createdBy, onClose, onDone }) {
+// ── Global day / night shift window ───────────────────────────────────────
+function ShiftTimesModal({ value, onClose, onSaved }) {
+  const [dayStart, setDayStart] = useState(value.day_start)
+  const [nightStart, setNightStart] = useState(value.night_start)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async () => {
+    setErr('')
+    if (!dayStart || !nightStart) return setErr('Both times are required')
+    if (dayStart >= nightStart) return setErr('Day start must be before night start')
+    setBusy(true)
+    const { error } = await supabase
+      .from('dispatch_settings')
+      .update({ day_start: dayStart, night_start: nightStart })
+      .eq('id', true)
+    setBusy(false)
+    if (error) return setErr(error.message)
+    toast.success('Shift times saved')
+    onSaved({ day_start: dayStart, night_start: nightStart })
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Shift times" width={400}>
+      <div className="modal-form">
+        {err && <div className="modal-error">{err}</div>}
+        <p className="confirm-msg">
+          One global window for every vehicle. Day = day start &rarr; night start; night is the rest
+          (wraps past midnight). Ride Dispatch uses this to pick a vehicle&rsquo;s day or night driver.
+        </p>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="sh-day">Day starts</label>
+            <input id="sh-day" type="time" className="input" value={dayStart} onChange={(e) => setDayStart(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="sh-night">Night starts</label>
+            <input id="sh-night" type="time" className="input" value={nightStart} onChange={(e) => setNightStart(e.target.value)} />
+          </div>
+        </div>
+        <span className="field-hint">
+          Day {fmtTime12(dayStart)} – {fmtTime12(nightStart)} · Night {fmtTime12(nightStart)} –{' '}
+          {fmtTime12(dayStart)}
+        </span>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-square" disabled={busy} onClick={save}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, takenDay, takenNight, allowedCities, defaultCityId, createdBy, onClose, onDone }) {
   const isAdd = !row
   const [editing, setEditing] = useState(isAdd || startInEdit)
   const [form, setForm] = useState({
@@ -404,7 +515,8 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     year: row?.year != null ? String(row.year) : '',
     color: row?.color ?? '',
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
-    driver_id: row?.driver_id ?? '',
+    driver_id: row?.driver_id ?? '', // day driver
+    night_driver_id: row?.night_driver_id ?? '',
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -415,17 +527,22 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     () => drivers.filter((d) => !form.city_id || d.city_id === Number(form.city_id)),
     [drivers, form.city_id],
   )
-  const driverOptions = cityDrivers.map((d) => {
-    const on = takenBy.get(d.id)
-    return {
-      value: d.id,
-      label: `(${d.ref_no}) ${d.name}`,
-      sub: on && on !== row?.vehicle_no ? `already on ${on}` : undefined,
-    }
-  })
+  const optionsFor = (taken, otherId) =>
+    cityDrivers
+      .filter((d) => d.id !== otherId)
+      .map((d) => {
+        const on = taken.get(d.id)
+        return {
+          value: d.id,
+          label: `(${d.ref_no}) ${d.name}`,
+          sub: on && on !== row?.vehicle_no ? `already on ${on}` : undefined,
+        }
+      })
 
   useEffect(() => {
     if (form.driver_id && !cityDrivers.some((d) => d.id === form.driver_id)) set('driver_id', '')
+    if (form.night_driver_id && !cityDrivers.some((d) => d.id === form.night_driver_id))
+      set('night_driver_id', '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.city_id])
 
@@ -435,17 +552,24 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     if (!form.vehicle_no.trim()) return setErr('Vehicle number is required')
     if (!form.city_id) return setErr('Pick a city')
     if (form.year && !/^\d{4}$/.test(form.year.trim())) return setErr('Year must be a 4-digit number')
+    if (form.driver_id && form.driver_id === form.night_driver_id)
+      return setErr('Day and night driver must be different people')
 
-    // a driver can only be on one vehicle
-    if (form.driver_id) {
-      const { data: clash } = await supabase
+    // a driver can hold one day slot and one night slot only
+    const checkSlot = async (id, col, label) => {
+      if (!id) return null
+      const { data } = await supabase
         .from('vehicles')
         .select('vehicle_no')
-        .eq('driver_id', form.driver_id)
+        .eq(col, id)
         .neq('id', row?.id ?? NIL)
         .maybeSingle()
-      if (clash) return setErr(`This driver is already assigned to vehicle ${clash.vehicle_no}`)
+      return data ? `The ${label} driver is already the ${label} driver of vehicle ${data.vehicle_no}` : null
     }
+    const dayClash = await checkSlot(form.driver_id, 'driver_id', 'day')
+    if (dayClash) return setErr(dayClash)
+    const nightClash = await checkSlot(form.night_driver_id, 'night_driver_id', 'night')
+    if (nightClash) return setErr(nightClash)
 
     setBusy(true)
     const payload = {
@@ -456,6 +580,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
       color: form.color.trim() || null,
       city_id: Number(form.city_id),
       driver_id: form.driver_id || null,
+      night_driver_id: form.night_driver_id || null,
     }
     const res = isAdd
       ? await supabase.from('vehicles').insert({ ...payload, created_by: createdBy ?? null })
@@ -465,10 +590,11 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
       if (res.error.code === '23505') {
         return setErr(
           res.error.message.includes('driver')
-            ? 'This driver is already assigned to another vehicle'
+            ? 'One of these drivers is already assigned to another vehicle in that shift'
             : `Vehicle number "${form.vehicle_no}" already exists`,
         )
       }
+      if (res.error.code === '23514') return setErr('Day and night driver must be different people')
       return setErr(res.error.message)
     }
     toast.success(isAdd ? 'Vehicle added' : 'Vehicle updated')
@@ -487,7 +613,8 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
             ['Year', row.year || '—'],
             ['Color', row.color || '—'],
             ['City', cityName],
-            ['Driver', driverLabel(row.driver)],
+            ['Day driver', row.day_driver_name || '—'],
+            ['Night driver', row.night_driver_name || '—'],
             ['Status', row.is_active ? 'Active' : 'Inactive'],
           ].map(([k, v]) => (
             <div className="view-row" key={k}>
@@ -562,15 +689,27 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
           </select>
         </div>
         <div className="field">
-          <label>Assign driver</label>
+          <label>Day driver</label>
           <SearchSelect
             value={form.driver_id}
             onChange={(v) => set('driver_id', v)}
-            options={[{ value: '', label: 'No driver' }, ...driverOptions]}
+            options={[{ value: '', label: 'No day driver' }, ...optionsFor(takenDay, form.night_driver_id)]}
             placeholder={form.city_id ? 'Search a driver…' : 'Pick a city first'}
             disabled={!form.city_id}
           />
-          <span className="field-hint">A driver already on another vehicle can&rsquo;t be assigned here.</span>
+        </div>
+        <div className="field">
+          <label>Night driver</label>
+          <SearchSelect
+            value={form.night_driver_id}
+            onChange={(v) => set('night_driver_id', v)}
+            options={[{ value: '', label: 'No night driver' }, ...optionsFor(takenNight, form.driver_id)]}
+            placeholder={form.city_id ? 'Search a driver…' : 'Pick a city first'}
+            disabled={!form.city_id}
+          />
+          <span className="field-hint">
+            Ride Dispatch picks the driver by the ride&rsquo;s time (day / night shift).
+          </span>
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
@@ -604,13 +743,14 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
     const hc = checkHeaders(
       headers,
       ['vehicle_no', 'city'],
-      ['vehicle_no', 'company', 'model', 'year', 'color', 'city', 'driver'],
+      ['vehicle_no', 'company', 'model', 'year', 'color', 'city', 'day_driver', 'night_driver', 'driver'],
     )
     if (!hc.ok) {
       setErr(hc.error)
       return
     }
-    const seenDrivers = new Set()
+    const seenDay = new Set()
+    const seenNight = new Set()
     const ok = []
     const skipped = []
     records.forEach((r, i) => {
@@ -622,17 +762,24 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
       const year = (r.year || '').trim()
       if (year && !/^\d{4}$/.test(year)) return skipped.push({ line, reason: 'year must be 4 digits' })
 
-      let driver_id = null
-      const dname = (r.driver || '').trim().toLowerCase()
-      if (dname) {
-        const match = drivers.filter((d) => d.city_id === cityId && d.name.toLowerCase() === dname)
-        if (match.length === 0) return skipped.push({ line, reason: `driver "${r.driver}" not found in ${r.city}` })
-        if (match.length > 1) return skipped.push({ line, reason: `driver "${r.driver}" is ambiguous` })
-        if (seenDrivers.has(match[0].id))
-          return skipped.push({ line, reason: `driver "${r.driver}" used twice in this file` })
-        seenDrivers.add(match[0].id)
-        driver_id = match[0].id
+      const resolve = (raw, seen, shift) => {
+        const nm = (raw || '').trim().toLowerCase()
+        if (!nm) return { id: null }
+        const match = drivers.filter((d) => d.city_id === cityId && d.name.toLowerCase() === nm)
+        if (match.length === 0) return { err: `${shift} driver "${raw}" not found in ${r.city}` }
+        if (match.length > 1) return { err: `${shift} driver "${raw}" is ambiguous` }
+        if (seen.has(match[0].id)) return { err: `${shift} driver "${raw}" used twice in this file` }
+        seen.add(match[0].id)
+        return { id: match[0].id }
       }
+      // `driver` accepted as an alias for day_driver
+      const day = resolve(r.day_driver ?? r.driver, seenDay, 'Day')
+      if (day.err) return skipped.push({ line, reason: day.err })
+      const night = resolve(r.night_driver, seenNight, 'Night')
+      if (night.err) return skipped.push({ line, reason: night.err })
+      if (day.id && day.id === night.id)
+        return skipped.push({ line, reason: 'day and night driver are the same person' })
+
       ok.push({
         vehicle_no: vno,
         company: (r.company || '').trim() || null,
@@ -640,7 +787,8 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
         year: year ? Number(year) : null,
         color: (r.color || '').trim() || null,
         city_id: cityId,
-        driver_id,
+        driver_id: day.id,
+        night_driver_id: night.id,
         created_by: createdBy ?? null,
       })
     })
@@ -668,8 +816,10 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
       <div className="modal-form">
         {err && <div className="modal-error">{err}</div>}
         <p className="confirm-msg">
-          CSV columns: <b>vehicle_no, company, model, year, color, city, driver</b>. Driver is
-          optional, matched by name within the city, and each driver can appear once.
+          CSV columns:{' '}
+          <b>vehicle_no, company, model, year, color, city, day_driver, night_driver</b>. Drivers
+          are optional, matched by name within the city; each driver can hold one day and one
+          night slot only.
         </p>
         <button
           type="button"

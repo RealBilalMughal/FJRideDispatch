@@ -125,10 +125,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   - **Driver**: name, contact, city, **vendor (required)** - `SearchSelect`
     filtered to the driver's city; shown as `(refNo) Vendor Name`.
   - **Vehicle**: vehicle_no (unique), company, model, year (4 digits), color, city,
-    **driver (optional)** - `SearchSelect` filtered to the vehicle's city. A driver
-    can be on ONE vehicle only: `vehicles_driver_uniq` partial unique index +
-    a pre-save check -> "already assigned to vehicle <no>". `drivers.vendor_id`
-    is `on delete restrict`; `vehicles.driver_id` is `on delete set null`.
+    **Day driver + Night driver** (both optional) - a 24h vehicle with a 2-driver
+    shift. `driver_id` = day, `night_driver_id` = night. A driver holds at most one
+    day slot and one night slot (two partial unique indexes) and day != night on a
+    vehicle (`vehicles_day_night_distinct`). Both FKs `on delete set null`.
+    `drivers.vendor_id` is `on delete restrict`.
+  - **Global shift window**: `public.dispatch_settings` (one row, `day_start` /
+    `night_start`, default 08:00 / 20:00). Edited via the "Shift times" button in
+    the Vehicles header (admin / `vehicles.edit`). `src/lib/shift.js`
+    `shiftForTime()` -> 'day' | 'night'. Day = [day_start, night_start); night wraps.
 - `Flights` (`flights` perm, sidebar group "Roster") - city-scoped, CSV
   export/import. Fields: flight_no (`9P841`), flight_code (`LHE-DXB`), route
   (`Lahore - Dubai`), **block_type** (deadhead / pickup / dropoff / return_leg,
@@ -168,7 +173,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   export and view. Route point labels are the **stop name** (not the crew name);
   the Vehicle column/field shows `vehicle_no` only; the Starts column is
   **"Ride Time"**.
-- The form asks only for **Ride starts** (auto-suggested: pickup = check-in -
+- **Shift + driver**: when a vehicle is picked, a Day/Night toggle (auto from the
+  ride's start time vs `dispatch_settings`, dispatcher can flip) picks that
+  vehicle's day or night driver. The ride snapshots `shift` + `driver_id`. Table
+  and view show Shift + Driver; export too.
+- The form asks only for **Ride Time** (start; auto-suggested: pickup = check-in -
   drive time, dropoff = check-out; editable). **ETA** (= start + ORS drive time)
   and the internal `end_at` (= start + drive + 30-min buffer, for the vehicle
   conflict) are computed, never typed. No status field - rides land as

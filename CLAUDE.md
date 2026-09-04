@@ -184,8 +184,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - Flight pick -> snapshot flight_no/code, auto block_type + city, and the
   flight_time fills check-in (pickup) or check-out (dropoff). check-in/out each
   keep an `_old` (scheduled, from the flight) + `_new` (as dispatched) value;
-  labelled **"Check-in" / "Actual"** (and "Check-out" / "Actual") in the table,
-  export and view - two columns per pair, the second always just "Actual".
+  labelled **"Check-in" / "Actual"** (and "Check-out" / "Actual") - export and
+  the view modal keep these as two separate columns/rows per pair. **The
+  table doesn't**: `CheckCell` stacks Actual (if set) below the scheduled
+  time inside the single "Check-in"/"Check-out" column (muted `.secondary`
+  second line, like `CrewCell`'s 2+-crew stacking) rather than a second
+  column - table-only, a deliberate exception to the one-value-per-column rule.
   Route point labels are the **stop name** (not the crew name); the Vehicle
   column/field shows `vehicle_no` only; the Starts column is **"Ride Time"**.
 - **Shift + driver**: when a vehicle is picked, a **manual** Day/Night pill toggle

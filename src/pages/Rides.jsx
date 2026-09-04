@@ -142,6 +142,21 @@ function CrewCell({ rc }) {
   )
 }
 
+// Check-in/Check-out table cell: the scheduled time, with the Actual time (if
+// set) stacked below it - one column instead of two, table-only (export and
+// the view modal keep them as separate Check-in/Actual columns/rows).
+function CheckCell({ scheduled, actual }) {
+  const s = fmtTime12(scheduled) || '—'
+  const a = fmtTime12(actual)
+  if (!a) return s
+  return (
+    <div className="crew-cell-stack">
+      <div>{s}</div>
+      <div className="secondary">{a}</div>
+    </div>
+  )
+}
+
 export default function Rides() {
   const { can, profile } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
@@ -480,7 +495,6 @@ export default function Rides() {
     )
   }
 
-  const t12 = (t) => fmtTime12(t) || '—'
   const columns = [
     { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.display_ref}</span> },
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
@@ -488,10 +502,16 @@ export default function Rides() {
     { key: 'fno', header: 'Flight', render: (r) => r.flight_no || '—' },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
-    { key: 'cio', header: 'Check-in', render: (r) => t12(r.checkin_old) },
-    { key: 'cin', header: 'Actual', render: (r) => t12(r.checkin_new) },
-    { key: 'coo', header: 'Check-out', render: (r) => t12(r.checkout_old) },
-    { key: 'con', header: 'Actual', render: (r) => t12(r.checkout_new) },
+    {
+      key: 'cio',
+      header: 'Check-in',
+      render: (r) => <CheckCell scheduled={r.checkin_old} actual={r.checkin_new} />,
+    },
+    {
+      key: 'coo',
+      header: 'Check-out',
+      render: (r) => <CheckCell scheduled={r.checkout_old} actual={r.checkout_new} />,
+    },
     { key: 'crew', header: 'Crew', render: (r) => <CrewCell rc={r.ride_crew} /> },
     { key: 'crewcount', header: 'Count', render: (r) => r.crew_count },
     { key: 'origin', header: 'Origin', render: (r) => r.origin_label || '—' },

@@ -88,6 +88,7 @@ const EXPORT_COLS = [
   { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
   { key: 'km', label: 'KM' },
+  { key: 'notes', label: 'Note' },
 ]
 
 const DATE_PRESETS = [
@@ -198,6 +199,7 @@ export default function Rides() {
   const [genOpen, setGenOpen] = useState(false)
   const [bufferOpen, setBufferOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit }
+  const [noteFor, setNoteFor] = useState(null) // a ride row, for the note popup
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
   const [returnFor, setReturnFor] = useState(null) // a dropoff ride
@@ -415,6 +417,7 @@ export default function Rides() {
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
+      notes: r.notes ?? '',
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
     downloadCsv(`rides-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(EXPORT_COLS, data))
@@ -500,7 +503,7 @@ export default function Rides() {
               <button
                 title={`Note: ${r.notes}`}
                 className="row-actions-note"
-                onClick={() => setDetail({ row: r, edit: false })}
+                onClick={() => setNoteFor(r)}
               >
                 <MessageSquare size={13} />
               </button>
@@ -771,6 +774,7 @@ export default function Rides() {
           }}
         />
       )}
+      {noteFor && <NotePopup row={noteFor} onClose={() => setNoteFor(null)} />}
 
       <ConfirmDialog
         open={Boolean(returnFor)}
@@ -798,6 +802,32 @@ export default function Rides() {
         onClose={() => !deleting && setPending(null)}
       />
     </div>
+  )
+}
+
+// ── Note popup ────────────────────────────────────────────────────────────
+// Opened from the row-actions note icon. Deliberately minimal - just the
+// three things asked for: Ride ID (as the modal title, same as the full
+// view's header), Flight No, then the note itself.
+function NotePopup({ row, onClose }) {
+  return (
+    <Modal open onClose={onClose} title={`Ride ${row.ref_no}`} width={420}>
+      <div className="modal-form">
+        <div className="view-row">
+          <span className="view-label">Flight</span>
+          <span className="view-value">{row.flight_no || '—'}</span>
+        </div>
+        <div className="view-row">
+          <span className="view-label">Note</span>
+          <span className="view-value">{row.notes || '—'}</span>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

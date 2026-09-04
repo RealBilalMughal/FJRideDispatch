@@ -222,7 +222,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   shown in the read-only view row, which also gained a **Notes** row) - Status
   revisit later. A **note icon** (`MessageSquare`, after View) only renders
   when `ride.notes` is set, always accent-highlighted (like an unread chat
-  bubble - visibility itself is the signal) - click opens the same View modal.
+  bubble - visibility itself is the signal) - click opens `NotePopup`, a
+  deliberately tiny modal (title = `Ride <ref_no>`, same as the full view's
+  header but without the block suffix, then just Flight and Note) - not the
+  full View modal. CSV export gained a matching **Note** column (last).
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
   edit per-city via the **Airports** button on the Crew page (see Pages ->
   Crew), or directly on `cities.airport_*`.

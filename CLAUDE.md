@@ -36,6 +36,8 @@ keys, tables or deploy targets with any other project.
 - **Left sidebar: LIGHT**, sectioned with uppercase labels + `#e6e6e6` brand strip.
   Active nav = accent text + a 3px accent bar on the left edge (no filled pill).
   lucide icons at `size={17}`. `src/components/Sidebar.jsx` + `layout.css`.
+  Sections: Dispatch (Ride, Vehicle Board), Roster (Crew, Flights), Fleet
+  (Vendors, Drivers, Vehicles), Administration, Account.
 - **No topbar** - a floating profile chip top-right (`src/components/Topbar.jsx`).
 - **Modals** all use `src/components/Modal.jsx` (closes only via X / Esc, never a
   backdrop click). **Never `window.confirm` / `alert`** - use `ConfirmDialog.jsx`
@@ -107,7 +109,7 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Pages
 - `Dashboard` - placeholder, always visible
-- `Crew` (`crew` perm, sidebar group "Dispatch") - table (ID / Name / Phone /
+- `Crew` (`crew` perm, sidebar group "Roster") - table (ID / Name / Phone /
   Designation / City / Stop / Coordinates), advanced filters, CSV export + import
   (`crew-sample.csv`: name, phone, designation, city, stop_name, coordinates -
   one `"lat, lng"` cell, same format as the form). Coordinates cell has a copy
@@ -127,7 +129,7 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     can be on ONE vehicle only: `vehicles_driver_uniq` partial unique index +
     a pre-save check -> "already assigned to vehicle <no>". `drivers.vendor_id`
     is `on delete restrict`; `vehicles.driver_id` is `on delete set null`.
-- `Flights` (`flights` perm, sidebar group "Dispatch") - city-scoped, CSV
+- `Flights` (`flights` perm, sidebar group "Roster") - city-scoped, CSV
   export/import. Fields: flight_no (`9P841`), flight_code (`LHE-DXB`), route
   (`Lahore - Dubai`), **block_type** (deadhead / pickup / dropoff / return_leg,
   CHECK-constrained), **flight_time** (`time`), city. Time is stored 24h but
@@ -150,7 +152,7 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   (`radiuses: -1` so airport/stop points snap to the nearest road). `gmapsRoute()`
   builds a keyless Google Maps directions URL for the "open route" action.
 
-## Ride Dispatch (`rides` page, group "Dispatch")
+## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).
   Vehicle double-booking is blocked by an `EXCLUDE USING gist` on
   `(vehicle_id, tstzrange(start_at, end_at))` - client pre-checks and shows

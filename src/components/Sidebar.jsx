@@ -12,8 +12,13 @@ const NAV_SECTIONS = [
   {
     label: 'Dispatch',
     items: [
-      { to: '/rides', label: 'Ride Dispatch', icon: Route, page: 'rides' },
+      { to: '/rides', label: 'Ride', icon: Route, page: 'rides' },
       { to: '/vehicle-board', label: 'Vehicle Board', icon: Calendar, page: 'rides' },
+    ],
+  },
+  {
+    label: 'Roster',
+    items: [
       { to: '/crew', label: 'Crew', icon: Users2, page: 'crew' },
       { to: '/flights', label: 'Flights', icon: Plane, page: 'flights' },
     ],

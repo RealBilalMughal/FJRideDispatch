@@ -297,7 +297,7 @@ export default function Rides() {
         <div className="card placeholder-card">
           <Shield size={28} color="var(--muted)" />
           <h2>No access</h2>
-          <p>You don&rsquo;t have permission to view Ride Dispatch.</p>
+          <p>You don&rsquo;t have permission to view Rides.</p>
         </div>
       </div>
     )
@@ -388,7 +388,7 @@ export default function Rides() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Ride Dispatch</h1>
+          <h1 className="page-title">Ride</h1>
           <p className="page-subtitle">
             {stats.total} ride(s) · {cityName}
           </p>

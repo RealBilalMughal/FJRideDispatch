@@ -50,9 +50,9 @@ export const ACTION_LABELS = {
 // `delete` on the users page means "deactivate".
 export const PERMISSION_PAGES = [
   { key: 'dashboard', label: 'Dashboard', group: 'Overview', actions: ['view'] },
-  { key: 'crew', label: 'Crew', group: 'Dispatch', actions: ['view', 'add', 'edit', 'delete'] },
-  { key: 'flights', label: 'Flights', group: 'Dispatch', actions: ['view', 'add', 'edit', 'delete'] },
-  { key: 'rides', label: 'Ride Dispatch', group: 'Dispatch', actions: ['view', 'add', 'edit', 'delete'] },
+  { key: 'rides', label: 'Ride', group: 'Dispatch', actions: ['view', 'add', 'edit', 'delete'] },
+  { key: 'crew', label: 'Crew', group: 'Roster', actions: ['view', 'add', 'edit', 'delete'] },
+  { key: 'flights', label: 'Flights', group: 'Roster', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'vendors', label: 'Vendors', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'drivers', label: 'Drivers', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'vehicles', label: 'Vehicles', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },

@@ -122,6 +122,13 @@
   color: var(--muted);
 }
 
+/* Flight/Vehicle/Driver filters are type-to-search (SearchSelect) - give the
+   wrapper a fixed width so the row doesn't jump around as a selection changes */
+.filter-searchselect {
+  width: 170px;
+  flex-shrink: 0;
+}
+
 /* day / night shift picker (ride form) */
 .shift-picker {
   display: flex;

@@ -266,6 +266,34 @@ export default function Rides() {
   }, [list, search, blockFilter, dateFrom, dateTo, flightFilter, vehicleFilter, shiftFilter, driverFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // type-to-search filter option lists (Flight/Vehicle/Driver can get long)
+  const flightFilterOpts = useMemo(
+    () => [
+      { value: '', label: 'All flights' },
+      ...flights.map((f) => ({
+        value: f.id,
+        label: f.flight_no,
+        sub: f.flight_code || undefined,
+      })),
+    ],
+    [flights],
+  )
+  const vehicleFilterOpts = useMemo(
+    () => [
+      { value: '', label: 'All vehicles' },
+      ...vehicles.map((v) => ({ value: v.id, label: v.vehicle_no })),
+    ],
+    [vehicles],
+  )
+  const driverFilterOpts = useMemo(
+    () => [
+      { value: '', label: 'All drivers' },
+      ...drivers.map((d) => ({ value: d.id, label: `(${d.ref_no}) ${d.name}` })),
+    ],
+    [drivers],
+  )
+
   const stats = useMemo(
     () => ({
       total: list.length,
@@ -609,37 +637,28 @@ export default function Rides() {
                 </option>
               ))}
             </select>
-            <select
-              className="filter-select"
-              value={flightFilter}
-              onChange={(e) => {
-                setFlightFilter(e.target.value)
-                setPage(1)
-              }}
-            >
-              <option value="">All flights</option>
-              {flights.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.flight_no}
-                  {f.flight_code ? ` · ${f.flight_code}` : ''}
-                </option>
-              ))}
-            </select>
-            <select
-              className="filter-select"
-              value={vehicleFilter}
-              onChange={(e) => {
-                setVehicleFilter(e.target.value)
-                setPage(1)
-              }}
-            >
-              <option value="">All vehicles</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicle_no}
-                </option>
-              ))}
-            </select>
+            <div className="filter-searchselect">
+              <SearchSelect
+                value={flightFilter}
+                onChange={(v) => {
+                  setFlightFilter(v)
+                  setPage(1)
+                }}
+                options={flightFilterOpts}
+                placeholder="All flights"
+              />
+            </div>
+            <div className="filter-searchselect">
+              <SearchSelect
+                value={vehicleFilter}
+                onChange={(v) => {
+                  setVehicleFilter(v)
+                  setPage(1)
+                }}
+                options={vehicleFilterOpts}
+                placeholder="All vehicles"
+              />
+            </div>
             <select
               className="filter-select"
               value={shiftFilter}
@@ -652,21 +671,17 @@ export default function Rides() {
               <option value="day">{shiftLabel('day')}</option>
               <option value="night">{shiftLabel('night')}</option>
             </select>
-            <select
-              className="filter-select"
-              value={driverFilter}
-              onChange={(e) => {
-                setDriverFilter(e.target.value)
-                setPage(1)
-              }}
-            >
-              <option value="">All drivers</option>
-              {drivers.map((d) => (
-                <option key={d.id} value={d.id}>
-                  ({d.ref_no}) {d.name}
-                </option>
-              ))}
-            </select>
+            <div className="filter-searchselect">
+              <SearchSelect
+                value={driverFilter}
+                onChange={(v) => {
+                  setDriverFilter(v)
+                  setPage(1)
+                }}
+                options={driverFilterOpts}
+                placeholder="All drivers"
+              />
+            </div>
           </>
         }
       />

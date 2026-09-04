@@ -84,6 +84,56 @@
   font-weight: 700;
 }
 
+/* day / night shift picker (ride form) */
+.shift-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.shift-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface);
+}
+
+.shift-toggle button {
+  border: 0;
+  background: none;
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.shift-toggle button:hover {
+  color: var(--heading);
+}
+
+.shift-toggle button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.shift-driver {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.shift-driver.empty .primary {
+  color: var(--danger);
+}
+
 .row-actions-link {
   width: 28px;
   height: 28px;

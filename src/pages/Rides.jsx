@@ -28,6 +28,7 @@ import {
   buildRoutePoints,
   crewRule,
   primaryTimeSlot,
+  rideTimeLabel,
   routeComplete,
   statusLabel,
 } from '../lib/rideRoute'
@@ -48,6 +49,7 @@ import './Rides.css'
 
 const PAGE_SIZE = 15
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time
+const AIRPORT_ARRIVAL_MIN = 90 // pickup: must be AT the airport this long before check-in
 const NIL = '00000000-0000-0000-0000-000000000000'
 
 const SELECT = `
@@ -95,6 +97,12 @@ const crewNames = (rc) =>
     .map((x) => x.crew?.name)
     .filter(Boolean)
     .join(', ')
+
+// "2 · Ahmed Raza, Bilal Khan"
+const crewCountedText = (rc) => {
+  const names = crewNames(rc)
+  return names ? `${(rc || []).length} · ${names}` : '—'
+}
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
@@ -167,7 +175,7 @@ export default function Rides() {
       rows.map((r) => ({
         ...r,
         city_name: r.city?.name ?? '',
-        crew_text: crewNames(r.ride_crew) || '—',
+        crew_text: crewCountedText(r.ride_crew),
         vehicle_text: vehicleText(r.vehicle),
       })),
     [rows],
@@ -307,7 +315,7 @@ export default function Rides() {
       vehicle: r.vehicle?.vehicle_no ?? '',
       shift: shiftLabel(r.shift),
       driver: r.driver?.name ?? '',
-      km: r.distance_km ?? '',
+      km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       status: statusLabel(r.status),
@@ -349,7 +357,7 @@ export default function Rides() {
     {
       key: 'km',
       header: 'KM',
-      render: (r) => (r.distance_km != null ? `${r.distance_km} km` : '—'),
+      render: (r) => (r.distance_km != null ? Number(r.distance_km).toFixed(2) : '—'),
     },
     {
       key: 'starts',
@@ -733,9 +741,9 @@ function RideModal({
 
   const durMin = routeData?.durationMin ?? row?.duration_min ?? null
 
-  // auto-suggest "Ride starts" from the block + its flight time + road duration.
-  // Pickup: leave the airport so you ARRIVE by check-in  -> start = check-in - drive.
-  // Drop:   the ride begins when the crew checks out       -> start = check-out.
+  // auto-suggest "Pickup Time" / "Ride Time" from the block + its flight time + road duration.
+  // Pickup: crew must be AT the airport 90 min before check-in -> start = check-in - 90 - drive.
+  // Drop:   the ride begins when the crew checks out            -> start = check-out.
   useEffect(() => {
     if (startTouched) return
     const anchor =
@@ -751,7 +759,10 @@ function RideModal({
       const v = ((x % 1440) + 1440) % 1440
       return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`
     }
-    set('start_time', form.block_type === 'pickup' ? fmt(mins - (durMin ?? 0)) : anchor)
+    set(
+      'start_time',
+      form.block_type === 'pickup' ? fmt(mins - AIRPORT_ARRIVAL_MIN - (durMin ?? 0)) : anchor,
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [durMin, form.block_type, form.checkin_new, form.checkin_old, form.checkout_new, form.checkout_old])
 
@@ -919,14 +930,14 @@ function RideModal({
             ['Check-in Actual', fmtTime12(row.checkin_new) || '—'],
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
             ['Check-out Actual', fmtTime12(row.checkout_new) || '—'],
-            ['Crew', crewNames(row.ride_crew) || '—'],
+            ['Crew', crewCountedText(row.ride_crew)],
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
             ['Vehicle', row.vehicle?.vehicle_no || '—'],
             ['Shift', shiftLabel(row.shift)],
             ['Driver', row.driver?.name || '—'],
-            ['Distance', row.distance_km != null ? `${row.distance_km} km` : '—'],
-            ['Ride Time', row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
+            ['Distance', row.distance_km != null ? `${Number(row.distance_km).toFixed(2)} km` : '—'],
+            [rideTimeLabel(row.block_type), row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
             ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
             ['Status', statusLabel(row.status)],
           ].map(([k, v]) => (
@@ -1062,39 +1073,49 @@ function RideModal({
           </div>
         </div>
 
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="r-cin">Check-in Actual</label>
-            <input
-              id="r-cin"
-              type="time"
-              className="input"
-              value={form.checkin_new}
-              onChange={(e) => set('checkin_new', e.target.value)}
-            />
-            {form.checkin_old && form.checkin_old !== form.checkin_new && (
-              <span className="field-hint">check-in {fmtTime12(form.checkin_old)}</span>
-            )}
+        {form.block_type === 'pickup' && (
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="r-cio">Check-in</label>
+              <input id="r-cio" type="time" className="input" value={form.checkin_old} disabled />
+              <span className="field-hint">Scheduled, from the flight</span>
+            </div>
+            <div className="field">
+              <label htmlFor="r-cin">Check-in Actual</label>
+              <input
+                id="r-cin"
+                type="time"
+                className="input"
+                value={form.checkin_new}
+                onChange={(e) => set('checkin_new', e.target.value)}
+              />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="r-cout">Check-out Actual</label>
-            <input
-              id="r-cout"
-              type="time"
-              className="input"
-              value={form.checkout_new}
-              onChange={(e) => set('checkout_new', e.target.value)}
-            />
-            {form.checkout_old && form.checkout_old !== form.checkout_new && (
-              <span className="field-hint">check-out {fmtTime12(form.checkout_old)}</span>
-            )}
+        )}
+        {form.block_type === 'dropoff' && (
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="r-coo">Check-out</label>
+              <input id="r-coo" type="time" className="input" value={form.checkout_old} disabled />
+              <span className="field-hint">Scheduled, from the flight</span>
+            </div>
+            <div className="field">
+              <label htmlFor="r-con">Check-out Actual</label>
+              <input
+                id="r-con"
+                type="time"
+                className="input"
+                value={form.checkout_new}
+                onChange={(e) => set('checkout_new', e.target.value)}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* crew */}
         <div className="field">
           <label>
-            Crew{' '}
+            Crew <span className="badge badge-accent">{crewList.length}</span>{' '}
             <span className="field-hint">
               (
               {rule.max === rule.min
@@ -1157,7 +1178,7 @@ function RideModal({
             Route{' '}
             {km != null && (
               <span className="ride-km-badge">
-                {km} km{durMin != null ? ` · ${durMin} min` : ''}
+                {Number(km).toFixed(2)} km{durMin != null ? ` · ${durMin} min` : ''}
               </span>
             )}
           </label>
@@ -1190,38 +1211,36 @@ function RideModal({
 
         {form.vehicle_id && (
           <div className="field">
-            <label>Shift &amp; driver</label>
-            <div className="ra-modeswitch" style={{ marginBottom: 6 }}>
-              {['day', 'night'].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className={shift === s ? 'on' : ''}
-                  onClick={() => setShiftOverride(shift === s ? null : s)}
-                >
-                  {shiftLabel(s)}
-                </button>
-              ))}
+            <label>Shift &amp; Driver</label>
+            <div className="shift-picker">
+              <div className="shift-toggle">
+                {['day', 'night'].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={shift === s ? 'on' : ''}
+                    onClick={() => setShiftOverride(shift === s ? null : s)}
+                  >
+                    {shiftLabel(s)}
+                  </button>
+                ))}
+              </div>
+              <div className={`shift-driver${driverName ? '' : ' empty'}`}>
+                <span className="primary">{driverName || `No ${shiftLabel(shift).toLowerCase()} driver`}</span>
+                <span className="secondary">
+                  {shiftOverride ? 'Manually set' : `Auto from ${rideTimeLabel(form.block_type)}`}
+                </span>
+              </div>
             </div>
-            <input
-              className="input"
-              value={
-                driverName
-                  ? `${driverName} (${shiftLabel(shift).toLowerCase()} shift)`
-                  : `No ${shift} driver on this vehicle`
-              }
-              disabled
-            />
             <span className="field-hint">
-              {shiftOverride ? 'Manually set. ' : 'Auto from Ride Time. '}
-              Day {fmtTime12(shiftWin.day_start)}–{fmtTime12(shiftWin.night_start)}.
+              Day {fmtTime12(shiftWin.day_start)}–{fmtTime12(shiftWin.night_start)}, night the rest.
             </span>
           </div>
         )}
 
         <div className="field-row">
           <div className="field">
-            <label htmlFor="r-start">Ride Time</label>
+            <label htmlFor="r-start">{rideTimeLabel(form.block_type)}</label>
             <input
               id="r-start"
               type="time"
@@ -1234,7 +1253,7 @@ function RideModal({
             />
             <span className="field-hint">
               {form.block_type === 'pickup'
-                ? 'Auto: leave in time to arrive by check-in'
+                ? `Auto: at the airport ${AIRPORT_ARRIVAL_MIN} min before check-in`
                 : form.block_type === 'dropoff'
                   ? 'Auto: when the crew checks out'
                   : 'Set the departure time'}
@@ -1457,7 +1476,7 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
         {flight && (
           <div className="field">
             <label>
-              Crew for every ride{' '}
+              Crew for every ride <span className="badge badge-accent">{crewList.length}</span>{' '}
               <span className="field-hint">(optional — {blockLabel(block)})</span>
             </label>
             {crewList.length > 0 && (

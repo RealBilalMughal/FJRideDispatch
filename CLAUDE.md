@@ -43,6 +43,8 @@ keys, tables or deploy targets with any other project.
   backdrop click). **Never `window.confirm` / `alert`** - use `ConfirmDialog.jsx`
   or `ConfirmDelete.jsx` (type-DELETE variant).
 - Full-pill radius for real CTA buttons (`.btn`); small radius for inline/form buttons.
+- **Dates are `01-Aug-26`** everywhere (`fmtDate` in `src/lib/format.js`) - custom
+  formatter, not `toLocaleDateString`, so it's exact regardless of locale.
 
 ## Permission model (ported from GraphicSpark - page x action, role + user)
 - `profiles` (1:1 auth.users; `role` = DERIVED primary system tier, trigger-synced),
@@ -177,17 +179,29 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   ride's start time vs `dispatch_settings`, dispatcher can flip) picks that
   vehicle's day or night driver. The ride snapshots `shift` + `driver_id`. Table
   and view show Shift + Driver; export too.
-- The form asks only for **Ride Time** (start; auto-suggested: pickup = check-in -
-  drive time, dropoff = check-out; editable). **ETA** (= start + ORS drive time)
-  and the internal `end_at` (= start + drive + 30-min buffer, for the vehicle
-  conflict) are computed, never typed. No status field - rides land as
-  `dispatched`; completion waits on a future driver app.
+- The form's check-in/out fields are **block-conditional**: Pickup shows
+  Check-in (scheduled, disabled) + Check-in Actual (editable); Drop Off shows
+  Check-out + Check-out Actual; deadhead/return_leg show neither.
+- The start-time field is labelled **"Pickup Time"** (pickup), **"Drop Time"**
+  (dropoff) or **"Ride Time"** (else) - `rideTimeLabel()` in `rideRoute.js`.
+  Auto-suggested: pickup = check-in minus a 90-min **airport-arrival buffer**
+  (`AIRPORT_ARRIVAL_MIN` in `Rides.jsx`) minus drive time, so the vehicle is AT
+  the airport 90 min before check-in; dropoff = check-out. Editable. **ETA**
+  (= start + ORS drive time) and the internal `end_at` (= start + drive +
+  30-min buffer, for the vehicle conflict) are computed, never typed. No status
+  field - rides land as `dispatched`; completion waits on a future driver app.
 - **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
 - Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
   `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
   Also a route icon (Google Maps), View/Edit/Delete, status inline-select.
-- Airports seeded for the 3 cities; change them by editing `cities.airport_*`.
+- Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
+  change by editing `cities.airport_*`.
+- **Crew** shows a count everywhere it's listed: "N · Names…" in the table/export/
+  view, a `<span className="badge badge-accent">N</span>` next to the form label.
+- **KM is a plain 2-decimal number** (`12.50`, no "km" suffix) in the KM table
+  column and CSV export - the column header already says KM. The "Distance" view
+  row and the in-form route badge keep the "km" unit since their label doesn't.
 - **Generate** (Rides header) - bulk-create rides from one flight over a date
   range + weekday picker + optional shared crew. Vehicles assigned per-ride after.
 - **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each

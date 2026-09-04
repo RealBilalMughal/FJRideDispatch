@@ -659,6 +659,17 @@ export default function Rides() {
                 placeholder="All vehicles"
               />
             </div>
+            <div className="filter-searchselect">
+              <SearchSelect
+                value={driverFilter}
+                onChange={(v) => {
+                  setDriverFilter(v)
+                  setPage(1)
+                }}
+                options={driverFilterOpts}
+                placeholder="All drivers"
+              />
+            </div>
             <select
               className="filter-select"
               value={shiftFilter}
@@ -671,17 +682,6 @@ export default function Rides() {
               <option value="day">{shiftLabel('day')}</option>
               <option value="night">{shiftLabel('night')}</option>
             </select>
-            <div className="filter-searchselect">
-              <SearchSelect
-                value={driverFilter}
-                onChange={(v) => {
-                  setDriverFilter(v)
-                  setPage(1)
-                }}
-                options={driverFilterOpts}
-                placeholder="All drivers"
-              />
-            </div>
           </>
         }
       />

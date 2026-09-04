@@ -7,6 +7,7 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
+import { fmtTime12, parseTime, toTime24 } from '../lib/time'
 import { downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -34,35 +35,6 @@ const blockFromLabel = (s) => {
 // "Check in time" when picking up, "Check out time" when dropping off, else "Flight time"
 const timeLabel = (block) =>
   block === 'pickup' ? 'Check in time' : block === 'dropoff' ? 'Check out time' : 'Flight time'
-
-// 24h "14:30:00" -> "14:30" (for the native <input type="time"> value)
-const toTime24 = (t) => (t ? String(t).slice(0, 5) : '')
-
-// 24h "14:30:00" -> "2:30 PM" (for display)
-const fmtTime12 = (t) => {
-  if (!t) return ''
-  const [h, m] = String(t).split(':')
-  const hh = Number(h)
-  if (!Number.isFinite(hh)) return ''
-  const ampm = hh >= 12 ? 'PM' : 'AM'
-  return `${hh % 12 || 12}:${m} ${ampm}`
-}
-
-// "14:30" or "2:30 pm" -> "14:30" (24h) | null
-const parseTime = (s) => {
-  const mt = String(s ?? '').trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
-  if (!mt) return null
-  let h = Number(mt[1])
-  const min = mt[2]
-  const ap = mt[3]?.toLowerCase()
-  if (Number(min) > 59) return null
-  if (ap) {
-    if (h < 1 || h > 12) return null
-    if (ap === 'pm' && h !== 12) h += 12
-    if (ap === 'am' && h === 12) h = 0
-  } else if (h > 23) return null
-  return `${String(h).padStart(2, '0')}:${min}`
-}
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },

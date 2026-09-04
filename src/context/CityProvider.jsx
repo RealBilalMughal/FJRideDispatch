@@ -45,7 +45,7 @@ export function CityProvider({ children }) {
     ;(async () => {
       const { data: cs } = await supabase
         .from('cities')
-        .select('id, name, sort')
+        .select('id, name, sort, airport_name, airport_lat, airport_lng')
         .order('sort')
         .order('name')
       if (!active) return

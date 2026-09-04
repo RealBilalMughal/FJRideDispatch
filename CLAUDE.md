@@ -50,14 +50,15 @@ keys, tables or deploy targets with any other project.
 - `private.has_perm(page, action)` ORs `allowed` across the caller's `user_roles`;
   super_admin bypasses. Helpers: `is_admin()`, `current_user_role()`, `is_active_user()`.
 - `AuthContext.can(page, action)` is the single client gate. Catalogue:
-  `src/lib/permissions.js` `PERMISSION_PAGES` (`dashboard`, `crew`, `flights`,
-  `vendors`, `drivers`, `vehicles`, `users`, `roles`).
+  `src/lib/permissions.js` `PERMISSION_PAGES` (`dashboard`, `rides`, `crew`,
+  `flights`, `vendors`, `drivers`, `vehicles`, `users`, `roles`).
 - **RULE - EVERY new navigable page gets a Role Access row**: (1) add to
   `PERMISSION_PAGES` with its sidebar `group`, (2) gate the nav item + page with
   `can('<key>', ...)`, (3) point its table RLS at `has_perm('<key>', ...)`, (4) seed
   the built-in `admin` row in a migration so plain admins keep access.
 - Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
-  `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql` (all APPLIED).
+  `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql`,
+  `20260904170000_rides.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -141,11 +142,31 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Maps & routing
 - Map display: **Leaflet + react-leaflet + OpenStreetMap tiles** - free, no key.
-  `src/components/StopMap.jsx`. (Google Maps was dropped - key/billing friction.)
-- Routing / distance-in-km / multi-stop route optimisation (TSP/VRP):
-  **OpenRouteService**. `VITE_ORS_API_KEY` is set + verified working
-  (`/v2/directions/driving-car` and `/optimization` both return). No routing UI
-  yet - build it when the trip/route workflow is defined. Geocoding: Nominatim.
+  `src/components/StopMap.jsx` (single pin), `src/components/RouteMap.jsx`
+  (multi-point + polyline, read-only). (Google Maps dropped - key/billing friction.)
+- **OpenRouteService** (`src/lib/ors.js`, `VITE_ORS_API_KEY`): `routeInfo(coords)`
+  -> road km + duration + geometry via `/v2/directions/driving-car/geojson`
+  (`radiuses: -1` so airport/stop points snap to the nearest road). `gmapsRoute()`
+  builds a keyless Google Maps directions URL for the "open route" action.
+
+## Ride Dispatch (`rides` page, group "Dispatch")
+- `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).
+  Vehicle double-booking is blocked by an `EXCLUDE USING gist` on
+  `(vehicle_id, tstzrange(start_at, end_at))` - client pre-checks and shows
+  "busy on Ride N till <time>". Ride logic lives in `src/lib/rideRoute.js`.
+- **Block -> route** (`buildRoutePoints`): pickup `crew1..crewN -> Airport`;
+  dropoff `Airport -> crew1..crewN`; deadhead `airport` mode `Airport -> 1 crew`
+  / `crew` mode `crew1 -> crew2` (exactly 2); return_leg `1 crew -> Airport`.
+  Crew order = selection order. `crewRule()` enforces min/max crew per block.
+- Flight pick -> snapshot flight_no/code, auto block_type + city, and the
+  flight_time fills check-in (pickup) or check-out (dropoff). check-in/out each
+  keep an `_old` (auto) + `_new` (as dispatched) value; table shows all four.
+- `start_at`/`end_at` (the vehicle-busy window) auto-suggest from the primary
+  time +/- ORS duration +/- 30-min buffer; editable.
+- Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
+  `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
+  Also a route icon (Google Maps), View/Edit/Delete, status inline-select.
+- Airports seeded for the 3 cities; change them by editing `cities.airport_*`.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -168,5 +189,7 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] Fleet: Vendors, Drivers, Vehicles (`..._fleet.sql`)
 - [x] Flights page (`20260903150000_flights.sql`)
 - [x] `VITE_ORS_API_KEY` set + verified (directions + optimization)
-- [ ] Trip/route feature -> build the UI on top of OpenRouteService
+- [x] Ride Dispatch page (`20260904170000_rides.sql`) - block-wise route, ORS km,
+      vehicle time-window conflict, return-leg, old/new check-in/out
+- [ ] Rides phase 2: ORS optimize-order toggle, vehicle timeline/gantt, recurring
 - [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

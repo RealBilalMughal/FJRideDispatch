@@ -77,6 +77,9 @@ keys, tables or deploy targets with any other project.
   user can see exactly one city. `useCity().cityId` (null = All) -> list pages add
   `.eq('city_id', cityId)`; add-forms default to it. Role Access has a "City access"
   panel (By Role + By User) that writes `role_cities` / `user_cities`.
+  `useCity().reloadCities()` re-fetches the raw `cities` rows (id, name, sort,
+  airport_*) on demand - used after the Crew page's Airport settings save so
+  `allCities`/`allowedCities` refresh without a full page reload.
 
 ## Shared display-ID series
 - ONE sequence `public.ref_no_seq` (starts 1001) feeds every entity table's
@@ -120,6 +123,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   **coordinates** ("31.9279, 74.9738" -> Leaflet / OpenStreetMap pin via
   `src/components/StopMap.jsx` - draggable, click-to-set, no key). One stop per
   crew. City-scoped.
+  - **Airport settings** - an "Airports" button at the top of the page header
+    (super_admin only, matching the `cities_super` RLS policy) opens
+    `AirportSettingsModal`: pick a city -> edit its `airport_name` + coordinates
+    (same `StopMap` pin UI as a crew stop) -> writes straight to
+    `cities.airport_name/airport_lat/airport_lng`, the exact columns Ride
+    Dispatch routing already reads. No routing logic lives here or changed for
+    this - it's purely a settings UI. Saving calls `useCity().reloadCities()`
+    (`CityProvider.jsx`) so `allCities`/`allowedCities` - and therefore Rides'
+    airport anchor - refresh app-wide without a full page reload.
 - `Vendors` / `Drivers` / `Vehicles` (`vendors`/`drivers`/`vehicles` perms, sidebar
   group **"Fleet"**) - Crew-style: city-scoped table, advanced filters, CSV
   export/import (`*-sample.csv`), View/Edit/Delete. All have a mandatory City.
@@ -196,12 +208,18 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
   Also a route icon (Google Maps), View/Edit/Delete, status inline-select.
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
-  change by editing `cities.airport_*`.
-- **Crew** shows a count everywhere it's listed: "N · Names…" in the table/export/
-  view, a `<span className="badge badge-accent">N</span>` next to the form label.
+  edit per-city via the **Airports** button on the Crew page (see Pages ->
+  Crew), or directly on `cities.airport_*`.
+- **Crew count is its own column** - table/export column **"Crew Count"** (just
+  the number) sits right before **"Crew"** (names only, `crewNamesText()` in
+  `Rides.jsx`); the form/view still show a
+  `<span className="badge badge-accent">N</span>` next to the label. The
+  **Flight No** column/export label is now just **"Flight"**.
 - **KM is a plain 2-decimal number** (`12.50`, no "km" suffix) in the KM table
-  column and CSV export - the column header already says KM. The "Distance" view
-  row and the in-form route badge keep the "km" unit since their label doesn't.
+  column and CSV export - the column header already says KM. It's positioned
+  **after ETA** (table + export column order: … Ride Time, ETA, KM, Status).
+  The "Distance" view row and the in-form route badge keep the "km" unit since
+  their label doesn't.
 - **Generate** (Rides header) - bulk-create rides from one flight over a date
   range + weekday picker + optional shared crew. Vehicles assigned per-ride after.
 - **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each

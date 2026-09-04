@@ -33,6 +33,18 @@ export function CityProvider({ children }) {
     }
   })
 
+  // shared so an "edit airport" UI can refresh the raw city rows on save,
+  // without touching the allowed-cities computation below
+  const loadCities = useCallback(async () => {
+    const { data: cs } = await supabase
+      .from('cities')
+      .select('id, name, sort, airport_name, airport_lat, airport_lng')
+      .order('sort')
+      .order('name')
+    setAllCities(cs ?? [])
+    return cs ?? []
+  }, [])
+
   useEffect(() => {
     if (authLoading) return
     if (!session) {
@@ -43,13 +55,8 @@ export function CityProvider({ children }) {
     }
     let active = true
     ;(async () => {
-      const { data: cs } = await supabase
-        .from('cities')
-        .select('id, name, sort, airport_name, airport_lat, airport_lng')
-        .order('sort')
-        .order('name')
+      await loadCities()
       if (!active) return
-      setAllCities(cs ?? [])
 
       if (isSuperAdmin) {
         setAllowedIds(null)
@@ -116,8 +123,10 @@ export function CityProvider({ children }) {
       setCity,
       /** apply the current filter to a supabase query builder */
       scope: (query) => (cityId == null ? query : query.eq('city_id', cityId)),
+      /** re-fetch the raw city rows (e.g. after editing an airport) without a full reload */
+      reloadCities: loadCities,
     }),
-    [ready, allCities, allowedCities, locked, effective, cityId, cityName, setCity],
+    [ready, allCities, allowedCities, locked, effective, cityId, cityName, setCity, loadCities],
   )
 
   return <CityContext.Provider value={value}>{children}</CityContext.Provider>

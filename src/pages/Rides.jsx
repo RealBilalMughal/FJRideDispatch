@@ -67,22 +67,23 @@ const SELECT = `
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
   { key: 'ride_date', label: 'Date' },
-  { key: 'flight_no', label: 'Flight No' },
+  { key: 'flight_no', label: 'Flight' },
   { key: 'flight_code', label: 'Code' },
   { key: 'block', label: 'Block' },
   { key: 'checkin_old', label: 'Check-in' },
   { key: 'checkin_new', label: 'Check-in Actual' },
   { key: 'checkout_old', label: 'Check-out' },
   { key: 'checkout_new', label: 'Check-out Actual' },
+  { key: 'crew_count', label: 'Crew Count' },
   { key: 'crew', label: 'Crew' },
   { key: 'origin', label: 'Origin' },
   { key: 'dest', label: 'Destination' },
   { key: 'vehicle', label: 'Vehicle' },
   { key: 'shift', label: 'Shift' },
   { key: 'driver', label: 'Driver' },
-  { key: 'km', label: 'KM' },
   { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
+  { key: 'km', label: 'KM' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -98,11 +99,8 @@ const crewNames = (rc) =>
     .filter(Boolean)
     .join(', ')
 
-// "2 · Ahmed Raza, Bilal Khan"
-const crewCountedText = (rc) => {
-  const names = crewNames(rc)
-  return names ? `${(rc || []).length} · ${names}` : '—'
-}
+const crewNamesText = (rc) => crewNames(rc) || '—'
+const crewCount = (rc) => (rc || []).length
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
@@ -175,7 +173,8 @@ export default function Rides() {
       rows.map((r) => ({
         ...r,
         city_name: r.city?.name ?? '',
-        crew_text: crewCountedText(r.ride_crew),
+        crew_text: crewNamesText(r.ride_crew),
+        crew_count: crewCount(r.ride_crew),
         vehicle_text: vehicleText(r.vehicle),
       })),
     [rows],
@@ -309,15 +308,16 @@ export default function Rides() {
       checkin_new: fmtTime12(r.checkin_new),
       checkout_old: fmtTime12(r.checkout_old),
       checkout_new: fmtTime12(r.checkout_new),
+      crew_count: r.crew_count,
       crew: r.crew_text,
       origin: r.origin_label ?? '',
       dest: r.dest_label ?? '',
       vehicle: r.vehicle?.vehicle_no ?? '',
       shift: shiftLabel(r.shift),
       driver: r.driver?.name ?? '',
-      km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
+      km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
       status: statusLabel(r.status),
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
@@ -341,24 +341,20 @@ export default function Rides() {
   const columns = [
     { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
-    { key: 'fno', header: 'Flight No', render: (r) => r.flight_no || '—' },
+    { key: 'fno', header: 'Flight', render: (r) => r.flight_no || '—' },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
     { key: 'cio', header: 'Check-in', render: (r) => t12(r.checkin_old) },
     { key: 'cin', header: 'Check-in Actual', render: (r) => t12(r.checkin_new) },
     { key: 'coo', header: 'Check-out', render: (r) => t12(r.checkout_old) },
     { key: 'con', header: 'Check-out Actual', render: (r) => t12(r.checkout_new) },
+    { key: 'crewcount', header: 'Crew Count', render: (r) => r.crew_count },
     { key: 'crew', header: 'Crew', render: (r) => r.crew_text },
     { key: 'origin', header: 'Origin', render: (r) => r.origin_label || '—' },
     { key: 'dest', header: 'Destination', render: (r) => r.dest_label || '—' },
     { key: 'veh', header: 'Vehicle', render: (r) => r.vehicle_text },
     { key: 'shift', header: 'Shift', render: (r) => shiftLabel(r.shift) },
     { key: 'rdriver', header: 'Driver', render: (r) => r.driver?.name || '—' },
-    {
-      key: 'km',
-      header: 'KM',
-      render: (r) => (r.distance_km != null ? Number(r.distance_km).toFixed(2) : '—'),
-    },
     {
       key: 'starts',
       header: 'Ride Time',
@@ -371,6 +367,11 @@ export default function Rides() {
         if (!r.start_at || r.duration_min == null) return '—'
         return fmtTimeOnly12(new Date(new Date(r.start_at).getTime() + r.duration_min * 60000).toISOString())
       },
+    },
+    {
+      key: 'km',
+      header: 'KM',
+      render: (r) => (r.distance_km != null ? Number(r.distance_km).toFixed(2) : '—'),
     },
     { key: 'status', header: 'Status', render: (r) => statusLabel(r.status) },
     {
@@ -930,7 +931,8 @@ function RideModal({
             ['Check-in Actual', fmtTime12(row.checkin_new) || '—'],
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
             ['Check-out Actual', fmtTime12(row.checkout_new) || '—'],
-            ['Crew', crewCountedText(row.ride_crew)],
+            ['Crew Count', crewCount(row.ride_crew)],
+            ['Crew', crewNamesText(row.ride_crew)],
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
             ['Vehicle', row.vehicle?.vehicle_no || '—'],

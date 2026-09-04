@@ -22,7 +22,7 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
-import { fmtTime12, fmtTimeOnly12, isoToLocalTime, toPkIso, toTime24 } from '../lib/time'
+import { fmtTime12, fmtTimeOnly12, isoToLocalDate, isoToLocalTime, toPkIso, toTime24 } from '../lib/time'
 import {
   BLOCK_TYPES,
   blockLabel,
@@ -30,6 +30,7 @@ import {
   crewRule,
   DEFAULT_CHECKIN_BUFFER_MIN,
   DEFAULT_CHECKOUT_BUFFER_MIN,
+  DEFAULT_RETURN_LEG_BUFFER_MIN,
   primaryTimeSlot,
   rideTimeLabel,
   routeComplete,
@@ -201,6 +202,7 @@ export default function Rides() {
   const [deleting, setDeleting] = useState(false)
   const [returnFor, setReturnFor] = useState(null) // a dropoff ride
   const [returnBusy, setReturnBusy] = useState(false)
+  const [returnInfoFor, setReturnInfoFor] = useState(null) // a dropoff ride that already has a return leg
   const { selected, toggle, toggleAll, clear } = useSelection()
 
   // Today/Week/Month presets -> a concrete [dateFrom, dateTo]; "all" clears the range.
@@ -231,16 +233,33 @@ export default function Rides() {
     }
   }
 
+  // return-leg rides display as "<parent ref_no>-R" instead of their own ref_no
+  // (still a real, unique ref_no under the hood - this is purely cosmetic); and
+  // a dropoff ride that already has one needs to know that + which ride it is.
+  const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
+  const returnLegByParent = useMemo(() => {
+    const m = new Map()
+    rows.forEach((r) => {
+      if (r.return_of_ride_id) m.set(r.return_of_ride_id, r)
+    })
+    return m
+  }, [rows])
+
   const list = useMemo(
     () =>
-      rows.map((r) => ({
-        ...r,
-        city_name: r.city?.name ?? '',
-        crew_text: crewNamesText(r.ride_crew),
-        crew_count: crewCount(r.ride_crew),
-        vehicle_text: vehicleText(r.vehicle),
-      })),
-    [rows],
+      rows.map((r) => {
+        const parent = r.return_of_ride_id ? byId.get(r.return_of_ride_id) : null
+        return {
+          ...r,
+          city_name: r.city?.name ?? '',
+          crew_text: crewNamesText(r.ride_crew),
+          crew_count: crewCount(r.ride_crew),
+          vehicle_text: vehicleText(r.vehicle),
+          display_ref: parent ? `${parent.ref_no}-R` : String(r.ref_no),
+          return_leg: returnLegByParent.get(r.id) ?? null,
+        }
+      }),
+    [rows, byId, returnLegByParent],
   )
 
   const filtered = useMemo(() => {
@@ -255,7 +274,7 @@ export default function Rides() {
       if (driverFilter && r.driver_id !== driverFilter) return false
       if (
         s &&
-        !`${r.ref_no} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''}`
+        !`${r.display_ref} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''}`
           .toLowerCase()
           .includes(s)
       )
@@ -334,7 +353,22 @@ export default function Rides() {
         { seq: 1, kind: 'airport', label: airport.name || 'Airport', lat: airport.lat, lng: airport.lng },
       ]
       const info = routeComplete(pts) ? await routeInfo(pts.map((p) => [p.lng, p.lat])) : null
-      const start_at = r.end_at || toPkIso(r.ride_date, r.checkout_new || r.checkout_old || '12:00')
+
+      // Return Leg Ride Time = the dropoff ride's own arrival at the crew stop
+      // (its ETA = start_at + duration_min) + this city's Return Leg buffer
+      // (Settings -> Ride Buffer Time), e.g. dropped off 3:00 PM + 10 min -> 3:10 PM.
+      const cityObj = allowedCities.find((c) => c.id === r.city_id)
+      const returnBufferMin = Number.isFinite(Number(cityObj?.return_leg_buffer_min))
+        ? Number(cityObj.return_leg_buffer_min)
+        : DEFAULT_RETURN_LEG_BUFFER_MIN
+      const origEtaMs =
+        r.start_at && r.duration_min != null
+          ? new Date(r.start_at).getTime() + r.duration_min * 60000
+          : null
+      const start_at =
+        origEtaMs != null
+          ? new Date(origEtaMs + returnBufferMin * 60000).toISOString()
+          : r.end_at || toPkIso(r.ride_date, r.checkout_new || r.checkout_old || '12:00')
       const dur = (info?.durationMin ?? 30) + BUFFER_MIN
       const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
 
@@ -343,38 +377,37 @@ export default function Rides() {
       const rVeh = vehicles.find((v) => v.id === r.vehicle_id)
       const rDriverId = rVeh ? (rShift === 'night' ? rVeh.night_driver_id : rVeh.driver_id) : null
 
-      const { data: ride, error } = await supabase
-        .from('rides')
-        .insert({
-          city_id: r.city_id,
-          flight_id: r.flight_id,
-          flight_no: r.flight_no,
-          flight_code: r.flight_code,
-          block_type: 'return_leg',
-          ride_date: r.ride_date,
-          vehicle_id: r.vehicle_id,
-          shift: r.vehicle_id ? rShift : null,
-          driver_id: rDriverId || null,
-          airport_name: airport.name,
-          airport_lat: airport.lat,
-          airport_lng: airport.lng,
-          origin_label: pts[0].label,
-          origin_lat: pts[0].lat,
-          origin_lng: pts[0].lng,
-          dest_label: pts[1].label,
-          dest_lat: pts[1].lat,
-          dest_lng: pts[1].lng,
-          waypoints: pts,
-          distance_km: info?.distanceKm ?? null,
-          duration_min: info?.durationMin ?? null,
-          start_at,
-          end_at,
-          status: 'dispatched',
-          return_of_ride_id: r.id,
-          created_by: profile?.id ?? null,
-        })
-        .select('id')
-        .single()
+      // no ride_crew row on purpose - the return leg carries no passenger,
+      // it's the vehicle running empty back to the airport; crew count is 0.
+      // (lastCrew's stop is still used above as the physical route origin.)
+      const { error } = await supabase.from('rides').insert({
+        city_id: r.city_id,
+        flight_id: r.flight_id,
+        flight_no: r.flight_no,
+        flight_code: r.flight_code,
+        block_type: 'return_leg',
+        ride_date: start_at ? isoToLocalDate(start_at) : r.ride_date,
+        vehicle_id: r.vehicle_id,
+        shift: r.vehicle_id ? rShift : null,
+        driver_id: rDriverId || null,
+        airport_name: airport.name,
+        airport_lat: airport.lat,
+        airport_lng: airport.lng,
+        origin_label: pts[0].label,
+        origin_lat: pts[0].lat,
+        origin_lng: pts[0].lng,
+        dest_label: pts[1].label,
+        dest_lat: pts[1].lat,
+        dest_lng: pts[1].lng,
+        waypoints: pts,
+        distance_km: info?.distanceKm ?? null,
+        duration_min: info?.durationMin ?? null,
+        start_at,
+        end_at,
+        status: 'dispatched',
+        return_of_ride_id: r.id,
+        created_by: profile?.id ?? null,
+      })
       if (error) {
         throw new Error(
           error.code === '23P01'
@@ -382,7 +415,6 @@ export default function Rides() {
             : error.message,
         )
       }
-      await supabase.from('ride_crew').insert({ ride_id: ride.id, crew_id: lastCrew.id, seq: 0 })
       toast.success('Return leg ride created')
       setReturnFor(null)
       fetchRows()
@@ -395,7 +427,7 @@ export default function Rides() {
 
   const exportCsv = () => {
     const data = filtered.map((r) => ({
-      ref_no: r.ref_no,
+      ref_no: r.display_ref,
       ride_date: r.ride_date,
       flight_no: r.flight_no ?? '',
       flight_code: r.flight_code ?? '',
@@ -435,7 +467,7 @@ export default function Rides() {
 
   const t12 = (t) => fmtTime12(t) || '—'
   const columns = [
-    { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
+    { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.display_ref}</span> },
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
     { key: 'fno', header: 'Flight', render: (r) => r.flight_no || '—' },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
@@ -478,7 +510,11 @@ export default function Rides() {
         return (
           <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
             {r.block_type === 'dropoff' && canAdd && (
-              <button title="Create return leg" onClick={() => setReturnFor(r)}>
+              <button
+                title={r.return_leg ? 'Return leg already created' : 'Create return leg'}
+                className={r.return_leg ? 'row-actions-note' : undefined}
+                onClick={() => (r.return_leg ? setReturnInfoFor(r) : setReturnFor(r))}
+              >
                 <RotateCcw size={13} />
               </button>
             )}
@@ -509,7 +545,7 @@ export default function Rides() {
               <button
                 title="Delete"
                 className="danger"
-                onClick={() => setPending({ ids: [r.id], label: `ride ${r.ref_no}` })}
+                onClick={() => setPending({ ids: [r.id], label: `ride ${r.display_ref}` })}
               >
                 <Trash2 size={13} />
               </button>
@@ -756,6 +792,16 @@ export default function Rides() {
         />
       )}
       {noteFor && <NotePopup row={noteFor} onClose={() => setNoteFor(null)} />}
+      {returnInfoFor && (
+        <ReturnLegInfoPopup
+          row={returnInfoFor}
+          onClose={() => setReturnInfoFor(null)}
+          onView={(returnLeg) => {
+            setReturnInfoFor(null)
+            setDetail({ row: { ...returnLeg, display_ref: `${returnInfoFor.ref_no}-R` }, edit: false })
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={Boolean(returnFor)}
@@ -792,7 +838,7 @@ export default function Rides() {
 // view's header), Flight No, then the note itself.
 function NotePopup({ row, onClose }) {
   return (
-    <Modal open onClose={onClose} title={`Ride ${row.ref_no}`} width={420}>
+    <Modal open onClose={onClose} title={`Ride ${row.display_ref ?? row.ref_no}`} width={420}>
       <div className="modal-form">
         <div className="view-row">
           <span className="view-label">Flight</span>
@@ -805,6 +851,47 @@ function NotePopup({ row, onClose }) {
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
             Close
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Return leg info popup ────────────────────────────────────────────────
+// Opened from the Return Leg row action when one already exists for this
+// ride, instead of the create-confirm - tells the dispatcher a return leg
+// is already there and which one, with a couple of details, plus a way to
+// jump straight to viewing it.
+function ReturnLegInfoPopup({ row, onClose, onView }) {
+  const rl = row.return_leg
+  const rlRef = `${row.ref_no}-R`
+  return (
+    <Modal open onClose={onClose} title={`Ride ${row.display_ref ?? row.ref_no}`} width={420}>
+      <div className="modal-form">
+        <p className="confirm-msg">A return leg has already been created for this ride.</p>
+        <div className="view-row">
+          <span className="view-label">Return Leg</span>
+          <span className="view-value">{rlRef}</span>
+        </div>
+        <div className="view-row">
+          <span className="view-label">Date</span>
+          <span className="view-value">{fmtDate(rl?.ride_date)}</span>
+        </div>
+        <div className="view-row">
+          <span className="view-label">Ride Time</span>
+          <span className="view-value">{rl?.start_at ? fmtTimeOnly12(rl.start_at) : '—'}</span>
+        </div>
+        <div className="view-row">
+          <span className="view-label">Vehicle</span>
+          <span className="view-value">{rl?.vehicle?.vehicle_no || '—'}</span>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className="btn btn-square" onClick={() => onView(rl)}>
+            View return leg
           </button>
         </div>
       </div>
@@ -1141,11 +1228,12 @@ function RideModal({
     onDone()
   }
 
+  const rowRef = row?.display_ref ?? row?.ref_no
   const title = isAdd
     ? 'Add Ride'
     : editing
-      ? `Edit ride ${row.ref_no}`
-      : `Ride ${row.ref_no} · ${blockLabel(row.block_type)}`
+      ? `Edit ride ${rowRef}`
+      : `Ride ${rowRef} · ${blockLabel(row.block_type)}`
 
   // ---- read-only view ----
   if (!editing) {

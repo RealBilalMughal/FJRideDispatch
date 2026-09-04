@@ -38,7 +38,9 @@ export function CityProvider({ children }) {
   const loadCities = useCallback(async () => {
     const { data: cs } = await supabase
       .from('cities')
-      .select('id, name, sort, airport_name, airport_lat, airport_lng, checkin_buffer_min, checkout_buffer_min')
+      .select(
+        'id, name, sort, airport_name, airport_lat, airport_lng, checkin_buffer_min, checkout_buffer_min, return_leg_buffer_min',
+      )
       .order('sort')
       .order('name')
     setAllCities(cs ?? [])

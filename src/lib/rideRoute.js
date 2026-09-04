@@ -75,6 +75,11 @@ export const rideTimeLabel = (block) =>
 export const DEFAULT_CHECKIN_BUFFER_MIN = 90
 export const DEFAULT_CHECKOUT_BUFFER_MIN = 30
 
+// Return Leg Ride Time = the original dropoff ride's arrival at the crew
+// stop (its ETA = start_at + duration_min) + this buffer. Per-city override
+// on cities.return_leg_buffer_min.
+export const DEFAULT_RETURN_LEG_BUFFER_MIN = 10
+
 export const RIDE_STATUS = ['scheduled', 'dispatched', 'enroute', 'completed', 'cancelled']
 export const statusLabel = (s) =>
   ({ scheduled: 'Scheduled', dispatched: 'Dispatched', enroute: 'En route', completed: 'Completed', cancelled: 'Cancelled' })[s] || s

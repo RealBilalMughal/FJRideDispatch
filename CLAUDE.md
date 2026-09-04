@@ -64,7 +64,8 @@ keys, tables or deploy targets with any other project.
 - Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
   `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql`,
   `20260904170000_rides.sql`, `20260904190000_vehicle_shifts.sql`,
-  `20260905120000_ride_buffers.sql` (all APPLIED).
+  `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`
+  (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -206,7 +207,23 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
 - Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
-  `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
+  `return_leg` ride (last crew's stop -> Airport, same vehicle,
+  `return_of_ride_id` set) - **no `ride_crew` row** on purpose (the return leg
+  carries no passenger, just the vehicle running back empty, so its crew count
+  is 0; the last crew's stop is still used as the physical route origin).
+  **Ride Time = the dropoff ride's own ETA (arrival at the crew stop) + this
+  city's Return Leg buffer** (`cities.return_leg_buffer_min`, default 10,
+  edited at Settings -> Ride Buffer Time) - e.g. dropped off with a 3:00 PM
+  ETA + 10 min -> return Ride Time 3:10 PM; its own ETA (to the airport) comes
+  from the normal `duration_min` computation. Clicking Return Leg when one
+  already exists opens `ReturnLegInfoPopup` instead of the create-confirm -
+  "already created" + the return leg's ref, date, Ride Time, vehicle, and a
+  "View return leg" shortcut. **A return leg displays as `<parent ref_no>-R`**
+  everywhere (table ID, CSV export, view/note-popup titles, search) via a
+  client-computed `display_ref` (`Rides.jsx`'s `list` memo joins each row to
+  its parent via a `return_of_ride_id -> id` map built from the already-loaded
+  `rows` - no extra query) - the underlying `ref_no` is still a real,
+  independent value from the shared sequence, this is purely cosmetic.
   Also a route icon (Google Maps), View, Delete - actions header is
   **"Action"**. **No inline Edit button** - open View then use the Edit button
   inside the modal. **No Status column on the table/export for now** (still
@@ -271,9 +288,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     airport_lat/airport_lng`, the columns Ride Dispatch routing already reads.
     No routing logic lives here.
   - **Ride Buffer Time** - edit a city's `checkin_buffer_min` / `checkout_buffer_min`
-    (minutes) -> the two ride-time buffers Rides' auto-suggest and Generate use
-    (see the Ride section above). Defaults (90 / 30) live in `rideRoute.js`
-    as `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN`.
+    / `return_leg_buffer_min` (minutes) -> the three ride-time buffers Rides'
+    auto-suggest, Generate and the Return Leg action use (see the Ride section
+    above). Defaults (90 / 30 / 10) live in `rideRoute.js` as
+    `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN` /
+    `DEFAULT_RETURN_LEG_BUFFER_MIN`.
   - Both panels: **read-only view by default, "Edit" reveals the form** (same
     pattern as Profile), with an Edit button top-right of the panel head.
     Editing disables the City field (finish or Cancel first) and has

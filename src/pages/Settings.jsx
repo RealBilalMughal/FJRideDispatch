@@ -4,7 +4,11 @@ import { MapPinned, Pencil, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
-import { DEFAULT_CHECKIN_BUFFER_MIN, DEFAULT_CHECKOUT_BUFFER_MIN } from '../lib/rideRoute'
+import {
+  DEFAULT_CHECKIN_BUFFER_MIN,
+  DEFAULT_CHECKOUT_BUFFER_MIN,
+  DEFAULT_RETURN_LEG_BUFFER_MIN,
+} from '../lib/rideRoute'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
 import StopMap from '../components/StopMap'
 import '../components/modal.css'
@@ -253,10 +257,12 @@ function AirportLocationsPanel() {
 }
 
 // ── Ride Buffer Time ─────────────────────────────────────────────────────
-// Global settings for the two ride-time buffers, kept per city on
-// cities.checkin_buffer_min / checkout_buffer_min:
-//   Pickup Time = Check-in (Actual if set) - Check-in buffer - drive time
-//   Drop Time   = Check-out (Actual if set) + Check-out buffer
+// Global settings for the three ride-time buffers, kept per city on
+// cities.checkin_buffer_min / checkout_buffer_min / return_leg_buffer_min:
+//   Pickup Time      = Check-in (Actual if set) - Check-in buffer - drive time
+//   Drop Time        = Check-out (Actual if set) + Check-out buffer
+//   Return Leg Ride Time = the dropoff ride's ETA (arrival at the crew stop)
+//                          + Return Leg buffer
 // Same City-field-mirrors-the-global-filter + read-only-until-Edit pattern
 // as Airport Locations above.
 function RideBufferTimePanel() {
@@ -271,6 +277,7 @@ function RideBufferTimePanel() {
   const [editing, setEditing] = useState(false)
   const [checkin, setCheckin] = useState('')
   const [checkout, setCheckout] = useState('')
+  const [returnLeg, setReturnLeg] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -292,6 +299,7 @@ function RideBufferTimePanel() {
   const startEdit = () => {
     setCheckin(city?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
     setCheckout(city?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
+    setReturnLeg(city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN)
     setErr('')
     setEditing(true)
   }
@@ -307,12 +315,18 @@ function RideBufferTimePanel() {
     if (!cityId) return setErr('Pick a city')
     const ci = Number(checkin)
     const co = Number(checkout)
+    const rl = Number(returnLeg)
     if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
     if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
+    if (!Number.isFinite(rl) || rl < 0) return setErr('Return Leg buffer must be a number of minutes')
     setBusy(true)
     const { error } = await supabase
       .from('cities')
-      .update({ checkin_buffer_min: Math.round(ci), checkout_buffer_min: Math.round(co) })
+      .update({
+        checkin_buffer_min: Math.round(ci),
+        checkout_buffer_min: Math.round(co),
+        return_leg_buffer_min: Math.round(rl),
+      })
       .eq('id', Number(cityId))
     setBusy(false)
     if (error) return setErr(error.message)
@@ -328,7 +342,8 @@ function RideBufferTimePanel() {
           <h3>Ride Buffer Time</h3>
           <div className="sub">
             Pickup Time = Check-in − Check-in buffer − drive time. Drop Time = Check-out +
-            Check-out buffer. Each city keeps its own buffer.
+            Check-out buffer. Return Leg Ride Time = drop-off arrival + Return Leg buffer.
+            Each city keeps its own buffers.
           </div>
         </div>
         {!editing && cities.length > 0 && (
@@ -395,6 +410,21 @@ function RideBufferTimePanel() {
                 </div>
               </div>
 
+              <div className="field">
+                <label htmlFor="bf-rl">Return Leg buffer (min)</label>
+                <input
+                  id="bf-rl"
+                  type="number"
+                  min="0"
+                  className="input"
+                  value={returnLeg}
+                  onChange={(e) => setReturnLeg(e.target.value)}
+                />
+                <span className="field-hint">
+                  Added on top of the dropoff ride&rsquo;s arrival to get the return leg&rsquo;s Ride Time
+                </span>
+              </div>
+
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
                   Cancel
@@ -416,6 +446,12 @@ function RideBufferTimePanel() {
                 <span className="view-label">Check-out buffer</span>
                 <span className="view-value">
                   {city?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN} min
+                </span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Return Leg buffer</span>
+                <span className="view-value">
+                  {city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN} min
                 </span>
               </div>
             </div>

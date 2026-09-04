@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { MapPinned, Pencil, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -72,24 +72,34 @@ export default function Settings() {
 // ── Airport Locations ────────────────────────────────────────────────────
 // A settings UI over the existing cities.airport_name / airport_lat /
 // airport_lng columns that Ride Dispatch routing already reads - this only
-// edits those three fields, no routing logic lives here. The city picker is
-// always live (not tied to the global topbar city filter) - pick any city
-// this admin page can see (`allowedCities`) and its current values show up;
-// nothing is editable until "Edit" is pressed, same read-only-by-default
-// pattern as Profile.
+// edits those three fields, no routing logic lives here. The City field
+// mirrors the global topbar filter: one city selected there -> locked to
+// just that city here; "All" -> a live picker over every city this admin
+// page can see. Nothing is editable until "Edit" is pressed, same
+// read-only-by-default pattern as Profile.
 function AirportLocationsPanel() {
   const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
-  // default selection = the active global city filter if one is set, else the first city
+  const locked = activeCityId != null
   const [cityId, setCityId] = useState(
-    () => (activeCityId != null && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
+    () => (locked && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
   )
   const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+  const cityName = city?.name || ''
 
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [coordinates, setCoordinates] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // the topbar filter can change while this page stays mounted - follow it
+  useEffect(() => {
+    if (locked && cities.some((c) => c.id === activeCityId)) {
+      setCityId(activeCityId)
+      setEditing(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, activeCityId])
 
   const pickCity = (id) => {
     setCityId(id)
@@ -157,19 +167,23 @@ function AirportLocationsPanel() {
         <div className="set-form">
           <div className="field">
             <label htmlFor="ap-city">City</label>
-            <select
-              id="ap-city"
-              className="select"
-              value={cityId}
-              onChange={(e) => pickCity(e.target.value)}
-              disabled={editing}
-            >
-              {cities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            {locked ? (
+              <input className="input" value={cityName} disabled />
+            ) : (
+              <select
+                id="ap-city"
+                className="select"
+                value={cityId}
+                onChange={(e) => pickCity(e.target.value)}
+                disabled={editing}
+              >
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {editing ? (
@@ -243,20 +257,31 @@ function AirportLocationsPanel() {
 // cities.checkin_buffer_min / checkout_buffer_min:
 //   Pickup Time = Check-in (Actual if set) - Check-in buffer - drive time
 //   Drop Time   = Check-out (Actual if set) + Check-out buffer
-// Same always-live city picker + read-only-until-Edit pattern as Airport
-// Locations above.
+// Same City-field-mirrors-the-global-filter + read-only-until-Edit pattern
+// as Airport Locations above.
 function RideBufferTimePanel() {
   const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
+  const locked = activeCityId != null
   const [cityId, setCityId] = useState(
-    () => (activeCityId != null && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
+    () => (locked && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
   )
   const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+  const cityName = city?.name || ''
 
   const [editing, setEditing] = useState(false)
   const [checkin, setCheckin] = useState('')
   const [checkout, setCheckout] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // the topbar filter can change while this page stays mounted - follow it
+  useEffect(() => {
+    if (locked && cities.some((c) => c.id === activeCityId)) {
+      setCityId(activeCityId)
+      setEditing(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, activeCityId])
 
   const pickCity = (id) => {
     setCityId(id)
@@ -319,19 +344,23 @@ function RideBufferTimePanel() {
         <div className="set-form">
           <div className="field">
             <label htmlFor="bf-city">City</label>
-            <select
-              id="bf-city"
-              className="select"
-              value={cityId}
-              onChange={(e) => pickCity(e.target.value)}
-              disabled={editing}
-            >
-              {cities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            {locked ? (
+              <input className="input" value={cityName} disabled />
+            ) : (
+              <select
+                id="bf-city"
+                className="select"
+                value={cityId}
+                onChange={(e) => pickCity(e.target.value)}
+                disabled={editing}
+              >
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {editing ? (

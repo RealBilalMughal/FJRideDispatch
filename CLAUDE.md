@@ -275,14 +275,19 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     (see the Ride section above). Defaults (90 / 30) live in `rideRoute.js`
     as `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN`.
   - Both panels: **read-only view by default, "Edit" reveals the form** (same
-    pattern as Profile) - pick a city from an always-live `<select>` (list from
-    `useCity().allowedCities`, never `allCities`; defaults to the active global
-    city filter but isn't locked to it - switching cities always swaps in that
-    city's values, in view or edit mode) and its current values
-    show read-only, with an Edit button top-right of the panel head. Editing
-    disables the city select (finish or Cancel first) and has Cancel/**Save**
-    buttons - Save is plain text, no icon. Saving calls `useCity().reloadCities()`
-    so open/new Ride forms and the Crew page pick the change up live.
+    pattern as Profile), with an Edit button top-right of the panel head.
+    Editing disables the City field (finish or Cancel first) and has
+    Cancel/**Save** buttons - Save is plain text, no icon. Saving calls
+    `useCity().reloadCities()` so open/new Ride forms and the Crew page pick
+    the change up live.
+  - **The City field mirrors the global topbar filter**: one city selected
+    there -> **locked** here too (a disabled field showing just that city,
+    same as the old modals' behaviour) - a Lahore-filtered view only ever
+    touches Lahore; "All" -> a live `<select>` over every city this admin
+    page can see (`useCity().allowedCities`, never `allCities`), defaulting
+    to the first city, switching shows that city's values immediately (view
+    or edit mode). An effect re-syncs the selection if the topbar filter
+    changes while the page stays mounted.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

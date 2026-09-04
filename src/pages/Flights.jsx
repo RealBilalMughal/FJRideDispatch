@@ -8,7 +8,7 @@ import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
 import { fmtTime12, parseTime, toTime24 } from '../lib/time'
-import { downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
+import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import DataTable from '../components/data/DataTable'
@@ -530,8 +530,13 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
     const file = e.target.files?.[0]
     if (!file) return
     const { headers, records } = parseCsvObjects(await file.text())
-    if (!headers.includes('flight_no') || !headers.includes('city')) {
-      setErr('CSV needs "flight_no" and "city" columns. Use the sample.')
+    const hc = checkHeaders(
+      headers,
+      ['flight_no', 'city'],
+      ['flight_no', 'flight_code', 'route', 'block_type', 'flight_time', 'city'],
+    )
+    if (!hc.ok) {
+      setErr(hc.error)
       return
     }
     const ok = []
@@ -565,7 +570,7 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
         created_by: createdBy ?? null,
       })
     })
-    setParsed({ ok, skipped })
+    setParsed({ ok, skipped, warning: hc.warning })
   }
 
   const run = async () => {
@@ -600,13 +605,14 @@ function ImportFlights({ allowedCities, createdBy, onClose, onDone }) {
         </div>
         {parsed && (
           <div className="import-summary">
+            {parsed.warning && <div className="field-error">{parsed.warning}</div>}
             <b>{parsed.ok.length}</b> ready
             {parsed.skipped.length > 0 && (
               <>
                 {' · '}
                 <b>{parsed.skipped.length}</b> skipped
                 <ul className="import-skip-list">
-                  {parsed.skipped.slice(0, 8).map((s) => (
+                  {parsed.skipped.slice(0, 10).map((s) => (
                     <li key={s.line}>
                       Row {s.line}: {s.reason}
                     </li>

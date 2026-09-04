@@ -20,7 +20,7 @@ import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
 import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
-import { downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
+import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { useSelection } from '../lib/useSelection'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -716,8 +716,13 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
     if (!file) return
     const text = await file.text()
     const { headers, records } = parseCsvObjects(text)
-    if (!headers.includes('name') || !headers.includes('city')) {
-      setErr('CSV needs at least a "name" and a "city" column. Use the sample file.')
+    const hc = checkHeaders(
+      headers,
+      ['name', 'city'],
+      ['name', 'phone', 'contact', 'designation', 'city', 'stop_name', 'coordinates', 'latitude', 'longitude'],
+    )
+    if (!hc.ok) {
+      setErr(hc.error)
       return
     }
     const ok = []
@@ -757,7 +762,7 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
         created_by: createdBy ?? null,
       })
     })
-    setParsed({ ok, skipped })
+    setParsed({ ok, skipped, warning: hc.warning })
   }
 
   const runImport = async () => {
@@ -793,18 +798,19 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
 
         {parsed && (
           <div className="import-summary">
+            {parsed.warning && <div className="field-error">{parsed.warning}</div>}
             <b>{parsed.ok.length}</b> ready to import
             {parsed.skipped.length > 0 && (
               <>
                 {' · '}
                 <b>{parsed.skipped.length}</b> skipped
                 <ul className="import-skip-list">
-                  {parsed.skipped.slice(0, 8).map((s) => (
+                  {parsed.skipped.slice(0, 10).map((s) => (
                     <li key={s.line}>
                       Row {s.line}: {s.reason}
                     </li>
                   ))}
-                  {parsed.skipped.length > 8 && <li>…and {parsed.skipped.length - 8} more</li>}
+                  {parsed.skipped.length > 10 && <li>…and {parsed.skipped.length - 10} more</li>}
                 </ul>
               </>
             )}

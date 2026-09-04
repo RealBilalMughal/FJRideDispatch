@@ -58,6 +58,31 @@ export function parseCsvObjects(text) {
   return { headers, records }
 }
 
+// Validate a parsed CSV's header row.
+//   required: columns that must be present
+//   known:    every recognised column (defaults to `required`) - anything else
+//             in the file is flagged as unrecognised (likely a typo / mismatch)
+// -> { ok, error?, warning? }
+export function checkHeaders(headers, required, known) {
+  const have = new Set((headers || []).map((h) => h.trim().toLowerCase()))
+  const knownSet = new Set((known && known.length ? known : required).map((k) => k.toLowerCase()))
+  const missing = required.filter((r) => !have.has(r.toLowerCase()))
+  const unknown = (headers || []).filter((h) => h && !knownSet.has(h.trim().toLowerCase()))
+
+  if (!headers || headers.length === 0) {
+    return { ok: false, error: 'The file has no header row.' }
+  }
+  if (missing.length) {
+    const m = `Missing column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`
+    const u = unknown.length ? `. Unrecognised: ${unknown.join(', ')}` : ''
+    return { ok: false, error: `${m}${u}. Download the sample file for the exact headers.` }
+  }
+  if (unknown.length) {
+    return { ok: true, warning: `Ignoring unrecognised column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}` }
+  }
+  return { ok: true }
+}
+
 // rows: array of objects; headers: array of { key, label }
 export function toCsv(headers, rows) {
   const esc = (v) => {

@@ -25,7 +25,8 @@ const n = (v) => (v == null || v === '' ? NaN : Number(v))
 const crewPoint = (c) => ({
   kind: 'crew',
   crew_id: c.crew_id ?? c.id,
-  label: `${c.name}${c.stop_name ? ' · ' + c.stop_name : ''}`,
+  // origin / destination / layover labels show the STOP name, not the crew name
+  label: c.stop_name || c.name || 'Crew stop',
   lat: n(c.stop_lat),
   lng: n(c.stop_lng),
 })

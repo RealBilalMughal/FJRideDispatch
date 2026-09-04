@@ -66,16 +66,16 @@ const EXPORT_COLS = [
   { key: 'flight_no', label: 'Flight No' },
   { key: 'flight_code', label: 'Code' },
   { key: 'block', label: 'Block' },
-  { key: 'checkin_old', label: 'Check-in (old)' },
-  { key: 'checkin_new', label: 'Check-in (new)' },
-  { key: 'checkout_old', label: 'Check-out (old)' },
-  { key: 'checkout_new', label: 'Check-out (new)' },
+  { key: 'checkin_old', label: 'Check-in' },
+  { key: 'checkin_new', label: 'Check-in Actual' },
+  { key: 'checkout_old', label: 'Check-out' },
+  { key: 'checkout_new', label: 'Check-out Actual' },
   { key: 'crew', label: 'Crew' },
   { key: 'origin', label: 'Origin' },
   { key: 'dest', label: 'Destination' },
   { key: 'vehicle', label: 'Vehicle' },
   { key: 'km', label: 'KM' },
-  { key: 'starts', label: 'Starts' },
+  { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
   { key: 'status', label: 'Status' },
 ]
@@ -92,7 +92,7 @@ const crewNames = (rc) =>
     .filter(Boolean)
     .join(', ')
 
-const vehicleText = (v) => (v ? `(${v.ref_no}) ${v.vehicle_no}` : '—')
+const vehicleText = (v) => v?.vehicle_no || '—'
 
 export default function Rides() {
   const { can, profile } = useAuth()
@@ -207,7 +207,7 @@ export default function Rides() {
           seq: 0,
           kind: 'crew',
           crew_id: lastCrew.id,
-          label: `${lastCrew.name}${lastCrew.stop_name ? ' · ' + lastCrew.stop_name : ''}`,
+          label: lastCrew.stop_name || lastCrew.name || 'Crew stop',
           lat: Number(lastCrew.stop_lat),
           lng: Number(lastCrew.stop_lng),
         },
@@ -310,10 +310,10 @@ export default function Rides() {
     { key: 'fno', header: 'Flight No', render: (r) => r.flight_no || '—' },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
-    { key: 'cio', header: 'Check-in (old)', render: (r) => t12(r.checkin_old) },
-    { key: 'cin', header: 'Check-in (new)', render: (r) => t12(r.checkin_new) },
-    { key: 'coo', header: 'Check-out (old)', render: (r) => t12(r.checkout_old) },
-    { key: 'con', header: 'Check-out (new)', render: (r) => t12(r.checkout_new) },
+    { key: 'cio', header: 'Check-in', render: (r) => t12(r.checkin_old) },
+    { key: 'cin', header: 'Check-in Actual', render: (r) => t12(r.checkin_new) },
+    { key: 'coo', header: 'Check-out', render: (r) => t12(r.checkout_old) },
+    { key: 'con', header: 'Check-out Actual', render: (r) => t12(r.checkout_new) },
     { key: 'crew', header: 'Crew', render: (r) => r.crew_text },
     { key: 'origin', header: 'Origin', render: (r) => r.origin_label || '—' },
     { key: 'dest', header: 'Destination', render: (r) => r.dest_label || '—' },
@@ -325,7 +325,7 @@ export default function Rides() {
     },
     {
       key: 'starts',
-      header: 'Starts',
+      header: 'Ride Time',
       render: (r) => (r.start_at ? fmtTimeOnly12(r.start_at) : '—'),
     },
     {
@@ -867,15 +867,17 @@ function RideModal({
             ['Flight', `${row.flight_no || '—'}${row.flight_code ? ' · ' + row.flight_code : ''}`],
             ['Block', blockLabel(row.block_type)],
             ['Date', fmtDate(row.ride_date)],
-            ['Check-in', `${fmtTime12(row.checkin_old) || '—'}  →  ${fmtTime12(row.checkin_new) || '—'}`],
-            ['Check-out', `${fmtTime12(row.checkout_old) || '—'}  →  ${fmtTime12(row.checkout_new) || '—'}`],
+            ['Check-in', fmtTime12(row.checkin_old) || '—'],
+            ['Check-in Actual', fmtTime12(row.checkin_new) || '—'],
+            ['Check-out', fmtTime12(row.checkout_old) || '—'],
+            ['Check-out Actual', fmtTime12(row.checkout_new) || '—'],
             ['Crew', crewNames(row.ride_crew) || '—'],
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
-            ['Vehicle', row.vehicle ? `(${row.vehicle.ref_no}) ${row.vehicle.vehicle_no}` : '—'],
-            ['Driver', row.vehicle?.driver ? `(${row.vehicle.driver.ref_no}) ${row.vehicle.driver.name}` : '—'],
+            ['Vehicle', row.vehicle?.vehicle_no || '—'],
+            ['Driver', row.vehicle?.driver?.name || '—'],
             ['Distance', row.distance_km != null ? `${row.distance_km} km` : '—'],
-            ['Ride starts', row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
+            ['Ride Time', row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
             ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
             ['Status', statusLabel(row.status)],
           ].map(([k, v]) => (
@@ -917,7 +919,7 @@ function RideModal({
     }))
   const vehicleOpts = cityVehicles.map((v) => ({
     value: v.id,
-    label: `(${v.ref_no}) ${v.vehicle_no}`,
+    label: v.vehicle_no,
     sub: v.driver ? `driver: ${v.driver.name}` : 'no driver',
   }))
 
@@ -1013,7 +1015,7 @@ function RideModal({
 
         <div className="field-row">
           <div className="field">
-            <label htmlFor="r-cin">Check-in time</label>
+            <label htmlFor="r-cin">Check-in Actual</label>
             <input
               id="r-cin"
               type="time"
@@ -1022,11 +1024,11 @@ function RideModal({
               onChange={(e) => set('checkin_new', e.target.value)}
             />
             {form.checkin_old && form.checkin_old !== form.checkin_new && (
-              <span className="field-hint">was {fmtTime12(form.checkin_old)}</span>
+              <span className="field-hint">check-in {fmtTime12(form.checkin_old)}</span>
             )}
           </div>
           <div className="field">
-            <label htmlFor="r-cout">Check-out time</label>
+            <label htmlFor="r-cout">Check-out Actual</label>
             <input
               id="r-cout"
               type="time"
@@ -1035,7 +1037,7 @@ function RideModal({
               onChange={(e) => set('checkout_new', e.target.value)}
             />
             {form.checkout_old && form.checkout_old !== form.checkout_new && (
-              <span className="field-hint">was {fmtTime12(form.checkout_old)}</span>
+              <span className="field-hint">check-out {fmtTime12(form.checkout_old)}</span>
             )}
           </div>
         </div>
@@ -1139,7 +1141,7 @@ function RideModal({
 
         <div className="field-row">
           <div className="field">
-            <label htmlFor="r-start">Ride starts</label>
+            <label htmlFor="r-start">Ride Time</label>
             <input
               id="r-start"
               type="time"

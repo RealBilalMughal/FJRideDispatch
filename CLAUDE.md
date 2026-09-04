@@ -163,7 +163,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   Crew order = selection order. `crewRule()` enforces min/max crew per block.
 - Flight pick -> snapshot flight_no/code, auto block_type + city, and the
   flight_time fills check-in (pickup) or check-out (dropoff). check-in/out each
-  keep an `_old` (auto) + `_new` (as dispatched) value; table shows all four.
+  keep an `_old` (scheduled, from the flight) + `_new` (as dispatched) value;
+  labelled **"Check-in" / "Check-in Actual"** (and check-out) in the table,
+  export and view. Route point labels are the **stop name** (not the crew name);
+  the Vehicle column/field shows `vehicle_no` only; the Starts column is
+  **"Ride Time"**.
 - The form asks only for **Ride starts** (auto-suggested: pickup = check-in -
   drive time, dropoff = check-out; editable). **ETA** (= start + ORS drive time)
   and the internal `end_at` (= start + drive + 30-min buffer, for the vehicle

@@ -4,6 +4,7 @@ import {
   CalendarRange,
   Download,
   Eye,
+  MessageSquare,
   Navigation,
   Pencil,
   Plus,
@@ -58,7 +59,7 @@ const NIL = '00000000-0000-0000-0000-000000000000'
 const SELECT = `
   id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
   ride_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
-  vehicle_id, airport_name, airport_lat, airport_lng,
+  vehicle_id, driver_id, airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
   waypoints, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
   city:cities(name),
@@ -77,8 +78,8 @@ const EXPORT_COLS = [
   { key: 'checkin_new', label: 'Actual' },
   { key: 'checkout_old', label: 'Check-out' },
   { key: 'checkout_new', label: 'Actual' },
-  { key: 'crew_count', label: 'Crew Count' },
   { key: 'crew', label: 'Crew' },
+  { key: 'crew_count', label: 'Count' },
   { key: 'origin', label: 'Origin' },
   { key: 'dest', label: 'Destination' },
   { key: 'vehicle', label: 'Vehicle' },
@@ -87,6 +88,13 @@ const EXPORT_COLS = [
   { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
   { key: 'km', label: 'KM' },
+]
+
+const DATE_PRESETS = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: 'all', label: 'All' },
 ]
 
 const etaOf = (startAt, durMin) =>
@@ -177,7 +185,14 @@ export default function Rides() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [blockFilter, setBlockFilter] = useState('all')
-  const [dateFilter, setDateFilter] = useState('')
+  // date range: driven by the Today/Week/Month/All tabs, or typed directly (then no tab is "on")
+  const [datePreset, setDatePreset] = useState('today')
+  const [dateFrom, setDateFrom] = useState(today)
+  const [dateTo, setDateTo] = useState(today)
+  const [flightFilter, setFlightFilter] = useState('')
+  const [vehicleFilter, setVehicleFilter] = useState('')
+  const [shiftFilter, setShiftFilter] = useState('')
+  const [driverFilter, setDriverFilter] = useState('')
 
   const [addOpen, setAddOpen] = useState(false)
   const [genOpen, setGenOpen] = useState(false)
@@ -188,6 +203,34 @@ export default function Rides() {
   const [returnFor, setReturnFor] = useState(null) // a dropoff ride
   const [returnBusy, setReturnBusy] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
+
+  // Today/Week/Month presets -> a concrete [dateFrom, dateTo]; "all" clears the range.
+  // Typing a date directly (see the inputs below) sets datePreset back to '' (custom).
+  const applyDatePreset = (p) => {
+    setDatePreset(p)
+    setPage(1)
+    if (p === 'today') {
+      setDateFrom(today)
+      setDateTo(today)
+    } else if (p === 'week') {
+      const d = new Date()
+      const mon = new Date(d)
+      mon.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // Monday of this week
+      const sun = new Date(mon)
+      sun.setDate(mon.getDate() + 6)
+      setDateFrom(mon.toISOString().slice(0, 10))
+      setDateTo(sun.toISOString().slice(0, 10))
+    } else if (p === 'month') {
+      const d = new Date()
+      const first = new Date(d.getFullYear(), d.getMonth(), 1)
+      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      setDateFrom(first.toISOString().slice(0, 10))
+      setDateTo(last.toISOString().slice(0, 10))
+    } else {
+      setDateFrom('')
+      setDateTo('')
+    }
+  }
 
   const list = useMemo(
     () =>
@@ -205,7 +248,12 @@ export default function Rides() {
     const s = search.trim().toLowerCase()
     return list.filter((r) => {
       if (blockFilter !== 'all' && r.block_type !== blockFilter) return false
-      if (dateFilter && r.ride_date !== dateFilter) return false
+      if (dateFrom && r.ride_date < dateFrom) return false
+      if (dateTo && r.ride_date > dateTo) return false
+      if (flightFilter && r.flight_id !== flightFilter) return false
+      if (vehicleFilter && r.vehicle_id !== vehicleFilter) return false
+      if (shiftFilter && r.shift !== shiftFilter) return false
+      if (driverFilter && r.driver_id !== driverFilter) return false
       if (
         s &&
         !`${r.ref_no} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''}`
@@ -215,7 +263,7 @@ export default function Rides() {
         return false
       return true
     })
-  }, [list, search, blockFilter, dateFilter])
+  }, [list, search, blockFilter, dateFrom, dateTo, flightFilter, vehicleFilter, shiftFilter, driverFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const stats = useMemo(
@@ -329,8 +377,8 @@ export default function Rides() {
       checkin_new: fmtTime12(r.checkin_new),
       checkout_old: fmtTime12(r.checkout_old),
       checkout_new: fmtTime12(r.checkout_new),
-      crew_count: r.crew_count,
       crew: r.crew_text,
+      crew_count: r.crew_count,
       origin: r.origin_label ?? '',
       dest: r.dest_label ?? '',
       vehicle: r.vehicle?.vehicle_no ?? '',
@@ -368,8 +416,8 @@ export default function Rides() {
     { key: 'cin', header: 'Actual', render: (r) => t12(r.checkin_new) },
     { key: 'coo', header: 'Check-out', render: (r) => t12(r.checkout_old) },
     { key: 'con', header: 'Actual', render: (r) => t12(r.checkout_new) },
-    { key: 'crewcount', header: 'Crew Count', render: (r) => r.crew_count },
     { key: 'crew', header: 'Crew', render: (r) => <CrewCell rc={r.ride_crew} /> },
+    { key: 'crewcount', header: 'Count', render: (r) => r.crew_count },
     { key: 'origin', header: 'Origin', render: (r) => r.origin_label || '—' },
     { key: 'dest', header: 'Destination', render: (r) => r.dest_label || '—' },
     { key: 'veh', header: 'Vehicle', render: (r) => r.vehicle_text },
@@ -395,7 +443,7 @@ export default function Rides() {
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Action',
       align: 'right',
       render: (r) => {
         const gm = gmapsRoute(r.waypoints)
@@ -420,9 +468,13 @@ export default function Rides() {
             <button title="View" onClick={() => setDetail({ row: r, edit: false })}>
               <Eye size={13} />
             </button>
-            {canEdit && (
-              <button title="Edit" onClick={() => setDetail({ row: r, edit: true })}>
-                <Pencil size={13} />
+            {r.notes && (
+              <button
+                title={`Note: ${r.notes}`}
+                className="row-actions-note"
+                onClick={() => setDetail({ row: r, edit: false })}
+              >
+                <MessageSquare size={13} />
               </button>
             )}
             {canDelete && (
@@ -489,21 +541,56 @@ export default function Rides() {
           setPage(1)
         }}
         searchPlaceholder="Search ID, flight, crew or vehicle..."
-        activeCount={(blockFilter !== 'all' ? 1 : 0) + (dateFilter ? 1 : 0)}
+        activeCount={
+          (blockFilter !== 'all' ? 1 : 0) +
+          (datePreset !== 'today' ? 1 : 0) +
+          (flightFilter ? 1 : 0) +
+          (vehicleFilter ? 1 : 0) +
+          (shiftFilter ? 1 : 0) +
+          (driverFilter ? 1 : 0)
+        }
         onClear={() => {
           setBlockFilter('all')
-          setDateFilter('')
+          applyDatePreset('today')
+          setFlightFilter('')
+          setVehicleFilter('')
+          setShiftFilter('')
+          setDriverFilter('')
           setSearch('')
           setPage(1)
         }}
         inline={
           <>
+            <div className="date-tabs">
+              {DATE_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  className={datePreset === p.value ? 'on' : ''}
+                  onClick={() => applyDatePreset(p.value)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
             <input
               type="date"
               className="filter-select"
-              value={dateFilter}
+              value={dateFrom}
               onChange={(e) => {
-                setDateFilter(e.target.value)
+                setDateFrom(e.target.value)
+                setDatePreset('')
+                setPage(1)
+              }}
+            />
+            <span className="date-range-sep">–</span>
+            <input
+              type="date"
+              className="filter-select"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value)
+                setDatePreset('')
                 setPage(1)
               }}
             />
@@ -522,6 +609,80 @@ export default function Rides() {
                 </option>
               ))}
             </select>
+          </>
+        }
+        advanced={
+          <>
+            <div className="field">
+              <label>Flight</label>
+              <select
+                className="select"
+                value={flightFilter}
+                onChange={(e) => {
+                  setFlightFilter(e.target.value)
+                  setPage(1)
+                }}
+              >
+                <option value="">All flights</option>
+                {flights.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.flight_no}
+                    {f.flight_code ? ` · ${f.flight_code}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Vehicle</label>
+              <select
+                className="select"
+                value={vehicleFilter}
+                onChange={(e) => {
+                  setVehicleFilter(e.target.value)
+                  setPage(1)
+                }}
+              >
+                <option value="">All vehicles</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.vehicle_no}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Shift</label>
+              <select
+                className="select"
+                value={shiftFilter}
+                onChange={(e) => {
+                  setShiftFilter(e.target.value)
+                  setPage(1)
+                }}
+              >
+                <option value="">All shifts</option>
+                <option value="day">{shiftLabel('day')}</option>
+                <option value="night">{shiftLabel('night')}</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Driver</label>
+              <select
+                className="select"
+                value={driverFilter}
+                onChange={(e) => {
+                  setDriverFilter(e.target.value)
+                  setPage(1)
+                }}
+              >
+                <option value="">All drivers</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    ({d.ref_no}) {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </>
         }
       />
@@ -990,8 +1151,8 @@ function RideModal({
             ['Actual', fmtTime12(row.checkin_new) || '—'],
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
             ['Actual', fmtTime12(row.checkout_new) || '—'],
-            ['Crew Count', crewCount(row.ride_crew)],
             ['Crew', crewNamesText(row.ride_crew)],
+            ['Count', crewCount(row.ride_crew)],
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
             ['Vehicle', row.vehicle?.vehicle_no || '—'],
@@ -1001,6 +1162,7 @@ function RideModal({
             [rideTimeLabel(row.block_type), row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
             ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
             ['Status', statusLabel(row.status)],
+            ['Notes', row.notes || '—'],
           ].map(([k, v], i) => (
             <div className="view-row" key={`${k}-${i}`}>
               <span className="view-label">{k}</span>

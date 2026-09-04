@@ -216,8 +216,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
 - Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
   `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
-  Also a route icon (Google Maps), View/Edit/Delete. **No Status column on the
-  table/export for now** (still shown in the read-only view row) - revisit later.
+  Also a route icon (Google Maps), View, Delete - actions header is
+  **"Action"**. **No inline Edit button** - open View then use the Edit button
+  inside the modal. **No Status column on the table/export for now** (still
+  shown in the read-only view row, which also gained a **Notes** row) - Status
+  revisit later. A **note icon** (`MessageSquare`, after View) only renders
+  when `ride.notes` is set, always accent-highlighted (like an unread chat
+  bubble - visibility itself is the signal) - click opens the same View modal.
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
   edit per-city via the **Airports** button on the Crew page (see Pages ->
   Crew), or directly on `cities.airport_*`.
@@ -229,13 +234,25 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   normal dropdown over every city the caller can see - so a Lahore-only view
   only ever touches Lahore, an Islamabad-only view only Islamabad, an "All"
   view can pick any.
-- **Crew count is its own column** - table/export column **"Crew Count"** (just
-  the number) sits right before **"Crew"** (names only, `crewNamesText()` in
-  `Rides.jsx`); the form/view still show a
+- **Crew count is its own column** - table/export column **"Count"** (just the
+  number, `crewNamesText()`/`crewCount()` in `Rides.jsx`) sits right **after**
+  "Crew" (names only); the form/view still show a
   `<span className="badge badge-accent">N</span>` next to the label. In the
   **table** (not export/CSV, which stays a flat comma list), 2+ crew render
   stacked one name per line (`CrewCell`) instead of running sideways. The
   **Flight No** column/export label is now just **"Flight"**.
+- **Filters**: besides Block and the date range (below), the collapsible
+  "Filters" panel adds **Flight, Vehicle, Shift, Driver** - plain `<select>`s
+  over the already-loaded `flights`/`vehicles`/`drivers` pickers, matched
+  against the ride's `flight_id`/`vehicle_id`/`shift`/`driver_id` (the SELECT
+  carries `driver_id` alongside the joined `driver` object for this).
+- **Date range**: always-visible **Today / Week / Month / All** tabs (flat
+  underline style, like `RoleAccess`'s mode switch) drive a `dateFrom`/`dateTo`
+  range - Week = Monday-Sunday of the current week, Month = the calendar
+  month, All = no bound. Two `<input type="date">`s next to the tabs allow a
+  custom range (typing one clears the active tab - `datePreset` becomes `''`).
+  **Today is the default on every load** (`useState('today')`), and is the
+  neutral state `activeCount`/Clear resets back to, not an empty filter.
 - **KM is a plain 2-decimal number** (`12.50`, no "km" suffix) in the KM table
   column and CSV export - the column header already says KM. It's positioned
   **after ETA** (table + export column order: … Ride Time, ETA, KM, Status).

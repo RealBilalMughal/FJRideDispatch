@@ -91,6 +91,37 @@
   font-weight: 700;
 }
 
+/* Today / Week / Month / All quick date-range tabs (filter bar) - flat underline */
+.date-tabs {
+  display: inline-flex;
+  gap: 14px;
+  padding: 0 2px;
+}
+
+.date-tabs button {
+  border: 0;
+  background: none;
+  padding: 4px 0 6px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.date-tabs button:hover {
+  color: var(--heading);
+}
+
+.date-tabs button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.date-range-sep {
+  color: var(--muted);
+}
+
 /* day / night shift picker (ride form) */
 .shift-picker {
   display: flex;
@@ -139,6 +170,16 @@
 
 .shift-driver.empty .primary {
   color: var(--danger);
+}
+
+/* note indicator: only rendered when a ride has a note, so it's always "on" -
+   highlighted like an unread chat bubble rather than a plain grey icon */
+.row-actions button.row-actions-note {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+.row-actions button.row-actions-note:hover {
+  opacity: 0.75;
 }
 
 .row-actions-link {

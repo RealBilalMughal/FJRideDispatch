@@ -23,6 +23,7 @@ import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
 import {
+  addDays,
   fmtTime12,
   fmtTimeOnly12,
   isoToLocalDate,
@@ -65,7 +66,7 @@ const NIL = '00000000-0000-0000-0000-000000000000'
 
 const SELECT = `
   id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
-  ride_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
+  ride_date, duty_sheet_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
   vehicle_id, driver_id, airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
   waypoints, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
@@ -78,6 +79,7 @@ const SELECT = `
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
   { key: 'ride_date', label: 'Date' },
+  { key: 'duty_sheet', label: 'Duty Sheet' },
   { key: 'flight_no', label: 'Flight' },
   { key: 'flight_code', label: 'Code' },
   { key: 'block', label: 'Block' },
@@ -262,6 +264,8 @@ export default function Rides() {
           vehicle_text: vehicleText(r.vehicle),
           display_ref: parent ? `${parent.ref_no}-R` : String(r.ref_no),
           return_leg: returnLegByParent.get(r.id) ?? null,
+          // pre-duty_sheet_date rows (existing data) fall back to their own ride_date
+          duty_sheet_display: r.duty_sheet_date || r.ride_date,
         }
       }),
     [rows, byId, returnLegByParent],
@@ -386,13 +390,17 @@ export default function Rides() {
       // no ride_crew row on purpose - the return leg carries no passenger,
       // it's the vehicle running empty back to the airport; crew count is 0.
       // (lastCrew's stop is still used above as the physical route origin.)
+      // Duty Sheet isn't offset here - the "previous day" pick is a manual
+      // dispatcher call made in the Ride form, not something to infer.
+      const legRideDate = start_at ? isoToLocalDate(start_at) : r.ride_date
       const { error } = await supabase.from('rides').insert({
         city_id: r.city_id,
         flight_id: r.flight_id,
         flight_no: r.flight_no,
         flight_code: r.flight_code,
         block_type: 'return_leg',
-        ride_date: start_at ? isoToLocalDate(start_at) : r.ride_date,
+        ride_date: legRideDate,
+        duty_sheet_date: legRideDate,
         vehicle_id: r.vehicle_id,
         shift: r.vehicle_id ? rShift : null,
         driver_id: rDriverId || null,
@@ -435,6 +443,7 @@ export default function Rides() {
     const data = filtered.map((r) => ({
       ref_no: r.display_ref,
       ride_date: r.ride_date,
+      duty_sheet: r.duty_sheet_display,
       flight_no: r.flight_no ?? '',
       flight_code: r.flight_code ?? '',
       block: blockLabel(r.block_type),
@@ -475,6 +484,7 @@ export default function Rides() {
   const columns = [
     { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.display_ref}</span> },
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
+    { key: 'dutysheet', header: 'Duty Sheet', render: (r) => fmtDate(r.duty_sheet_display) },
     { key: 'fno', header: 'Flight', render: (r) => r.flight_no || '—' },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
@@ -934,6 +944,13 @@ function RideModal({
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
   const [startTouched, setStartTouched] = useState(false)
   const [shift, setShift] = useState(row?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
+  // Duty Sheet: for a Night ride, the dispatcher can count it against the
+  // PREVIOUS day's duty sheet (the shift started the day before, even though
+  // the ride itself is dispatched and happens on ride_date) - restore that
+  // checkbox's state from the saved duty_sheet_date when editing.
+  const [dutySheetPrevDay, setDutySheetPrevDay] = useState(
+    () => Boolean(row?.duty_sheet_date && row?.ride_date && row.duty_sheet_date === addDays(row.ride_date, -1)),
+  )
 
   const initialCrew = [...(row?.ride_crew || [])]
     .sort((a, b) => a.seq - b.seq)
@@ -966,6 +983,8 @@ function RideModal({
       : selVehicle.driver_id
     : null
   const driverName = driverId ? drivers.find((d) => d.id === driverId)?.name || '—' : ''
+  const dutySheetDate =
+    shift === 'night' && dutySheetPrevDay ? addDays(form.ride_date, -1) : form.ride_date
 
   const cityId = Number(form.city_id) || null
   const airport = useMemo(() => {
@@ -1176,6 +1195,7 @@ function RideModal({
       block_type: form.block_type,
       deadhead_mode: form.block_type === 'deadhead' ? form.deadhead_mode : null,
       ride_date: form.ride_date,
+      duty_sheet_date: dutySheetDate,
       checkin_old: form.checkin_old || null,
       checkin_new: form.checkin_new || form.checkin_old || null,
       checkout_old: form.checkout_old || null,
@@ -1252,6 +1272,7 @@ function RideModal({
             ['Flight', `${row.flight_no || '—'}${row.flight_code ? ' · ' + row.flight_code : ''}`],
             ['Block', blockLabel(row.block_type)],
             ['Date', fmtDate(row.ride_date)],
+            ['Duty Sheet', fmtDate(row.duty_sheet_date || row.ride_date)],
             ['Check-in', fmtTime12(row.checkin_old) || '—'],
             ['Actual', fmtTime12(row.checkin_new) || '—'],
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
@@ -1547,17 +1568,32 @@ function RideModal({
                     key={s}
                     type="button"
                     className={shift === s ? 'on' : ''}
-                    onClick={() => setShift(s)}
+                    onClick={() => {
+                      setShift(s)
+                      if (s === 'day') setDutySheetPrevDay(false)
+                    }}
                   >
                     {shiftLabel(s)}
                   </button>
                 ))}
               </div>
+              {shift === 'night' && (
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={dutySheetPrevDay}
+                    onChange={(e) => setDutySheetPrevDay(e.target.checked)}
+                  />
+                  Duty Sheet: previous day
+                </label>
+              )}
               <div className={`shift-driver${driverName ? '' : ' empty'}`}>
                 <span className="primary">{driverName || `No ${shiftLabel(shift).toLowerCase()} driver`}</span>
               </div>
             </div>
-            <span className="field-hint">Pick which driver covers this ride.</span>
+            <span className="field-hint">
+              Pick which driver covers this ride. Duty Sheet: {fmtDate(dutySheetDate)}
+            </span>
           </div>
         )}
 
@@ -1717,6 +1753,7 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
         flight_code: flight.flight_code || null,
         block_type: block,
         ride_date: date,
+        duty_sheet_date: date,
         checkin_old: slot === 'checkin' ? ft || null : null,
         checkin_new: slot === 'checkin' ? ft || null : null,
         checkout_old: slot === 'checkout' ? ft || null : null,

@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
-import { fmtTimeOnly12, pkToday } from '../lib/time'
+import { addDays, fmtTimeOnly12, pkToday } from '../lib/time'
 import { blockLabel } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import Modal from '../components/Modal'
@@ -21,12 +21,6 @@ const RIDE_SELECT = `
   ride_crew(seq, crew:crew(name))
 `
 const COLORS = ['#3471b8', '#1e874b', '#b7791f', '#8b5cf6', '#c0392b', '#0e7490', '#be185d']
-// pure calendar-date arithmetic (Date.UTC, not local-midnight parsing) so it's
-// independent of the browser's own timezone - see pkToday() in lib/time.js
-const addDays = (isoDate, n) => {
-  const [y, m, d] = isoDate.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
-}
 const minsOf = (iso) => {
   const d = new Date(iso)
   return d.getHours() * 60 + d.getMinutes()

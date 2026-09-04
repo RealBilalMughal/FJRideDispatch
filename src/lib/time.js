@@ -74,6 +74,15 @@ export const pkNow = () => new Date(Date.now() + PK_OFFSET_MS)
 // own timezone.
 export const pkToday = () => pkNow().toISOString().slice(0, 10)
 
+// "2026-09-05" + n -> "2026-09-05 + n days" (n may be negative). Pure
+// calendar-date arithmetic via Date.UTC on the date's own Y/M/D - never local-
+// timezone Date parsing/getters, so it's independent of the browser's own
+// timezone (same reasoning as pkNow/pkToday above).
+export const addDays = (isoDate, n) => {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
 // ISO -> "14:30" local (for a time input)
 export const isoToLocalTime = (iso) => {
   if (!iso) return ''

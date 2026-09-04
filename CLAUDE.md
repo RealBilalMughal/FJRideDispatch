@@ -65,7 +65,8 @@ keys, tables or deploy targets with any other project.
   `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql`,
   `20260904170000_rides.sql`, `20260904190000_vehicle_shifts.sql`,
   `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`,
-  `20260906140000_return_leg_cascade.sql` (all APPLIED).
+  `20260906140000_return_leg_cascade.sql`, `20260906180000_duty_sheet_date.sql`
+  (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -193,6 +194,20 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   `shift` + `driver_id`. Table and view show Shift + Driver; export too. A
   **Return Leg** copies its parent dropoff ride's own `shift` rather than
   computing one.
+- **Duty Sheet date** (`rides.duty_sheet_date`, nullable - falls back to the
+  row's own `ride_date` on display for pre-existing rows). A night duty is
+  physically dispatched on `ride_date` but rostered against the day the shift
+  *started*, not necessarily the calendar day the ride landed on - when
+  **Night** is picked in the Ride form, a "Duty Sheet: previous day" checkbox
+  appears next to the toggle; checking it sets Duty Sheet = `ride_date - 1`
+  (e.g. ride_date 5 Sep -> Duty Sheet 4 Sep), otherwise Duty Sheet =
+  `ride_date`. Switching back to Day clears the checkbox. The form shows the
+  live result in a hint ("Duty Sheet: 04-Sep-26"); on edit, the checkbox
+  restores by comparing the saved `duty_sheet_date` to `ride_date`. New table
+  column **"Duty Sheet"** sits right after **"Date"** (also in the view modal
+  and CSV export). Generate (bulk) and Return Leg both just set it equal to
+  their own `ride_date` - the previous-day pick is a manual, one-ride-at-a-
+  time dispatcher call, not something either of those infers.
 - **Pakistan-time date helpers** (`pkNow()` / `pkToday()` in `lib/time.js`):
   everywhere "today" needs computing (default Ride date, the Today/Week/Month
   filter presets, Vehicle Board's date nav, CSV export filename stamps) goes
@@ -203,9 +218,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   UTC, so during Pakistan's 12:00–4:59 AM it silently reports the *previous*
   calendar day, which is exactly the bug this fixed (a ride dated "today"
   wouldn't show up under the default Today filter). Date-string arithmetic
-  (Week/Month bounds, Vehicle Board's day nav) uses `Date.UTC(...)` on the
-  already-correct date's Y/M/D, never local-timezone `Date` parsing/getters,
-  for the same reason.
+  (Week/Month bounds; `addDays()`, also in `lib/time.js`, shared by Vehicle
+  Board's day nav and the Duty Sheet -1-day calc below) uses `Date.UTC(...)`
+  on the already-correct date's Y/M/D, never local-timezone `Date`
+  parsing/getters, for the same reason.
 - The form's check-in/out fields are **block-conditional**: Pickup shows
   Check-in (scheduled, disabled) + Actual (editable); Drop Off shows Check-out
   + Actual; deadhead/return_leg show neither.

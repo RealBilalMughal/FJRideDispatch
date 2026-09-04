@@ -241,11 +241,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   **table** (not export/CSV, which stays a flat comma list), 2+ crew render
   stacked one name per line (`CrewCell`) instead of running sideways. The
   **Flight No** column/export label is now just **"Flight"**.
-- **Filters**: besides Block and the date range (below), the collapsible
-  "Filters" panel adds **Flight, Vehicle, Shift, Driver** - plain `<select>`s
-  over the already-loaded `flights`/`vehicles`/`drivers` pickers, matched
-  against the ride's `flight_id`/`vehicle_id`/`shift`/`driver_id` (the SELECT
-  carries `driver_id` alongside the joined `driver` object for this).
+- **Filters**: Block, **Flight, Vehicle, Shift, Driver** are all
+  always-visible plain `<select>`s in the filter bar's `inline` row (no
+  collapsible "Filters" panel - everything is one click) - Flight/Vehicle/
+  Driver options come from the already-loaded `flights`/`vehicles`/`drivers`
+  pickers, matched against the ride's `flight_id`/`vehicle_id`/`shift`/
+  `driver_id` (the SELECT carries `driver_id` alongside the joined `driver`
+  object for this).
 - **Date range**: always-visible **Today / Week / Month / All** tabs (flat
   underline style, like `RoleAccess`'s mode switch) drive a `dateFrom`/`dateTo`
   range - Week = Monday-Sunday of the current week, Month = the calendar

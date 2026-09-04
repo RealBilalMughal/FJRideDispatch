@@ -609,80 +609,64 @@ export default function Rides() {
                 </option>
               ))}
             </select>
-          </>
-        }
-        advanced={
-          <>
-            <div className="field">
-              <label>Flight</label>
-              <select
-                className="select"
-                value={flightFilter}
-                onChange={(e) => {
-                  setFlightFilter(e.target.value)
-                  setPage(1)
-                }}
-              >
-                <option value="">All flights</option>
-                {flights.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.flight_no}
-                    {f.flight_code ? ` · ${f.flight_code}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>Vehicle</label>
-              <select
-                className="select"
-                value={vehicleFilter}
-                onChange={(e) => {
-                  setVehicleFilter(e.target.value)
-                  setPage(1)
-                }}
-              >
-                <option value="">All vehicles</option>
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.vehicle_no}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>Shift</label>
-              <select
-                className="select"
-                value={shiftFilter}
-                onChange={(e) => {
-                  setShiftFilter(e.target.value)
-                  setPage(1)
-                }}
-              >
-                <option value="">All shifts</option>
-                <option value="day">{shiftLabel('day')}</option>
-                <option value="night">{shiftLabel('night')}</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Driver</label>
-              <select
-                className="select"
-                value={driverFilter}
-                onChange={(e) => {
-                  setDriverFilter(e.target.value)
-                  setPage(1)
-                }}
-              >
-                <option value="">All drivers</option>
-                {drivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    ({d.ref_no}) {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              className="filter-select"
+              value={flightFilter}
+              onChange={(e) => {
+                setFlightFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">All flights</option>
+              {flights.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.flight_no}
+                  {f.flight_code ? ` · ${f.flight_code}` : ''}
+                </option>
+              ))}
+            </select>
+            <select
+              className="filter-select"
+              value={vehicleFilter}
+              onChange={(e) => {
+                setVehicleFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">All vehicles</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.vehicle_no}
+                </option>
+              ))}
+            </select>
+            <select
+              className="filter-select"
+              value={shiftFilter}
+              onChange={(e) => {
+                setShiftFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">All shifts</option>
+              <option value="day">{shiftLabel('day')}</option>
+              <option value="night">{shiftLabel('night')}</option>
+            </select>
+            <select
+              className="filter-select"
+              value={driverFilter}
+              onChange={(e) => {
+                setDriverFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">All drivers</option>
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  ({d.ref_no}) {d.name}
+                </option>
+              ))}
+            </select>
           </>
         }
       />

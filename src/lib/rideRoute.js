@@ -80,6 +80,11 @@ export const DEFAULT_CHECKOUT_BUFFER_MIN = 30
 // on cities.return_leg_buffer_min.
 export const DEFAULT_RETURN_LEG_BUFFER_MIN = 10
 
+// Deadhead Ride Time (from "Create Ride" on a dropoff ride) = that same
+// dropoff ride's ETA + this buffer - same formula, its own per-city override
+// on cities.deadhead_buffer_min.
+export const DEFAULT_DEADHEAD_BUFFER_MIN = 15
+
 export const RIDE_STATUS = ['scheduled', 'dispatched', 'enroute', 'completed', 'cancelled']
 export const statusLabel = (s) =>
   ({ scheduled: 'Scheduled', dispatched: 'Dispatched', enroute: 'En route', completed: 'Completed', cancelled: 'Cancelled' })[s] || s

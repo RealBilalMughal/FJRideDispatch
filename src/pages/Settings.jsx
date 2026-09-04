@@ -7,6 +7,7 @@ import { useCity } from '../context/useCity'
 import {
   DEFAULT_CHECKIN_BUFFER_MIN,
   DEFAULT_CHECKOUT_BUFFER_MIN,
+  DEFAULT_DEADHEAD_BUFFER_MIN,
   DEFAULT_RETURN_LEG_BUFFER_MIN,
 } from '../lib/rideRoute'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
@@ -278,6 +279,7 @@ function RideBufferTimePanel() {
   const [checkin, setCheckin] = useState('')
   const [checkout, setCheckout] = useState('')
   const [returnLeg, setReturnLeg] = useState('')
+  const [deadhead, setDeadhead] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -300,6 +302,7 @@ function RideBufferTimePanel() {
     setCheckin(city?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
     setCheckout(city?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
     setReturnLeg(city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN)
+    setDeadhead(city?.deadhead_buffer_min ?? DEFAULT_DEADHEAD_BUFFER_MIN)
     setErr('')
     setEditing(true)
   }
@@ -316,9 +319,11 @@ function RideBufferTimePanel() {
     const ci = Number(checkin)
     const co = Number(checkout)
     const rl = Number(returnLeg)
+    const dh = Number(deadhead)
     if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
     if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
     if (!Number.isFinite(rl) || rl < 0) return setErr('Return Leg buffer must be a number of minutes')
+    if (!Number.isFinite(dh) || dh < 0) return setErr('Deadhead buffer must be a number of minutes')
     setBusy(true)
     const { error } = await supabase
       .from('cities')
@@ -326,6 +331,7 @@ function RideBufferTimePanel() {
         checkin_buffer_min: Math.round(ci),
         checkout_buffer_min: Math.round(co),
         return_leg_buffer_min: Math.round(rl),
+        deadhead_buffer_min: Math.round(dh),
       })
       .eq('id', Number(cityId))
     setBusy(false)
@@ -342,8 +348,8 @@ function RideBufferTimePanel() {
           <h3>Ride Buffer Time</h3>
           <div className="sub">
             Pickup Time = Check-in − Check-in buffer − drive time. Drop Time = Check-out +
-            Check-out buffer. Return Leg Ride Time = drop-off arrival + Return Leg buffer.
-            Each city keeps its own buffers.
+            Check-out buffer. Return Leg / Deadhead Ride Time = drop-off arrival + that
+            buffer. Each city keeps its own buffers.
           </div>
         </div>
         {!editing && cities.length > 0 && (
@@ -410,19 +416,31 @@ function RideBufferTimePanel() {
                 </div>
               </div>
 
-              <div className="field">
-                <label htmlFor="bf-rl">Return Leg buffer (min)</label>
-                <input
-                  id="bf-rl"
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={returnLeg}
-                  onChange={(e) => setReturnLeg(e.target.value)}
-                />
-                <span className="field-hint">
-                  Added on top of the dropoff ride&rsquo;s arrival to get the return leg&rsquo;s Ride Time
-                </span>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="bf-rl">Return Leg buffer (min)</label>
+                  <input
+                    id="bf-rl"
+                    type="number"
+                    min="0"
+                    className="input"
+                    value={returnLeg}
+                    onChange={(e) => setReturnLeg(e.target.value)}
+                  />
+                  <span className="field-hint">Added on top of the dropoff ride&rsquo;s arrival</span>
+                </div>
+                <div className="field">
+                  <label htmlFor="bf-dh">Deadhead buffer (min)</label>
+                  <input
+                    id="bf-dh"
+                    type="number"
+                    min="0"
+                    className="input"
+                    value={deadhead}
+                    onChange={(e) => setDeadhead(e.target.value)}
+                  />
+                  <span className="field-hint">Added on top of the dropoff ride&rsquo;s arrival</span>
+                </div>
               </div>
 
               <div className="modal-actions">
@@ -452,6 +470,12 @@ function RideBufferTimePanel() {
                 <span className="view-label">Return Leg buffer</span>
                 <span className="view-value">
                   {city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN} min
+                </span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Deadhead buffer</span>
+                <span className="view-value">
+                  {city?.deadhead_buffer_min ?? DEFAULT_DEADHEAD_BUFFER_MIN} min
                 </span>
               </div>
             </div>

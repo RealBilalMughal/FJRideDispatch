@@ -65,8 +65,8 @@ keys, tables or deploy targets with any other project.
   `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql`,
   `20260904170000_rides.sql`, `20260904190000_vehicle_shifts.sql`,
   `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`,
-  `20260906140000_return_leg_cascade.sql`, `20260906180000_duty_sheet_date.sql`
-  (all APPLIED).
+  `20260906140000_return_leg_cascade.sql`, `20260906180000_duty_sheet_date.sql`,
+  `20260906200000_deadhead_buffer.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -246,32 +246,54 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   applies the same per-city formula.
 - **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
-- Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
-  `return_leg` ride (last crew's stop -> Airport, same vehicle,
-  `return_of_ride_id` set) - **no `ride_crew` row** on purpose (the return leg
-  carries no passenger, just the vehicle running back empty, so its crew count
-  is 0; the last crew's stop is still used as the physical route origin).
-  **Ride Time = the dropoff ride's own ETA (arrival at the crew stop) + this
-  city's Return Leg buffer** (`cities.return_leg_buffer_min`, default 10,
-  edited at Settings -> Ride Buffer Time) - e.g. dropped off with a 3:00 PM
-  ETA + 10 min -> return Ride Time 3:10 PM; its own ETA (to the airport) comes
-  from the normal `duration_min` computation. Clicking Return Leg when one
-  already exists opens `ReturnLegInfoPopup` instead of the create-confirm -
-  "already created" + the return leg's ref, date, Ride Time, vehicle, and a
-  "View return leg" shortcut. **A return leg displays as `<parent ref_no>-R`**
-  everywhere (table ID, CSV export, view/note-popup titles, search) via a
-  client-computed `display_ref` (`Rides.jsx`'s `list` memo joins each row to
-  its parent via a `return_of_ride_id -> id` map built from the already-loaded
-  `rows` - no extra query) - the underlying `ref_no` is still a real,
-  independent value from the shared sequence, this is purely cosmetic.
-  **Deleting a ride cascades to its return leg** - `return_of_ride_id` is
-  `on delete cascade` (migration `20260906140000_return_leg_cascade.sql`,
-  was `on delete set null`): the old behaviour orphaned the return leg but
-  left it alive, still holding the vehicle's EXCLUDE-constrained window, so
-  the vehicle kept showing "busy at that time on another ride" even after
-  the dispatcher deleted the ride that supposedly freed it. The single-row
-  delete confirm now says so upfront when it applies (`ride 1211 and its
-  return leg 1211-R`).
+- Table: **"Create Ride"** action on dropoff rides (was "Create Return Leg")
+  opens `CreateRideModal` - a mode switch (flat underline tabs, `.date-tabs`)
+  between two ways to auto-create a follow-on ride from the last crew this
+  dropoff ride dropped off at:
+  - **Return Leg** - unchanged: last crew's stop -> Airport, same vehicle, no
+    `ride_crew` row (empty repositioning, so crew count is 0 - the stop is
+    just the physical route origin). At most one per dropoff ride - if it
+    already exists, this tab shows "already created" + the return leg's ref,
+    date, Ride Time, vehicle, and a "View return leg" shortcut instead of the
+    create form (the tab defaults to Deadhead when this is the case).
+  - **Deadhead** (`block_type: 'deadhead'`, `deadhead_mode: 'crew'`) - last
+    crew's stop -> a newly picked crew's stop (`SearchSelect`, both ends as
+    `ride_crew` this time - a real repositioning move, not empty like Return
+    Leg). A Flight is required (`SearchSelect`) purely as a snapshot/reference
+    ("which flight this deadhead was for") - if that flight is itself
+    pickup/dropoff type, its Check-in/Check-out (scheduled, disabled) +
+    Actual (editable) show, same block-conditional pattern as the main Ride
+    form's flight-pick. Live KM/duration preview (`ride-km-badge`) as soon as
+    a destination is picked. An optional **"Also create a Pickup ride"**
+    checkbox additionally creates a companion Pickup ride for that same new
+    crew (crew -> Airport, its own separately-picked flight, its Ride Time via
+    the normal Check-in-buffer auto-suggest formula) - only shown/required
+    when checked.
+  Both Return Leg and Deadhead: **Ride Time = the dropoff ride's own ETA
+  (arrival at the crew stop) + that city's buffer** (`cities.return_leg_buffer_min`
+  / `deadhead_buffer_min`, defaults 10 / 15, edited at Settings -> Ride Buffer
+  Time) - e.g. dropped off with a 3:00 PM ETA + 10 min -> Return Leg Ride Time
+  3:10 PM; the leg's own ETA (to its destination) comes from the normal
+  `duration_min` computation - no manual time entry either way. Both, and the
+  companion Pickup, chain via `return_of_ride_id` (Deadhead's parent = the
+  dropoff ride; the companion Pickup's parent = the *Deadhead* ride) and
+  **display with a suffix over their real, independent `ref_no`** - purely
+  cosmetic, computed client-side in `Rides.jsx`'s `list` memo (`suffixFor()` +
+  a `return_of_ride_id -> id` map off the already-loaded `rows`, no extra
+  query): Return Leg `"<dropoff ref>-R"`, Deadhead `"<dropoff ref>-D"`,
+  companion Pickup `"<deadhead's own ref_no>-P"` (not chained through the
+  Deadhead's own `-D` display string).
+  **Deleting a ride cascades to whatever was auto-created from it** -
+  `return_of_ride_id` is `on delete cascade` (migration
+  `20260906140000_return_leg_cascade.sql`, was `on delete set null`, later
+  reused unchanged for Deadhead/Pickup): the old behaviour orphaned the
+  return leg but left it alive, still holding the vehicle's
+  EXCLUDE-constrained window, so the vehicle kept showing "busy at that time
+  on another ride" even after the dispatcher deleted the ride that supposedly
+  freed it. Cascade also chains transitively (delete a dropoff -> its
+  Deadhead goes -> that Deadhead's companion Pickup goes too). The single-row
+  delete confirm says so upfront when a return leg applies (`ride 1211 and
+  its return leg 1211-R`).
   Also a route icon (Google Maps), View, Delete - actions header is
   **"Action"**. **No inline Edit button** - open View then use the Edit button
   inside the modal. **No Status column on the table/export for now** (still
@@ -336,11 +358,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     airport_lat/airport_lng`, the columns Ride Dispatch routing already reads.
     No routing logic lives here.
   - **Ride Buffer Time** - edit a city's `checkin_buffer_min` / `checkout_buffer_min`
-    / `return_leg_buffer_min` (minutes) -> the three ride-time buffers Rides'
-    auto-suggest, Generate and the Return Leg action use (see the Ride section
-    above). Defaults (90 / 30 / 10) live in `rideRoute.js` as
-    `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN` /
-    `DEFAULT_RETURN_LEG_BUFFER_MIN`.
+    / `return_leg_buffer_min` / `deadhead_buffer_min` (minutes) -> the four
+    ride-time buffers Rides' auto-suggest, Generate and Create Ride
+    (Return Leg / Deadhead) use (see the Ride section above). Defaults
+    (90 / 30 / 10 / 15) live in `rideRoute.js` as `DEFAULT_CHECKIN_BUFFER_MIN`
+    / `DEFAULT_CHECKOUT_BUFFER_MIN` / `DEFAULT_RETURN_LEG_BUFFER_MIN` /
+    `DEFAULT_DEADHEAD_BUFFER_MIN`.
   - Both panels: **read-only view by default, "Edit" reveals the form** (same
     pattern as Profile), with an Edit button top-right of the panel head.
     Editing disables the City field (finish or Cancel first) and has

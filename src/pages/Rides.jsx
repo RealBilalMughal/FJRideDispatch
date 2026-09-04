@@ -39,6 +39,7 @@ import {
   crewRule,
   DEFAULT_CHECKIN_BUFFER_MIN,
   DEFAULT_CHECKOUT_BUFFER_MIN,
+  DEFAULT_DEADHEAD_BUFFER_MIN,
   DEFAULT_RETURN_LEG_BUFFER_MIN,
   primaryTimeSlot,
   rideTimeLabel,
@@ -50,7 +51,6 @@ import { shiftLabel } from '../lib/shift'
 import { downloadCsv, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
-import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
 import RouteMap from '../components/RouteMap'
 import DataTable from '../components/data/DataTable'
@@ -217,9 +217,7 @@ export default function Rides() {
   const [noteFor, setNoteFor] = useState(null) // a ride row, for the note popup
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
-  const [returnFor, setReturnFor] = useState(null) // a dropoff ride
-  const [returnBusy, setReturnBusy] = useState(false)
-  const [returnInfoFor, setReturnInfoFor] = useState(null) // a dropoff ride that already has a return leg
+  const [createRideFor, setCreateRideFor] = useState(null) // a dropoff ride - "Create Ride" (Return Leg / Deadhead)
   const { selected, toggle, toggleAll, clear } = useSelection()
 
   // Today/Week/Month presets -> a concrete [dateFrom, dateTo]; "all" clears the range.
@@ -255,29 +253,38 @@ export default function Rides() {
     }
   }
 
-  // return-leg rides display as "<parent ref_no>-R" instead of their own ref_no
-  // (still a real, unique ref_no under the hood - this is purely cosmetic); and
-  // a dropoff ride that already has one needs to know that + which ride it is.
+  // "Create Ride" (on a dropoff ride) can chain up to 3 rides, each auto-
+  // created FROM the one before it via return_of_ride_id, purely cosmetic
+  // display suffixes over real, independent ref_no values:
+  //   dropoff 1000 -> Return Leg  "1000-R"  (parent = the dropoff)
+  //   dropoff 1000 -> Deadhead    "1000-D"  (parent = the dropoff)
+  //   deadhead 1001 -> Pickup     "1001-P"  (parent = the deadhead, its own
+  //                                          real ref_no, not "1000-D")
+  // A dropoff ride that already has a return leg needs to know that + which
+  // ride it is, to block creating a second one (Deadhead has no such limit).
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
   const returnLegByParent = useMemo(() => {
     const m = new Map()
     rows.forEach((r) => {
-      if (r.return_of_ride_id) m.set(r.return_of_ride_id, r)
+      if (r.block_type === 'return_leg' && r.return_of_ride_id) m.set(r.return_of_ride_id, r)
     })
     return m
   }, [rows])
+  const suffixFor = (block_type) =>
+    block_type === 'return_leg' ? 'R' : block_type === 'deadhead' ? 'D' : block_type === 'pickup' ? 'P' : null
 
   const list = useMemo(
     () =>
       rows.map((r) => {
         const parent = r.return_of_ride_id ? byId.get(r.return_of_ride_id) : null
+        const suffix = parent ? suffixFor(r.block_type) : null
         return {
           ...r,
           city_name: r.city?.name ?? '',
           crew_text: crewNamesText(r.ride_crew),
           crew_count: crewCount(r.ride_crew),
           vehicle_text: vehicleText(r.vehicle),
-          display_ref: parent ? `${parent.ref_no}-R` : String(r.ref_no),
+          display_ref: suffix ? `${parent.ref_no}-${suffix}` : String(r.ref_no),
           return_leg: returnLegByParent.get(r.id) ?? null,
           // pre-duty_sheet_date rows (existing data) fall back to their own ride_date
           duty_sheet_display: r.duty_sheet_date || r.ride_date,
@@ -357,102 +364,6 @@ export default function Rides() {
     fetchRows()
   }
 
-  const doReturnLeg = async () => {
-    if (!returnFor) return
-    setReturnBusy(true)
-    try {
-      const r = returnFor
-      const lastCrew = [...(r.ride_crew || [])].sort((a, b) => a.seq - b.seq).pop()?.crew
-      if (!lastCrew) throw new Error('This ride has no crew to return')
-      const airport = { name: r.airport_name, lat: Number(r.airport_lat), lng: Number(r.airport_lng) }
-      const pts = [
-        {
-          seq: 0,
-          kind: 'crew',
-          crew_id: lastCrew.id,
-          label: lastCrew.stop_name || lastCrew.name || 'Crew stop',
-          lat: Number(lastCrew.stop_lat),
-          lng: Number(lastCrew.stop_lng),
-        },
-        { seq: 1, kind: 'airport', label: airport.name || 'Airport', lat: airport.lat, lng: airport.lng },
-      ]
-      const info = routeComplete(pts) ? await routeInfo(pts.map((p) => [p.lng, p.lat])) : null
-
-      // Return Leg Ride Time = the dropoff ride's own arrival at the crew stop
-      // (its ETA = start_at + duration_min) + this city's Return Leg buffer
-      // (Settings -> Ride Buffer Time), e.g. dropped off 3:00 PM + 10 min -> 3:10 PM.
-      const cityObj = allowedCities.find((c) => c.id === r.city_id)
-      const returnBufferMin = Number.isFinite(Number(cityObj?.return_leg_buffer_min))
-        ? Number(cityObj.return_leg_buffer_min)
-        : DEFAULT_RETURN_LEG_BUFFER_MIN
-      const origEtaMs =
-        r.start_at && r.duration_min != null
-          ? new Date(r.start_at).getTime() + r.duration_min * 60000
-          : null
-      const start_at =
-        origEtaMs != null
-          ? new Date(origEtaMs + returnBufferMin * 60000).toISOString()
-          : r.end_at || toPkIso(r.ride_date, r.checkout_new || r.checkout_old || '12:00')
-      const dur = (info?.durationMin ?? 30) + BUFFER_MIN
-      const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
-
-      // same vehicle + same shift as the dropoff ride it's returning from
-      // (no more auto-detection from a time window - shift is a manual choice)
-      const rShift = r.shift || 'day'
-      const rVeh = vehicles.find((v) => v.id === r.vehicle_id)
-      const rDriverId = rVeh ? (rShift === 'night' ? rVeh.night_driver_id : rVeh.driver_id) : null
-
-      // no ride_crew row on purpose - the return leg carries no passenger,
-      // it's the vehicle running empty back to the airport; crew count is 0.
-      // (lastCrew's stop is still used above as the physical route origin.)
-      // Duty Sheet isn't offset here - the "previous day" pick is a manual
-      // dispatcher call made in the Ride form, not something to infer.
-      const legRideDate = start_at ? isoToLocalDate(start_at) : r.ride_date
-      const { error } = await supabase.from('rides').insert({
-        city_id: r.city_id,
-        flight_id: r.flight_id,
-        flight_no: r.flight_no,
-        flight_code: r.flight_code,
-        block_type: 'return_leg',
-        ride_date: legRideDate,
-        duty_sheet_date: legRideDate,
-        vehicle_id: r.vehicle_id,
-        shift: r.vehicle_id ? rShift : null,
-        driver_id: rDriverId || null,
-        airport_name: airport.name,
-        airport_lat: airport.lat,
-        airport_lng: airport.lng,
-        origin_label: pts[0].label,
-        origin_lat: pts[0].lat,
-        origin_lng: pts[0].lng,
-        dest_label: pts[1].label,
-        dest_lat: pts[1].lat,
-        dest_lng: pts[1].lng,
-        waypoints: pts,
-        distance_km: info?.distanceKm ?? null,
-        duration_min: info?.durationMin ?? null,
-        start_at,
-        end_at,
-        status: 'dispatched',
-        return_of_ride_id: r.id,
-        created_by: profile?.id ?? null,
-      })
-      if (error) {
-        throw new Error(
-          error.code === '23P01'
-            ? `Vehicle ${r.vehicle?.vehicle_no ?? ''} is busy at that time on another ride`
-            : error.message,
-        )
-      }
-      toast.success('Return leg ride created')
-      setReturnFor(null)
-      fetchRows()
-    } catch (e) {
-      toast.error(e.message)
-    } finally {
-      setReturnBusy(false)
-    }
-  }
 
   const exportCsv = () => {
     const data = filtered.map((r) => ({
@@ -547,9 +458,9 @@ export default function Rides() {
           <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
             {r.block_type === 'dropoff' && canAdd && (
               <button
-                title={r.return_leg ? 'Return leg already created' : 'Create return leg'}
+                title={r.return_leg ? 'Create Ride (return leg already created)' : 'Create Ride'}
                 className={r.return_leg ? 'row-actions-note' : undefined}
-                onClick={() => (r.return_leg ? setReturnInfoFor(r) : setReturnFor(r))}
+                onClick={() => setCreateRideFor(r)}
               >
                 <RotateCcw size={13} />
               </button>
@@ -833,33 +744,25 @@ export default function Rides() {
         />
       )}
       {noteFor && <NotePopup row={noteFor} onClose={() => setNoteFor(null)} />}
-      {returnInfoFor && (
-        <ReturnLegInfoPopup
-          row={returnInfoFor}
-          onClose={() => setReturnInfoFor(null)}
-          onView={(returnLeg) => {
-            setReturnInfoFor(null)
-            setDetail({ row: { ...returnLeg, display_ref: `${returnInfoFor.ref_no}-R` }, edit: false })
+      {createRideFor && (
+        <CreateRideModal
+          row={createRideFor}
+          flights={flights}
+          crew={crew}
+          vehicles={vehicles}
+          allowedCities={allowedCities}
+          createdBy={profile?.id}
+          onClose={() => setCreateRideFor(null)}
+          onView={(ride, label) => {
+            setCreateRideFor(null)
+            setDetail({ row: { ...ride, display_ref: label }, edit: false })
+          }}
+          onDone={() => {
+            setCreateRideFor(null)
+            fetchRows()
           }}
         />
       )}
-
-      <ConfirmDialog
-        open={Boolean(returnFor)}
-        title="Create return leg"
-        confirmLabel="Create return ride"
-        busyLabel="Creating…"
-        busy={returnBusy}
-        message={
-          returnFor
-            ? `Create a return-leg ride: ${returnFor.dest_label || 'last stop'} → ${
-                returnFor.airport_name || 'Airport'
-              }, on the same vehicle (${returnFor.vehicle?.vehicle_no || '—'}).`
-            : ''
-        }
-        onConfirm={doReturnLeg}
-        onClose={() => !returnBusy && setReturnFor(null)}
-      />
 
       <ConfirmDelete
         open={Boolean(pending)}
@@ -899,42 +802,538 @@ function NotePopup({ row, onClose }) {
   )
 }
 
-// ── Return leg info popup ────────────────────────────────────────────────
-// Opened from the Return Leg row action when one already exists for this
-// ride, instead of the create-confirm - tells the dispatcher a return leg
-// is already there and which one, with a couple of details, plus a way to
-// jump straight to viewing it.
-function ReturnLegInfoPopup({ row, onClose, onView }) {
-  const rl = row.return_leg
-  const rlRef = `${row.ref_no}-R`
+// ── Create Ride (Return Leg / Deadhead) ──────────────────────────────────
+// Opened from the "Create Ride" row action on a dropoff ride. Two modes:
+//   Return Leg - unchanged from before: last-dropped crew's stop -> Airport,
+//     same vehicle/shift, no ride_crew row (empty repositioning). At most
+//     one per dropoff ride - if it already exists this tab shows it instead
+//     of the create form, with a "View return leg" shortcut.
+//   Deadhead - last-dropped crew's stop -> a newly picked crew's stop (both
+//     as ride_crew, deadhead_mode 'crew'), same vehicle/shift, a flight is
+//     required (snapshotted so the deadhead can be tied to it - if that
+//     flight is itself a pickup/dropoff, its check-in/out auto-fills the
+//     same way flight-pick does in the main Ride form). Displays as
+//     "<dropoff ref>-D". An optional "Create Pickup" checkbox additionally
+//     creates a companion Pickup ride (that same new crew -> Airport, its
+//     own flight) chained off the Deadhead - displays as
+//     "<deadhead's own ref_no>-P".
+// Both auto-legs' Ride Time = the dropoff ride's own ETA (arrival at the
+// crew stop) + that city's Return Leg / Deadhead buffer (Settings -> Ride
+// Buffer Time) - no manual time entry, same pattern for both.
+function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdBy, onClose, onView, onDone }) {
+  const [mode, setMode] = useState(row.return_leg ? 'deadhead' : 'return')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const cityObj = allowedCities.find((c) => c.id === row.city_id)
+  const lastCrew = [...(row.ride_crew || [])].sort((a, b) => a.seq - b.seq).pop()?.crew
+  const airport = { name: row.airport_name, lat: Number(row.airport_lat), lng: Number(row.airport_lng) }
+
+  // this dropoff ride's own arrival at the crew stop it dropped off at -
+  // both Return Leg and Deadhead start counting their buffer from here
+  const origEtaMs =
+    row.start_at && row.duration_min != null
+      ? new Date(row.start_at).getTime() + row.duration_min * 60000
+      : null
+
+  const sameVehicleShiftDriver = (shift) => {
+    const veh = vehicles.find((v) => v.id === row.vehicle_id)
+    const driverId = veh ? (shift === 'night' ? veh.night_driver_id : veh.driver_id) : null
+    return { driverId }
+  }
+
+  const startAtFrom = (bufferMin) =>
+    origEtaMs != null
+      ? new Date(origEtaMs + bufferMin * 60000).toISOString()
+      : row.end_at || toPkIso(row.ride_date, row.checkout_new || row.checkout_old || '12:00')
+
+  // ── Return Leg (unchanged behaviour) ──────────────────────────────────
+  const doReturnLeg = async () => {
+    if (!lastCrew) return setErr('This ride has no crew to return')
+    setErr('')
+    setBusy(true)
+    try {
+      const pts = buildRoutePoints('return_leg', null, [{ ...lastCrew, crew_id: lastCrew.id }], airport)
+      const info = routeComplete(pts) ? await routeInfo(pts.map((p) => [p.lng, p.lat])) : null
+      const returnBufferMin = Number.isFinite(Number(cityObj?.return_leg_buffer_min))
+        ? Number(cityObj.return_leg_buffer_min)
+        : DEFAULT_RETURN_LEG_BUFFER_MIN
+      const start_at = startAtFrom(returnBufferMin)
+      const dur = (info?.durationMin ?? 30) + BUFFER_MIN
+      const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
+      const shift = row.shift || 'day'
+      const { driverId } = sameVehicleShiftDriver(shift)
+      const legRideDate = start_at ? isoToLocalDate(start_at) : row.ride_date
+
+      // no ride_crew row on purpose - the return leg carries no passenger,
+      // it's the vehicle running empty back to the airport; crew count is 0.
+      const { error } = await supabase.from('rides').insert({
+        city_id: row.city_id,
+        flight_id: row.flight_id,
+        flight_no: row.flight_no,
+        flight_code: row.flight_code,
+        block_type: 'return_leg',
+        ride_date: legRideDate,
+        duty_sheet_date: legRideDate,
+        vehicle_id: row.vehicle_id,
+        shift: row.vehicle_id ? shift : null,
+        driver_id: driverId || null,
+        airport_name: airport.name,
+        airport_lat: airport.lat,
+        airport_lng: airport.lng,
+        origin_label: pts[0]?.label,
+        origin_lat: pts[0]?.lat,
+        origin_lng: pts[0]?.lng,
+        dest_label: pts[1]?.label,
+        dest_lat: pts[1]?.lat,
+        dest_lng: pts[1]?.lng,
+        waypoints: pts,
+        distance_km: info?.distanceKm ?? null,
+        duration_min: info?.durationMin ?? null,
+        start_at,
+        end_at,
+        status: 'dispatched',
+        return_of_ride_id: row.id,
+        created_by: createdBy ?? null,
+      })
+      if (error) throw new Error(mapRideError(error, row.vehicle_id, vehicles))
+      toast.success('Return leg ride created')
+      onDone()
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── Deadhead (+ optional companion Pickup) ────────────────────────────
+  const cityCrew = crew.filter((c) => c.city_id === row.city_id)
+  const cityFlights = flights.filter((f) => f.city_id === row.city_id)
+  const [destCrewId, setDestCrewId] = useState('')
+  const [flightId, setFlightId] = useState('')
+  const [checkinNew, setCheckinNew] = useState('')
+  const [checkoutNew, setCheckoutNew] = useState('')
+  const [addPickup, setAddPickup] = useState(false)
+  const [pickupFlightId, setPickupFlightId] = useState('')
+  const [pickupCheckinNew, setPickupCheckinNew] = useState('')
+
+  const destCrew = cityCrew.find((c) => c.id === destCrewId)
+  const flight = cityFlights.find((f) => f.id === flightId)
+  const flightSlot = primaryTimeSlot(flight?.block_type) // 'checkin' | 'checkout' | null
+  const pickupFlight = cityFlights.find((f) => f.id === pickupFlightId)
+
+  const pickFlight = (fid) => {
+    setFlightId(fid)
+    const f = cityFlights.find((x) => x.id === fid)
+    const ft = toTime24(f?.flight_time)
+    setCheckinNew(primaryTimeSlot(f?.block_type) === 'checkin' ? ft : '')
+    setCheckoutNew(primaryTimeSlot(f?.block_type) === 'checkout' ? ft : '')
+  }
+
+  const [dhInfo, setDhInfo] = useState(null) // { distanceKm, durationMin }
+  useEffect(() => {
+    if (!lastCrew || !destCrew) {
+      setDhInfo(null)
+      return
+    }
+    const pts = buildRoutePoints(
+      'deadhead',
+      'crew',
+      [{ ...lastCrew, crew_id: lastCrew.id }, { ...destCrew, crew_id: destCrew.id }],
+      airport,
+    )
+    if (!routeComplete(pts)) {
+      setDhInfo(null)
+      return
+    }
+    let alive = true
+    routeInfo(pts.map((p) => [p.lng, p.lat])).then((info) => {
+      if (alive) setDhInfo(info)
+    })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destCrewId])
+
+  const deadheadBufferMin = Number.isFinite(Number(cityObj?.deadhead_buffer_min))
+    ? Number(cityObj.deadhead_buffer_min)
+    : DEFAULT_DEADHEAD_BUFFER_MIN
+  const dhStartAt = startAtFrom(deadheadBufferMin)
+  const dhEta =
+    dhStartAt && dhInfo?.durationMin != null
+      ? new Date(new Date(dhStartAt).getTime() + dhInfo.durationMin * 60000).toISOString()
+      : null
+
+  const doDeadhead = async (e) => {
+    e.preventDefault()
+    setErr('')
+    if (!lastCrew) return setErr('This ride has no crew to deadhead from')
+    if (!destCrew) return setErr('Pick a destination crew')
+    if (!flight) return setErr('Pick a flight')
+    if (addPickup && !pickupFlight) return setErr('Pick a flight for the Pickup ride')
+    setBusy(true)
+    try {
+      const pts = buildRoutePoints(
+        'deadhead',
+        'crew',
+        [{ ...lastCrew, crew_id: lastCrew.id }, { ...destCrew, crew_id: destCrew.id }],
+        airport,
+      )
+      const info = dhInfo ?? (routeComplete(pts) ? await routeInfo(pts.map((p) => [p.lng, p.lat])) : null)
+      const start_at = dhStartAt
+      const dur = (info?.durationMin ?? 30) + BUFFER_MIN
+      const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
+      const shift = row.shift || 'day'
+      const { driverId } = sameVehicleShiftDriver(shift)
+      const ft = toTime24(flight.flight_time)
+      const legRideDate = start_at ? isoToLocalDate(start_at) : row.ride_date
+
+      const { data: dh, error } = await supabase
+        .from('rides')
+        .insert({
+          city_id: row.city_id,
+          flight_id: flight.id,
+          flight_no: flight.flight_no,
+          flight_code: flight.flight_code || null,
+          block_type: 'deadhead',
+          deadhead_mode: 'crew',
+          ride_date: legRideDate,
+          duty_sheet_date: legRideDate,
+          checkin_old: flightSlot === 'checkin' ? ft || null : null,
+          checkin_new: flightSlot === 'checkin' ? checkinNew || ft || null : null,
+          checkout_old: flightSlot === 'checkout' ? ft || null : null,
+          checkout_new: flightSlot === 'checkout' ? checkoutNew || ft || null : null,
+          vehicle_id: row.vehicle_id,
+          shift: row.vehicle_id ? shift : null,
+          driver_id: driverId || null,
+          airport_name: airport.name,
+          airport_lat: airport.lat,
+          airport_lng: airport.lng,
+          origin_label: pts[0]?.label,
+          origin_lat: pts[0]?.lat,
+          origin_lng: pts[0]?.lng,
+          dest_label: pts[1]?.label,
+          dest_lat: pts[1]?.lat,
+          dest_lng: pts[1]?.lng,
+          waypoints: pts,
+          distance_km: info?.distanceKm ?? null,
+          duration_min: info?.durationMin ?? null,
+          start_at,
+          end_at,
+          status: 'dispatched',
+          return_of_ride_id: row.id,
+          created_by: createdBy ?? null,
+        })
+        .select('id, ref_no')
+        .single()
+      if (error) throw new Error(mapRideError(error, row.vehicle_id, vehicles))
+
+      await supabase.from('ride_crew').insert([
+        { ride_id: dh.id, crew_id: lastCrew.id, seq: 0 },
+        { ride_id: dh.id, crew_id: destCrew.id, seq: 1 },
+      ])
+
+      if (addPickup) {
+        const pPts = buildRoutePoints('pickup', null, [{ ...destCrew, crew_id: destCrew.id }], airport)
+        const pInfo = routeComplete(pPts) ? await routeInfo(pPts.map((p) => [p.lng, p.lat])) : null
+        const pft = toTime24(pickupFlight.flight_time)
+        const pCheckinOld = pft || null
+        const pCheckinNewVal = pickupCheckinNew || pft || null
+
+        // same auto-suggest formula as the main Ride form's Pickup Time
+        const checkinBufferMin = Number.isFinite(Number(cityObj?.checkin_buffer_min))
+          ? Number(cityObj.checkin_buffer_min)
+          : DEFAULT_CHECKIN_BUFFER_MIN
+        const anchor = pCheckinNewVal || pCheckinOld
+        let pStartAt = null
+        if (anchor) {
+          const [h, m] = anchor.split(':').map(Number)
+          const mins = h * 60 + m - checkinBufferMin - (pInfo?.durationMin ?? 0)
+          const v = ((mins % 1440) + 1440) % 1440
+          const t = `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`
+          pStartAt = toPkIso(legRideDate, t)
+        }
+        const pDur = (pInfo?.durationMin ?? 30) + BUFFER_MIN
+        const pEndAt = pStartAt ? new Date(new Date(pStartAt).getTime() + pDur * 60000).toISOString() : null
+        const pRideDate = pStartAt ? isoToLocalDate(pStartAt) : legRideDate
+
+        const { data: pr, error: pErr } = await supabase
+          .from('rides')
+          .insert({
+            city_id: row.city_id,
+            flight_id: pickupFlight.id,
+            flight_no: pickupFlight.flight_no,
+            flight_code: pickupFlight.flight_code || null,
+            block_type: 'pickup',
+            ride_date: pRideDate,
+            duty_sheet_date: pRideDate,
+            checkin_old: pCheckinOld,
+            checkin_new: pCheckinNewVal,
+            vehicle_id: row.vehicle_id,
+            shift: row.vehicle_id ? shift : null,
+            driver_id: driverId || null,
+            airport_name: airport.name,
+            airport_lat: airport.lat,
+            airport_lng: airport.lng,
+            origin_label: pPts[0]?.label,
+            origin_lat: pPts[0]?.lat,
+            origin_lng: pPts[0]?.lng,
+            dest_label: pPts[1]?.label,
+            dest_lat: pPts[1]?.lat,
+            dest_lng: pPts[1]?.lng,
+            waypoints: pPts,
+            distance_km: pInfo?.distanceKm ?? null,
+            duration_min: pInfo?.durationMin ?? null,
+            start_at: pStartAt,
+            end_at: pEndAt,
+            status: 'dispatched',
+            return_of_ride_id: dh.id,
+            created_by: createdBy ?? null,
+          })
+          .select('id')
+          .single()
+        if (pErr) throw new Error(mapRideError(pErr, row.vehicle_id, vehicles))
+        await supabase.from('ride_crew').insert({ ride_id: pr.id, crew_id: destCrew.id, seq: 0 })
+        toast.success(`Deadhead + Pickup rides created (${row.ref_no}-D, ${dh.ref_no}-P)`)
+      } else {
+        toast.success(`Deadhead ride created (${row.ref_no}-D)`)
+      }
+      onDone()
+    } catch (e2) {
+      setErr(e2.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <Modal open onClose={onClose} title={`Ride ${row.display_ref ?? row.ref_no}`} width={420}>
+    <Modal open onClose={onClose} title={`Create Ride from ${row.display_ref}`} width={620}>
       <div className="modal-form">
-        <p className="confirm-msg">A return leg has already been created for this ride.</p>
-        <div className="view-row">
-          <span className="view-label">Return Leg</span>
-          <span className="view-value">{rlRef}</span>
-        </div>
-        <div className="view-row">
-          <span className="view-label">Date</span>
-          <span className="view-value">{fmtDate(rl?.ride_date)}</span>
-        </div>
-        <div className="view-row">
-          <span className="view-label">Ride Time</span>
-          <span className="view-value">{rl?.start_at ? fmtTimeOnly12(rl.start_at) : '—'}</span>
-        </div>
-        <div className="view-row">
-          <span className="view-label">Vehicle</span>
-          <span className="view-value">{rl?.vehicle?.vehicle_no || '—'}</span>
-        </div>
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Close
+        <div className="date-tabs">
+          <button
+            type="button"
+            className={mode === 'return' ? 'on' : ''}
+            onClick={() => {
+              setMode('return')
+              setErr('')
+            }}
+          >
+            Return Leg
           </button>
-          <button type="button" className="btn btn-square" onClick={() => onView(rl)}>
-            View return leg
+          <button
+            type="button"
+            className={mode === 'deadhead' ? 'on' : ''}
+            onClick={() => {
+              setMode('deadhead')
+              setErr('')
+            }}
+          >
+            Deadhead
           </button>
         </div>
+
+        {err && <div className="modal-error">{err}</div>}
+
+        {mode === 'return' ? (
+          row.return_leg ? (
+            <>
+              <p className="confirm-msg">A return leg has already been created for this ride.</p>
+              <div className="view-row">
+                <span className="view-label">Return Leg</span>
+                <span className="view-value">{row.ref_no}-R</span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Date</span>
+                <span className="view-value">{fmtDate(row.return_leg.ride_date)}</span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Ride Time</span>
+                <span className="view-value">
+                  {row.return_leg.start_at ? fmtTimeOnly12(row.return_leg.start_at) : '—'}
+                </span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Vehicle</span>
+                <span className="view-value">{row.return_leg.vehicle?.vehicle_no || '—'}</span>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-square"
+                  onClick={() => onView(row.return_leg, `${row.ref_no}-R`)}
+                >
+                  View return leg
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="confirm-msg">
+                Create a return-leg ride: {row.dest_label || 'last stop'} → {row.airport_name || 'Airport'}, on
+                the same vehicle ({row.vehicle?.vehicle_no || '—'}).
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-square" disabled={busy} onClick={doReturnLeg}>
+                  {busy ? 'Creating…' : 'Create return ride'}
+                </button>
+              </div>
+            </>
+          )
+        ) : (
+          <form onSubmit={doDeadhead}>
+            <p className="confirm-msg">
+              Deadhead: {lastCrew ? lastCrew.stop_name || lastCrew.name : 'last stop'} (where{' '}
+              {row.display_ref} dropped off) → a new crew, on the same vehicle (
+              {row.vehicle?.vehicle_no || '—'}).
+            </p>
+
+            <div className="field">
+              <label>Destination crew</label>
+              <SearchSelect
+                value={destCrewId}
+                onChange={setDestCrewId}
+                options={cityCrew
+                  .filter((c) => c.id !== lastCrew?.id)
+                  .map((c) => ({ value: c.id, label: `(${c.ref_no}) ${c.name}`, sub: c.stop_name || undefined }))}
+                placeholder="Search a crew member…"
+              />
+            </div>
+
+            <div className="field">
+              <label>Flight</label>
+              <SearchSelect
+                value={flightId}
+                onChange={pickFlight}
+                options={cityFlights.map((f) => ({
+                  value: f.id,
+                  label: `${f.flight_no}${f.flight_code ? ' · ' + f.flight_code : ''}`,
+                  sub: f.route || undefined,
+                }))}
+                placeholder="Search a flight…"
+              />
+              <span className="field-hint">
+                Snapshotted onto the deadhead so it&rsquo;s clear which flight it was for.
+              </span>
+            </div>
+
+            {flightSlot === 'checkin' && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="dh-cio">Check-in</label>
+                  <input id="dh-cio" type="time" className="input" value={toTime24(flight?.flight_time)} disabled />
+                  <span className="field-hint">Scheduled, from the flight</span>
+                </div>
+                <div className="field">
+                  <label htmlFor="dh-cin">Actual</label>
+                  <input
+                    id="dh-cin"
+                    type="time"
+                    className="input"
+                    value={checkinNew}
+                    onChange={(e) => setCheckinNew(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+            {flightSlot === 'checkout' && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="dh-coo">Check-out</label>
+                  <input id="dh-coo" type="time" className="input" value={toTime24(flight?.flight_time)} disabled />
+                  <span className="field-hint">Scheduled, from the flight</span>
+                </div>
+                <div className="field">
+                  <label htmlFor="dh-con">Actual</label>
+                  <input
+                    id="dh-con"
+                    type="time"
+                    className="input"
+                    value={checkoutNew}
+                    onChange={(e) => setCheckoutNew(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="field">
+              <label>
+                Route{' '}
+                {dhInfo?.distanceKm != null && (
+                  <span className="ride-km-badge">
+                    {Number(dhInfo.distanceKm).toFixed(2)} km
+                    {dhInfo.durationMin != null ? ` · ${dhInfo.durationMin} min` : ''}
+                  </span>
+                )}
+              </label>
+              <span className="field-hint">
+                Ride Time {fmtTimeOnly12(dhStartAt) || '—'} (dropoff arrival + {deadheadBufferMin} min Deadhead
+                buffer) · ETA {dhEta ? fmtTimeOnly12(dhEta) : 'needs a route'}
+              </span>
+            </div>
+
+            <label className="check-line">
+              <input type="checkbox" checked={addPickup} onChange={(e) => setAddPickup(e.target.checked)} />
+              Also create a Pickup ride for this crew ({destCrew?.name || 'destination crew'} → Airport)
+            </label>
+
+            {addPickup && (
+              <>
+                <div className="field">
+                  <label>Pickup flight</label>
+                  <SearchSelect
+                    value={pickupFlightId}
+                    onChange={setPickupFlightId}
+                    options={cityFlights.map((f) => ({
+                      value: f.id,
+                      label: `${f.flight_no}${f.flight_code ? ' · ' + f.flight_code : ''}`,
+                      sub: f.route || undefined,
+                    }))}
+                    placeholder="Search a flight…"
+                  />
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="pk-cio">Check-in</label>
+                    <input
+                      id="pk-cio"
+                      type="time"
+                      className="input"
+                      value={toTime24(pickupFlight?.flight_time)}
+                      disabled
+                    />
+                    <span className="field-hint">Scheduled, from the flight</span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pk-cin">Actual</label>
+                    <input
+                      id="pk-cin"
+                      type="time"
+                      className="input"
+                      value={pickupCheckinNew}
+                      onChange={(e) => setPickupCheckinNew(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-square" disabled={busy}>
+                {busy ? 'Creating…' : 'Create Deadhead'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </Modal>
   )

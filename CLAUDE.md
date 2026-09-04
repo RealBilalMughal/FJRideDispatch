@@ -64,8 +64,8 @@ keys, tables or deploy targets with any other project.
 - Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
   `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql`,
   `20260904170000_rides.sql`, `20260904190000_vehicle_shifts.sql`,
-  `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`
-  (all APPLIED).
+  `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`,
+  `20260906140000_return_leg_cascade.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -224,6 +224,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   its parent via a `return_of_ride_id -> id` map built from the already-loaded
   `rows` - no extra query) - the underlying `ref_no` is still a real,
   independent value from the shared sequence, this is purely cosmetic.
+  **Deleting a ride cascades to its return leg** - `return_of_ride_id` is
+  `on delete cascade` (migration `20260906140000_return_leg_cascade.sql`,
+  was `on delete set null`): the old behaviour orphaned the return leg but
+  left it alive, still holding the vehicle's EXCLUDE-constrained window, so
+  the vehicle kept showing "busy at that time on another ride" even after
+  the dispatcher deleted the ride that supposedly freed it. The single-row
+  delete confirm now says so upfront when it applies (`ride 1211 and its
+  return leg 1211-R`).
   Also a route icon (Google Maps), View, Delete - actions header is
   **"Action"**. **No inline Edit button** - open View then use the Edit button
   inside the modal. **No Status column on the table/export for now** (still

@@ -545,7 +545,14 @@ export default function Rides() {
               <button
                 title="Delete"
                 className="danger"
-                onClick={() => setPending({ ids: [r.id], label: `ride ${r.display_ref}` })}
+                onClick={() =>
+                  setPending({
+                    ids: [r.id],
+                    label: r.return_leg
+                      ? `ride ${r.display_ref} and its return leg ${r.ref_no}-R`
+                      : `ride ${r.display_ref}`,
+                  })
+                }
               >
                 <Trash2 size={13} />
               </button>

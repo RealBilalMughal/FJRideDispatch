@@ -173,6 +173,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
   Also a route icon (Google Maps), View/Edit/Delete, status inline-select.
 - Airports seeded for the 3 cities; change them by editing `cities.airport_*`.
+- **Generate** (Rides header) - bulk-create rides from one flight over a date
+  range + weekday picker + optional shared crew. Vehicles assigned per-ride after.
+- **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each
+  vehicle's booked rides (bars by `start_at`/`end_at`, coloured by block, click ->
+  ride detail) + a Map tab drawing every routed ride for the day.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -197,5 +202,5 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] `VITE_ORS_API_KEY` set + verified (directions + optimization)
 - [x] Ride Dispatch page (`20260904170000_rides.sql`) - block-wise route, ORS km,
       vehicle time-window conflict, return-leg, old/new check-in/out
-- [ ] Rides phase 2: ORS optimize-order toggle, vehicle timeline/gantt, recurring
+- [x] Rides phase 2: optimise-order button, Generate (recurring), Vehicle Board
 - [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)

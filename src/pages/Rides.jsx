@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
+  CalendarRange,
   Download,
   Eye,
   Navigation,
@@ -136,6 +137,7 @@ export default function Rides() {
   const [dateFilter, setDateFilter] = useState('')
 
   const [addOpen, setAddOpen] = useState(false)
+  const [genOpen, setGenOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit }
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
@@ -399,6 +401,11 @@ export default function Rides() {
             <Download size={14} /> Export
           </button>
           {canAdd && (
+            <button className="btn btn-ghost btn-square btn-sm" onClick={() => setGenOpen(true)}>
+              <CalendarRange size={14} /> Generate
+            </button>
+          )}
+          {canAdd && (
             <button className="btn" onClick={() => setAddOpen(true)}>
               <Plus size={15} /> Add Ride
             </button>
@@ -494,6 +501,19 @@ export default function Rides() {
           onClose={() => setAddOpen(false)}
           onDone={() => {
             setAddOpen(false)
+            fetchRows()
+          }}
+        />
+      )}
+      {genOpen && (
+        <GenerateRidesModal
+          flights={flights}
+          crew={crew}
+          allowedCities={allowedCities}
+          createdBy={profile?.id}
+          onClose={() => setGenOpen(false)}
+          onDone={() => {
+            setGenOpen(false)
             fetchRows()
           }}
         />
@@ -1169,6 +1189,255 @@ function RideModal({
           </button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+// ── Generate rides (recurring) ────────────────────────────────────────────
+const WEEKDAYS = [
+  { d: 1, label: 'Mon' },
+  { d: 2, label: 'Tue' },
+  { d: 3, label: 'Wed' },
+  { d: 4, label: 'Thu' },
+  { d: 5, label: 'Fri' },
+  { d: 6, label: 'Sat' },
+  { d: 0, label: 'Sun' },
+]
+
+function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, onDone }) {
+  const iso = new Date().toISOString().slice(0, 10)
+  const [flightId, setFlightId] = useState('')
+  const [from, setFrom] = useState(iso)
+  const [to, setTo] = useState(iso)
+  const [days, setDays] = useState(() => WEEKDAYS.reduce((a, w) => ({ ...a, [w.d]: true }), {}))
+  const [crewList, setCrewList] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const flight = flights.find((f) => f.id === flightId)
+  const cityId = flight?.city_id ?? null
+  const block = flight?.block_type || 'pickup'
+  const cityObj = allowedCities.find((c) => c.id === cityId)
+  const airport = {
+    name: cityObj?.airport_name || '',
+    lat: Number(cityObj?.airport_lat),
+    lng: Number(cityObj?.airport_lng),
+  }
+  const rule = crewRule(block, 'airport')
+  const cityCrew = crew.filter((c) => c.city_id === cityId && !crewList.some((x) => x.id === c.id))
+
+  const dates = useMemo(() => {
+    const out = []
+    if (!from || !to || from > to) return out
+    const cur = new Date(`${from}T00:00:00`)
+    const end = new Date(`${to}T00:00:00`)
+    while (cur <= end && out.length < 120) {
+      if (days[cur.getDay()]) out.push(cur.toISOString().slice(0, 10))
+      cur.setDate(cur.getDate() + 1)
+    }
+    return out
+  }, [from, to, days])
+
+  const addCrew = (id) => {
+    const c = crew.find((x) => x.id === id)
+    if (!c || (rule.max != null && crewList.length >= rule.max)) return
+    setCrewList((cl) => [...cl, c])
+  }
+
+  const generate = async () => {
+    setErr('')
+    if (!flight) return setErr('Pick a flight')
+    if (!dates.length) return setErr('No dates match the range + weekdays')
+    if (dates.length > 60) return setErr('Too many dates (max 60) — narrow the range')
+    if (crewList.length && crewList.length < rule.min)
+      return setErr(`This block needs at least ${rule.min} crew`)
+
+    setBusy(true)
+    const pts = buildRoutePoints(
+      block,
+      'airport',
+      crewList.map((c) => ({ ...c, crew_id: c.id })),
+      airport,
+    )
+    const info = crewList.length && routeComplete(pts) ? await routeInfo(pts.map((p) => [p.lng, p.lat])) : null
+    const slot = primaryTimeSlot(block)
+    const ft = toTime24(flight.flight_time)
+    const origin = pts[0]
+    const dest = pts[pts.length - 1]
+    const durMs = (info?.durationMin ?? 0) * 60000
+
+    const rows = dates.map((date) => {
+      let start_at = null
+      let end_at = null
+      if (ft) {
+        const anchorMs = new Date(toPkIso(date, ft)).getTime()
+        start_at = new Date(block === 'pickup' ? anchorMs - durMs : anchorMs).toISOString()
+        end_at = new Date(new Date(start_at).getTime() + ((info?.durationMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
+      }
+      return {
+        city_id: cityId,
+        flight_id: flight.id,
+        flight_no: flight.flight_no,
+        flight_code: flight.flight_code || null,
+        block_type: block,
+        ride_date: date,
+        checkin_old: slot === 'checkin' ? ft || null : null,
+        checkin_new: slot === 'checkin' ? ft || null : null,
+        checkout_old: slot === 'checkout' ? ft || null : null,
+        checkout_new: slot === 'checkout' ? ft || null : null,
+        start_at,
+        end_at,
+        airport_name: airport.name || null,
+        airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
+        airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
+        origin_label: crewList.length ? origin?.label || null : null,
+        origin_lat: crewList.length ? origin?.lat ?? null : null,
+        origin_lng: crewList.length ? origin?.lng ?? null : null,
+        dest_label: crewList.length ? dest?.label || null : null,
+        dest_lat: crewList.length ? dest?.lat ?? null : null,
+        dest_lng: crewList.length ? dest?.lng ?? null : null,
+        waypoints: crewList.length ? pts : [],
+        distance_km: info?.distanceKm ?? null,
+        duration_min: info?.durationMin ?? null,
+        status: 'dispatched',
+        created_by: createdBy ?? null,
+      }
+    })
+
+    const { data, error } = await supabase.from('rides').insert(rows).select('id')
+    if (error) {
+      setBusy(false)
+      return setErr(error.message)
+    }
+    if (crewList.length && data?.length) {
+      const links = data.flatMap((r) => crewList.map((c, i) => ({ ride_id: r.id, crew_id: c.id, seq: i })))
+      const rc = await supabase.from('ride_crew').insert(links)
+      if (rc.error) {
+        setBusy(false)
+        return setErr(`Rides created but crew link failed: ${rc.error.message}`)
+      }
+    }
+    setBusy(false)
+    toast.success(`Created ${data.length} ride(s)`)
+    onDone()
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Generate rides" width={520}>
+      <div className="modal-form">
+        {err && <div className="modal-error">{err}</div>}
+        <p className="confirm-msg">
+          Bulk-create rides from one flight across a date range. Vehicles are assigned
+          per-ride afterwards.
+        </p>
+
+        <div className="field">
+          <label>Flight</label>
+          <SearchSelect
+            value={flightId}
+            onChange={setFlightId}
+            options={flights.map((f) => ({
+              value: f.id,
+              label: `${f.flight_no}${f.flight_code ? ' · ' + f.flight_code : ''}`,
+              sub: `${blockLabel(f.block_type)}${f.route ? ' · ' + f.route : ''}`,
+            }))}
+            placeholder="Search a flight…"
+          />
+        </div>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="g-from">From</label>
+            <input id="g-from" type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="g-to">To</label>
+            <input id="g-to" type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="field">
+          <label>Weekdays</label>
+          <div className="radio-row">
+            {WEEKDAYS.map((w) => (
+              <label key={w.d} className="check-line">
+                <input
+                  type="checkbox"
+                  checked={days[w.d]}
+                  onChange={() => setDays((d) => ({ ...d, [w.d]: !d[w.d] }))}
+                />
+                {w.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {flight && (
+          <div className="field">
+            <label>
+              Crew for every ride{' '}
+              <span className="field-hint">(optional — {blockLabel(block)})</span>
+            </label>
+            {crewList.length > 0 && (
+              <ol className="ride-crew-list">
+                {crewList.map((c, i) => (
+                  <li key={c.id}>
+                    <span className="ride-crew-seq">{i + 1}</span>
+                    <span className="ride-crew-name">
+                      ({c.ref_no}) {c.name}
+                      {c.stop_name ? ` · ${c.stop_name}` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      className="ride-crew-x"
+                      onClick={() => setCrewList((cl) => cl.filter((x) => x.id !== c.id))}
+                    >
+                      <X size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {(rule.max == null || crewList.length < rule.max) && (
+              <SearchSelect
+                value=""
+                onChange={addCrew}
+                options={cityCrew.map((c) => ({
+                  value: c.id,
+                  label: `(${c.ref_no}) ${c.name}`,
+                  sub: c.stop_name || undefined,
+                }))}
+                placeholder="Add a crew member…"
+              />
+            )}
+          </div>
+        )}
+
+        <div className="import-summary">
+          Will create <b>{dates.length}</b> ride(s)
+          {dates.length > 0 && (
+            <>
+              {' '}
+              ({dates[0]}
+              {dates.length > 1 ? ` … ${dates[dates.length - 1]}` : ''})
+            </>
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-square"
+            disabled={busy || !flight || dates.length === 0}
+            onClick={generate}
+          >
+            {busy ? 'Generating…' : `Generate ${dates.length}`}
+          </button>
+        </div>
+      </div>
     </Modal>
   )
 }

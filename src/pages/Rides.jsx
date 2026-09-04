@@ -22,7 +22,15 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
-import { fmtTime12, fmtTimeOnly12, isoToLocalDate, isoToLocalTime, toPkIso, toTime24 } from '../lib/time'
+import {
+  fmtTime12,
+  fmtTimeOnly12,
+  isoToLocalDate,
+  isoToLocalTime,
+  pkToday,
+  toPkIso,
+  toTime24,
+} from '../lib/time'
 import {
   BLOCK_TYPES,
   blockLabel,
@@ -37,7 +45,7 @@ import {
   statusLabel,
 } from '../lib/rideRoute'
 import { gmapsRoute, optimizeCrewOrder, routeInfo } from '../lib/ors'
-import { DEFAULT_SHIFT, shiftForTime, shiftLabel } from '../lib/shift'
+import { shiftLabel } from '../lib/shift'
 import { downloadCsv, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -153,7 +161,6 @@ export default function Rides() {
   const [crew, setCrew] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [drivers, setDrivers] = useState([])
-  const [shiftWin, setShiftWin] = useState(DEFAULT_SHIFT)
   useEffect(() => {
     if (!canView) return
     supabase
@@ -172,16 +179,9 @@ export default function Rides() {
       .from('drivers')
       .select('id, ref_no, name')
       .then(({ data }) => setDrivers(data ?? []))
-    supabase
-      .from('dispatch_settings')
-      .select('day_start, night_start')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setShiftWin({ day_start: data.day_start.slice(0, 5), night_start: data.night_start.slice(0, 5) })
-      })
   }, [canView])
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = pkToday()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [blockFilter, setBlockFilter] = useState('all')
@@ -214,17 +214,22 @@ export default function Rides() {
       setDateFrom(today)
       setDateTo(today)
     } else if (p === 'week') {
-      const d = new Date()
-      const mon = new Date(d)
-      mon.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // Monday of this week
+      // pure calendar-date arithmetic anchored on `today` (already Pakistan-
+      // correct) via Date.UTC, so it's independent of the browser's own
+      // timezone - see pkToday() in lib/time.js for why that matters.
+      const [y, m, d] = today.split('-').map(Number)
+      const anchor = new Date(Date.UTC(y, m - 1, d))
+      const day = anchor.getUTCDay()
+      const mon = new Date(anchor)
+      mon.setUTCDate(anchor.getUTCDate() - ((day + 6) % 7)) // Monday of this week
       const sun = new Date(mon)
-      sun.setDate(mon.getDate() + 6)
+      sun.setUTCDate(mon.getUTCDate() + 6)
       setDateFrom(mon.toISOString().slice(0, 10))
       setDateTo(sun.toISOString().slice(0, 10))
     } else if (p === 'month') {
-      const d = new Date()
-      const first = new Date(d.getFullYear(), d.getMonth(), 1)
-      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      const [y, m] = today.split('-').map(Number)
+      const first = new Date(Date.UTC(y, m - 1, 1))
+      const last = new Date(Date.UTC(y, m, 0))
       setDateFrom(first.toISOString().slice(0, 10))
       setDateTo(last.toISOString().slice(0, 10))
     } else {
@@ -372,8 +377,9 @@ export default function Rides() {
       const dur = (info?.durationMin ?? 30) + BUFFER_MIN
       const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
 
-      // same vehicle, shift + driver by the return's start time
-      const rShift = shiftForTime(start_at, shiftWin)
+      // same vehicle + same shift as the dropoff ride it's returning from
+      // (no more auto-detection from a time window - shift is a manual choice)
+      const rShift = r.shift || 'day'
       const rVeh = vehicles.find((v) => v.id === r.vehicle_id)
       const rDriverId = rVeh ? (rShift === 'night' ? rVeh.night_driver_id : rVeh.driver_id) : null
 
@@ -449,7 +455,7 @@ export default function Rides() {
       notes: r.notes ?? '',
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
-    downloadCsv(`rides-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(EXPORT_COLS, data))
+    downloadCsv(`rides-${tag}-${pkToday()}.csv`, toCsv(EXPORT_COLS, data))
     toast.success(`Exported ${data.length} row(s)`)
   }
 
@@ -755,7 +761,6 @@ export default function Rides() {
           crew={crew}
           vehicles={vehicles}
           drivers={drivers}
-          shiftWin={shiftWin}
           allowedCities={allowedCities}
           defaultCityId={cityId}
           createdBy={profile?.id}
@@ -788,7 +793,6 @@ export default function Rides() {
           crew={crew}
           vehicles={vehicles}
           drivers={drivers}
-          shiftWin={shiftWin}
           allowedCities={allowedCities}
           createdBy={profile?.id}
           onClose={() => setDetail(null)}
@@ -915,7 +919,6 @@ function RideModal({
   crew,
   vehicles,
   drivers = [],
-  shiftWin = DEFAULT_SHIFT,
   allowedCities,
   defaultCityId,
   createdBy,
@@ -930,7 +933,7 @@ function RideModal({
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
   const [startTouched, setStartTouched] = useState(false)
-  const [shiftOverride, setShiftOverride] = useState(null) // null = auto from Ride Time
+  const [shift, setShift] = useState(row?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
 
   const initialCrew = [...(row?.ride_crew || [])]
     .sort((a, b) => a.seq - b.seq)
@@ -944,7 +947,7 @@ function RideModal({
     block_type: row?.block_type ?? '',
     deadhead_mode: row?.deadhead_mode ?? 'airport',
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
-    ride_date: row?.ride_date ?? new Date().toISOString().slice(0, 10),
+    ride_date: row?.ride_date ?? pkToday(),
     checkin_old: toTime24(row?.checkin_old),
     checkin_new: toTime24(row?.checkin_new),
     checkout_old: toTime24(row?.checkout_old),
@@ -956,9 +959,6 @@ function RideModal({
   const [crewList, setCrewList] = useState(initialCrew)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
-  // day / night shift: auto from Ride Time, dispatcher can flip it
-  const autoShift = form.start_time ? shiftForTime(form.start_time, shiftWin) : row?.shift || 'day'
-  const shift = shiftOverride ?? autoShift
   const selVehicle = vehicles.find((v) => v.id === form.vehicle_id)
   const driverId = selVehicle
     ? shift === 'night'
@@ -1547,7 +1547,7 @@ function RideModal({
                     key={s}
                     type="button"
                     className={shift === s ? 'on' : ''}
-                    onClick={() => setShiftOverride(shift === s ? null : s)}
+                    onClick={() => setShift(s)}
                   >
                     {shiftLabel(s)}
                   </button>
@@ -1555,14 +1555,9 @@ function RideModal({
               </div>
               <div className={`shift-driver${driverName ? '' : ' empty'}`}>
                 <span className="primary">{driverName || `No ${shiftLabel(shift).toLowerCase()} driver`}</span>
-                <span className="secondary">
-                  {shiftOverride ? 'Manually set' : `Auto from ${rideTimeLabel(form.block_type)}`}
-                </span>
               </div>
             </div>
-            <span className="field-hint">
-              Day {fmtTime12(shiftWin.day_start)}–{fmtTime12(shiftWin.night_start)}, night the rest.
-            </span>
+            <span className="field-hint">Pick which driver covers this ride.</span>
           </div>
         )}
 
@@ -1634,7 +1629,7 @@ const WEEKDAYS = [
 ]
 
 function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, onDone }) {
-  const iso = new Date().toISOString().slice(0, 10)
+  const iso = pkToday()
   const [flightId, setFlightId] = useState('')
   const [from, setFrom] = useState(iso)
   const [to, setTo] = useState(iso)

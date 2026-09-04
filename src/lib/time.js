@@ -57,6 +57,23 @@ export const toPkIso = (date, time) => {
   return `${date}T${time.length === 5 ? time : time.slice(0, 5)}:00+05:00`
 }
 
+// "Now", as Pakistan wall-clock time - safe to read with the UTC getters
+// (getUTCFullYear/Month/Date/Day) regardless of what timezone the browser
+// itself is set to. Pakistan is a fixed UTC+5, no DST, so shifting the
+// current instant by that offset and then reading its UTC fields gives the
+// correct Pakistan calendar date/time every time.
+// Plain `new Date().toISOString()` is NOT safe for this: it's always UTC, so
+// during Pakistan's early-morning hours (12:00–4:59 AM PKT) it still reports
+// the PREVIOUS calendar day - e.g. a ride dated "today" in Pakistan wouldn't
+// match a "today" filter computed that way. This bit everyone: default ride
+// dates, the Today/Week/Month filter presets, CSV export filename stamps.
+const PK_OFFSET_MS = 5 * 60 * 60 * 1000
+export const pkNow = () => new Date(Date.now() + PK_OFFSET_MS)
+
+// "2026-09-05" - today's date in Pakistan time, regardless of the browser's
+// own timezone.
+export const pkToday = () => pkNow().toISOString().slice(0, 10)
+
 // ISO -> "14:30" local (for a time input)
 export const isoToLocalTime = (iso) => {
   if (!iso) return ''

@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Car, Clock, Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
+import { Car, Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { fmtDate } from '../lib/format'
+import { pkToday } from '../lib/time'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { useSelection } from '../lib/useSelection'
-import { DEFAULT_SHIFT } from '../lib/shift'
-import { fmtTime12 } from '../lib/time'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import SearchSelect from '../components/SearchSelect'
@@ -91,22 +90,9 @@ export default function Vehicles() {
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
-  const [shiftOpen, setShiftOpen] = useState(false)
-  const [shift, setShift] = useState(DEFAULT_SHIFT)
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
-
-  useEffect(() => {
-    if (!canView) return
-    supabase
-      .from('dispatch_settings')
-      .select('day_start, night_start')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setShift({ day_start: data.day_start.slice(0, 5), night_start: data.night_start.slice(0, 5) })
-      })
-  }, [canView])
 
   const list = useMemo(
     () =>
@@ -194,7 +180,7 @@ export default function Vehicles() {
       created_at: r.created_at,
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
-    downloadCsv(`vehicles-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(EXPORT_COLS, data))
+    downloadCsv(`vehicles-${tag}-${pkToday()}.csv`, toCsv(EXPORT_COLS, data))
     toast.success(`Exported ${data.length} row(s)`)
   }
 
@@ -281,15 +267,6 @@ export default function Vehicles() {
           <button className="icon-btn" onClick={fetchRows} title="Refresh">
             <RefreshCw size={15} />
           </button>
-          {canEdit && (
-            <button
-              className="btn btn-ghost btn-square btn-sm"
-              onClick={() => setShiftOpen(true)}
-              title="Global day / night shift window"
-            >
-              <Clock size={14} /> Shift times
-            </button>
-          )}
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export
           </button>
@@ -425,17 +402,6 @@ export default function Vehicles() {
         />
       )}
 
-      {shiftOpen && (
-        <ShiftTimesModal
-          value={shift}
-          onClose={() => setShiftOpen(false)}
-          onSaved={(v) => {
-            setShift(v)
-            setShiftOpen(false)
-          }}
-        />
-      )}
-
       <ConfirmDelete
         open={Boolean(pending)}
         title="Delete vehicle"
@@ -445,63 +411,6 @@ export default function Vehicles() {
         onClose={() => !deleting && setPending(null)}
       />
     </div>
-  )
-}
-
-// ── Global day / night shift window ───────────────────────────────────────
-function ShiftTimesModal({ value, onClose, onSaved }) {
-  const [dayStart, setDayStart] = useState(value.day_start)
-  const [nightStart, setNightStart] = useState(value.night_start)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-
-  const save = async () => {
-    setErr('')
-    if (!dayStart || !nightStart) return setErr('Both times are required')
-    if (dayStart >= nightStart) return setErr('Day start must be before night start')
-    setBusy(true)
-    const { error } = await supabase
-      .from('dispatch_settings')
-      .update({ day_start: dayStart, night_start: nightStart })
-      .eq('id', true)
-    setBusy(false)
-    if (error) return setErr(error.message)
-    toast.success('Shift times saved')
-    onSaved({ day_start: dayStart, night_start: nightStart })
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Shift times" width={400}>
-      <div className="modal-form">
-        {err && <div className="modal-error">{err}</div>}
-        <p className="confirm-msg">
-          One global window for every vehicle. Day = day start &rarr; night start; night is the rest
-          (wraps past midnight). Ride Dispatch uses this to pick a vehicle&rsquo;s day or night driver.
-        </p>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="sh-day">Day starts</label>
-            <input id="sh-day" type="time" className="input" value={dayStart} onChange={(e) => setDayStart(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="sh-night">Night starts</label>
-            <input id="sh-night" type="time" className="input" value={nightStart} onChange={(e) => setNightStart(e.target.value)} />
-          </div>
-        </div>
-        <span className="field-hint">
-          Day {fmtTime12(dayStart)} – {fmtTime12(nightStart)} · Night {fmtTime12(nightStart)} –{' '}
-          {fmtTime12(dayStart)}
-        </span>
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-square" disabled={busy} onClick={save}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </Modal>
   )
 }
 

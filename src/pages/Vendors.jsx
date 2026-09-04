@@ -7,6 +7,7 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
+import { pkToday } from '../lib/time'
 import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
@@ -125,7 +126,7 @@ export default function Vendors() {
       created_at: r.created_at,
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
-    downloadCsv(`vendors-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(EXPORT_COLS, data))
+    downloadCsv(`vendors-${tag}-${pkToday()}.csv`, toCsv(EXPORT_COLS, data))
     toast.success(`Exported ${data.length} row(s)`)
   }
 

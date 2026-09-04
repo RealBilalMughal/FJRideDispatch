@@ -7,7 +7,7 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
-import { fmtTime12, parseTime, toTime24 } from '../lib/time'
+import { fmtTime12, parseTime, pkToday, toTime24 } from '../lib/time'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -142,7 +142,7 @@ export default function Flights() {
       created_at: r.created_at,
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
-    downloadCsv(`flights-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(EXPORT_COLS, data))
+    downloadCsv(`flights-${tag}-${pkToday()}.csv`, toCsv(EXPORT_COLS, data))
     toast.success(`Exported ${data.length} row(s)`)
   }
 

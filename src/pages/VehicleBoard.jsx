@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
-import { fmtTimeOnly12 } from '../lib/time'
+import { fmtTimeOnly12, pkToday } from '../lib/time'
 import { blockLabel } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import Modal from '../components/Modal'
@@ -21,10 +21,11 @@ const RIDE_SELECT = `
   ride_crew(seq, crew:crew(name))
 `
 const COLORS = ['#3471b8', '#1e874b', '#b7791f', '#8b5cf6', '#c0392b', '#0e7490', '#be185d']
+// pure calendar-date arithmetic (Date.UTC, not local-midnight parsing) so it's
+// independent of the browser's own timezone - see pkToday() in lib/time.js
 const addDays = (isoDate, n) => {
-  const d = new Date(`${isoDate}T00:00:00`)
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
 }
 const minsOf = (iso) => {
   const d = new Date(iso)
@@ -36,7 +37,7 @@ export default function VehicleBoard() {
   const { cityId, cityName } = useCity()
   const canView = can('rides', 'view')
 
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(pkToday)
   const [tab, setTab] = useState('board') // board | map
   const [rides, setRides] = useState([])
   const [vehicles, setVehicles] = useState([])
@@ -121,10 +122,7 @@ export default function VehicleBoard() {
           <button className="icon-btn" onClick={() => setDate(addDays(date, 1))} title="Next day">
             <ChevronRight size={15} />
           </button>
-          <button
-            className="btn btn-ghost btn-square btn-sm"
-            onClick={() => setDate(new Date().toISOString().slice(0, 10))}
-          >
+          <button className="btn btn-ghost btn-square btn-sm" onClick={() => setDate(pkToday())}>
             Today
           </button>
           <button className="icon-btn" onClick={load} title="Refresh">

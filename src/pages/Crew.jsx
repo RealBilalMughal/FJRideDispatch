@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
+import { pkToday } from '../lib/time'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
 import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
@@ -213,7 +214,7 @@ export default function Crew() {
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
     }))
-    const stamp = new Date().toISOString().slice(0, 10)
+    const stamp = pkToday()
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
     downloadCsv(`crew-${tag}-${stamp}.csv`, toCsv(EXPORT_COLS, data))
     toast.success(`Exported ${data.length} row(s)`)

@@ -139,10 +139,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     day slot and one night slot (two partial unique indexes) and day != night on a
     vehicle (`vehicles_day_night_distinct`). Both FKs `on delete set null`.
     `drivers.vendor_id` is `on delete restrict`.
-  - **Global shift window**: `public.dispatch_settings` (one row, `day_start` /
-    `night_start`, default 08:00 / 20:00). Edited via the "Shift times" button in
-    the Vehicles header (admin / `vehicles.edit`). `src/lib/shift.js`
-    `shiftForTime()` -> 'day' | 'night'. Day = [day_start, night_start); night wraps.
+  - **Day/Night is a manual pick, no time-window auto-detection.** There used to
+    be a global shift window (`public.dispatch_settings`, a "Shift times" button
+    on the Vehicles header) that auto-computed Day vs Night from the ride's
+    start time; removed - it auto-detected wrong in exactly the hours it
+    mattered (see the timezone note under Ride below) and added a layer of
+    "why did it pick that" the dispatcher had to second-guess. The pill toggle
+    in the Ride form is now the only source of truth (`src/lib/shift.js` keeps
+    just `shiftLabel()`); `dispatch_settings` the table still exists in the DB
+    but nothing reads or writes it anymore.
 - `Flights` (`flights` perm, sidebar group "Roster") - city-scoped, CSV
   export/import. Fields: flight_no (`9P841`), flight_code (`LHE-DXB`), route
   (`Lahore - Dubai`), **block_type** (deadhead / pickup / dropoff / return_leg,
@@ -182,10 +187,25 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   export and view - two columns per pair, the second always just "Actual".
   Route point labels are the **stop name** (not the crew name); the Vehicle
   column/field shows `vehicle_no` only; the Starts column is **"Ride Time"**.
-- **Shift + driver**: when a vehicle is picked, a Day/Night toggle (auto from the
-  ride's start time vs `dispatch_settings`, dispatcher can flip) picks that
-  vehicle's day or night driver. The ride snapshots `shift` + `driver_id`. Table
-  and view show Shift + Driver; export too.
+- **Shift + driver**: when a vehicle is picked, a **manual** Day/Night pill toggle
+  (defaults to the row's saved `shift`, else Day - no auto-detection from the
+  ride's time) picks that vehicle's day or night driver. The ride snapshots
+  `shift` + `driver_id`. Table and view show Shift + Driver; export too. A
+  **Return Leg** copies its parent dropoff ride's own `shift` rather than
+  computing one.
+- **Pakistan-time date helpers** (`pkNow()` / `pkToday()` in `lib/time.js`):
+  everywhere "today" needs computing (default Ride date, the Today/Week/Month
+  filter presets, Vehicle Board's date nav, CSV export filename stamps) goes
+  through these, never a raw `new Date().toISOString().slice(0, 10)`. Pakistan
+  is a fixed UTC+5 with no DST, so shifting `Date.now()` by that offset and
+  reading it with the UTC getters gives the correct Pakistan calendar date
+  regardless of the browser's own timezone - plain `.toISOString()` is always
+  UTC, so during Pakistan's 12:00–4:59 AM it silently reports the *previous*
+  calendar day, which is exactly the bug this fixed (a ride dated "today"
+  wouldn't show up under the default Today filter). Date-string arithmetic
+  (Week/Month bounds, Vehicle Board's day nav) uses `Date.UTC(...)` on the
+  already-correct date's Y/M/D, never local-timezone `Date` parsing/getters,
+  for the same reason.
 - The form's check-in/out fields are **block-conditional**: Pickup shows
   Check-in (scheduled, disabled) + Actual (editable); Drop Off shows Check-out
   + Actual; deadhead/return_leg show neither.

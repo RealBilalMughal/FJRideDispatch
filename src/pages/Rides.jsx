@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Route as RouteIcon,
   Shield,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -22,7 +23,6 @@ import { fmtDate } from '../lib/format'
 import { fmtTime12, fmtTimeOnly12, isoToLocalTime, toPkIso, toTime24 } from '../lib/time'
 import {
   BLOCK_TYPES,
-  RIDE_STATUS,
   blockLabel,
   buildRoutePoints,
   crewRule,
@@ -30,7 +30,7 @@ import {
   routeComplete,
   statusLabel,
 } from '../lib/rideRoute'
-import { gmapsRoute, routeInfo } from '../lib/ors'
+import { gmapsRoute, optimizeCrewOrder, routeInfo } from '../lib/ors'
 import { downloadCsv, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -74,9 +74,15 @@ const EXPORT_COLS = [
   { key: 'dest', label: 'Destination' },
   { key: 'vehicle', label: 'Vehicle' },
   { key: 'km', label: 'KM' },
-  { key: 'window', label: 'Window' },
+  { key: 'starts', label: 'Starts' },
+  { key: 'eta', label: 'ETA' },
   { key: 'status', label: 'Status' },
 ]
+
+const etaOf = (startAt, durMin) =>
+  startAt && durMin != null
+    ? new Date(new Date(startAt).getTime() + durMin * 60000).toISOString()
+    : null
 
 const crewNames = (rc) =>
   [...(rc || [])]
@@ -123,10 +129,10 @@ export default function Rides() {
       .then(({ data }) => setVehicles((data ?? []).filter((v) => v.is_active)))
   }, [canView])
 
+  const today = new Date().toISOString().slice(0, 10)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [blockFilter, setBlockFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('')
 
   const [addOpen, setAddOpen] = useState(false)
@@ -152,7 +158,6 @@ export default function Rides() {
     const s = search.trim().toLowerCase()
     return list.filter((r) => {
       if (blockFilter !== 'all' && r.block_type !== blockFilter) return false
-      if (statusFilter !== 'all' && r.status !== statusFilter) return false
       if (dateFilter && r.ride_date !== dateFilter) return false
       if (
         s &&
@@ -163,24 +168,17 @@ export default function Rides() {
         return false
       return true
     })
-  }, [list, search, blockFilter, statusFilter, dateFilter])
+  }, [list, search, blockFilter, dateFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const stats = useMemo(
     () => ({
       total: list.length,
-      scheduled: list.filter((r) => r.status === 'scheduled').length,
-      completed: list.filter((r) => r.status === 'completed').length,
+      today: list.filter((r) => r.ride_date === today).length,
+      withVehicle: list.filter((r) => r.vehicle_id).length,
     }),
-    [list],
+    [list, today],
   )
-
-  const setStatus = async (row, next) => {
-    const { error } = await supabase.from('rides').update({ status: next }).eq('id', row.id)
-    if (error) return toast.error(error.message)
-    toast.success('Status updated')
-    fetchRows()
-  }
 
   const doDelete = async () => {
     if (!pending) return
@@ -242,7 +240,7 @@ export default function Rides() {
           duration_min: info?.durationMin ?? null,
           start_at,
           end_at,
-          status: 'scheduled',
+          status: 'dispatched',
           return_of_ride_id: r.id,
           created_by: profile?.id ?? null,
         })
@@ -282,10 +280,8 @@ export default function Rides() {
       dest: r.dest_label ?? '',
       vehicle: r.vehicle?.vehicle_no ?? '',
       km: r.distance_km ?? '',
-      window:
-        r.start_at && r.end_at
-          ? `${fmtTimeOnly12(r.start_at)}–${fmtTimeOnly12(r.end_at)}`
-          : '',
+      starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
+      eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       status: statusLabel(r.status),
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
@@ -326,31 +322,19 @@ export default function Rides() {
       render: (r) => (r.distance_km != null ? `${r.distance_km} km` : '—'),
     },
     {
-      key: 'win',
-      header: 'Window',
-      render: (r) =>
-        r.start_at && r.end_at ? `${fmtTimeOnly12(r.start_at)}–${fmtTimeOnly12(r.end_at)}` : '—',
+      key: 'starts',
+      header: 'Starts',
+      render: (r) => (r.start_at ? fmtTimeOnly12(r.start_at) : '—'),
     },
     {
-      key: 'status',
-      header: 'Status',
-      render: (r) =>
-        canEdit ? (
-          <select
-            className="inline-select"
-            value={r.status}
-            onChange={(e) => setStatus(r, e.target.value)}
-          >
-            {RIDE_STATUS.map((s) => (
-              <option key={s} value={s}>
-                {statusLabel(s)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          statusLabel(r.status)
-        ),
+      key: 'eta',
+      header: 'ETA',
+      render: (r) => {
+        if (!r.start_at || r.duration_min == null) return '—'
+        return fmtTimeOnly12(new Date(new Date(r.start_at).getTime() + r.duration_min * 60000).toISOString())
+      },
     },
+    { key: 'status', header: 'Status', render: (r) => statusLabel(r.status) },
     {
       key: 'actions',
       header: '',
@@ -425,8 +409,8 @@ export default function Rides() {
       <StatCards
         items={[
           { key: 'total', label: 'Total', value: stats.total, icon: RouteIcon },
-          { key: 'sched', label: 'Scheduled', value: stats.scheduled, icon: RouteIcon },
-          { key: 'done', label: 'Completed', value: stats.completed, icon: RouteIcon },
+          { key: 'today', label: 'Today', value: stats.today, icon: RouteIcon },
+          { key: 'veh', label: 'With vehicle', value: stats.withVehicle, icon: RouteIcon },
         ]}
       />
 
@@ -437,12 +421,9 @@ export default function Rides() {
           setPage(1)
         }}
         searchPlaceholder="Search ID, flight, crew or vehicle..."
-        activeCount={
-          (blockFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (dateFilter ? 1 : 0)
-        }
+        activeCount={(blockFilter !== 'all' ? 1 : 0) + (dateFilter ? 1 : 0)}
         onClear={() => {
           setBlockFilter('all')
-          setStatusFilter('all')
           setDateFilter('')
           setSearch('')
           setPage(1)
@@ -470,21 +451,6 @@ export default function Rides() {
               {BLOCK_TYPES.map((b) => (
                 <option key={b.value} value={b.value}>
                   {b.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="filter-select"
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value)
-                setPage(1)
-              }}
-            >
-              <option value="all">All status</option>
-              {RIDE_STATUS.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(s)}
                 </option>
               ))}
             </select>
@@ -600,7 +566,7 @@ function RideModal({
   const [busy, setBusy] = useState(false)
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
-  const [winTouched, setWinTouched] = useState(false)
+  const [startTouched, setStartTouched] = useState(false)
 
   const initialCrew = [...(row?.ride_crew || [])]
     .sort((a, b) => a.seq - b.seq)
@@ -620,9 +586,7 @@ function RideModal({
     checkout_old: toTime24(row?.checkout_old),
     checkout_new: toTime24(row?.checkout_new),
     start_time: row?.start_at ? isoToLocalTime(row.start_at) : '',
-    end_time: row?.end_at ? isoToLocalTime(row.end_at) : '',
     vehicle_id: row?.vehicle_id ?? '',
-    status: row?.status ?? 'scheduled',
     notes: row?.notes ?? '',
   })
   const [crewList, setCrewList] = useState(initialCrew)
@@ -701,10 +665,13 @@ function RideModal({
     }
   }, [routeReady, routePoints])
 
-  // auto-suggest the vehicle window from the block + primary time + road duration
+  const durMin = routeData?.durationMin ?? row?.duration_min ?? null
+
+  // auto-suggest "Ride starts" from the block + its flight time + road duration.
+  // Pickup: leave the airport so you ARRIVE by check-in  -> start = check-in - drive.
+  // Drop:   the ride begins when the crew checks out       -> start = check-out.
   useEffect(() => {
-    if (winTouched) return
-    const dur = (routeData?.durationMin ?? 0) + BUFFER_MIN
+    if (startTouched) return
     const anchor =
       form.block_type === 'pickup'
         ? form.checkin_new || form.checkin_old
@@ -718,18 +685,16 @@ function RideModal({
       const v = ((x % 1440) + 1440) % 1440
       return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`
     }
-    if (form.block_type === 'pickup') {
-      set('end_time', anchor)
-      set('start_time', fmt(mins - dur))
-    } else if (form.block_type === 'dropoff') {
-      set('start_time', anchor)
-      set('end_time', fmt(mins + dur))
-    }
+    set('start_time', form.block_type === 'pickup' ? fmt(mins - (durMin ?? 0)) : anchor)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeData, form.block_type, form.checkin_new, form.checkin_old, form.checkout_new, form.checkout_old])
+  }, [durMin, form.block_type, form.checkin_new, form.checkin_old, form.checkout_new, form.checkout_old])
 
   const startAt = toPkIso(form.ride_date, form.start_time)
-  const endAt = toPkIso(form.ride_date, form.end_time)
+  // ETA (arrival) = start + road minutes ; vehicle-busy end = start + road + buffer.
+  const etaAt = startAt && durMin != null ? new Date(new Date(startAt).getTime() + durMin * 60000).toISOString() : null
+  const endAt = startAt
+    ? new Date(new Date(startAt).getTime() + ((durMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
+    : null
 
   // vehicle conflict pre-check
   useEffect(() => {
@@ -764,10 +729,27 @@ function RideModal({
   }
   const removeCrew = (id) => setCrewList((cl) => cl.filter((c) => c.id !== id))
 
+  const [optimizing, setOptimizing] = useState(false)
+  const optimize = async () => {
+    setOptimizing(true)
+    const order = await optimizeCrewOrder(
+      form.block_type,
+      crewList.map((c) => ({ id: c.id, lat: Number(c.stop_lat), lng: Number(c.stop_lng) })),
+      airport,
+    )
+    setOptimizing(false)
+    if (!order) {
+      toast.error('Could not optimise — keeping the current order')
+      return
+    }
+    setCrewList((cl) => order.map((id) => cl.find((c) => c.id === id)).filter(Boolean))
+    setStartTouched(false) // let the window re-suggest off the new duration
+    toast.success('Stop order optimised')
+  }
+
   const origin = routePoints[0]
   const dest = routePoints[routePoints.length - 1]
   const km = routeData?.distanceKm ?? row?.distance_km ?? null
-  const durationMin = routeData?.durationMin ?? row?.duration_min ?? null
 
   const submit = async (e) => {
     e.preventDefault()
@@ -779,8 +761,7 @@ function RideModal({
     if (rule.max != null && crewList.length > rule.max)
       return setErr(`This block takes exactly ${rule.max} crew`)
     if (!routeReady) return setErr('Route is incomplete — check the crew stops and airport have coordinates')
-    if (form.vehicle_id && (!startAt || !endAt))
-      return setErr('Set the ride start and end time for the vehicle')
+    if (form.vehicle_id && !startAt) return setErr('Set the ride start time for the vehicle')
     if (form.vehicle_id && conflict)
       return setErr(`Vehicle busy on Ride ${conflict.ref_no} till ${fmtTimeOnly12(conflict.end_at)}`)
 
@@ -811,8 +792,8 @@ function RideModal({
       dest_lng: dest?.lng ?? null,
       waypoints: routePoints,
       distance_km: km,
-      duration_min: durationMin,
-      status: form.status,
+      duration_min: durMin,
+      status: row?.status ?? 'dispatched',
       notes: form.notes.trim() || null,
     }
     let rideId = row?.id
@@ -874,12 +855,8 @@ function RideModal({
             ['Vehicle', row.vehicle ? `(${row.vehicle.ref_no}) ${row.vehicle.vehicle_no}` : '—'],
             ['Driver', row.vehicle?.driver ? `(${row.vehicle.driver.ref_no}) ${row.vehicle.driver.name}` : '—'],
             ['Distance', row.distance_km != null ? `${row.distance_km} km` : '—'],
-            [
-              'Window',
-              row.start_at && row.end_at
-                ? `${fmtTimeOnly12(row.start_at)} – ${fmtTimeOnly12(row.end_at)}`
-                : '—',
-            ],
+            ['Ride starts', row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
+            ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
             ['Status', statusLabel(row.status)],
           ].map(([k, v]) => (
             <div className="view-row" key={k}>
@@ -1089,6 +1066,18 @@ function RideModal({
               disabled={!cityId}
             />
           )}
+          {(form.block_type === 'pickup' || form.block_type === 'dropoff') &&
+            crewList.length >= 3 && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm"
+                style={{ marginTop: 8 }}
+                disabled={optimizing}
+                onClick={optimize}
+              >
+                <Sparkles size={13} /> {optimizing ? 'Optimising…' : 'Optimise stop order'}
+              </button>
+            )}
         </div>
 
         {/* route preview */}
@@ -1097,7 +1086,7 @@ function RideModal({
             Route{' '}
             {km != null && (
               <span className="ride-km-badge">
-                {km} km{durationMin != null ? ` · ${durationMin} min` : ''}
+                {km} km{durMin != null ? ` · ${durMin} min` : ''}
               </span>
             )}
           </label>
@@ -1137,52 +1126,38 @@ function RideModal({
               className="input"
               value={form.start_time}
               onChange={(e) => {
-                setWinTouched(true)
+                setStartTouched(true)
                 set('start_time', e.target.value)
               }}
             />
+            <span className="field-hint">
+              {form.block_type === 'pickup'
+                ? 'Auto: leave in time to arrive by check-in'
+                : form.block_type === 'dropoff'
+                  ? 'Auto: when the crew checks out'
+                  : 'Set the departure time'}
+            </span>
           </div>
           <div className="field">
-            <label htmlFor="r-end">Ride ends</label>
+            <label>ETA (arrival)</label>
             <input
-              id="r-end"
-              type="time"
               className="input"
-              value={form.end_time}
-              onChange={(e) => {
-                setWinTouched(true)
-                set('end_time', e.target.value)
-              }}
+              value={etaAt ? fmtTimeOnly12(etaAt) : durMin == null ? 'needs route + start' : '—'}
+              disabled
             />
+            <span className="field-hint">Ride start + {durMin != null ? `${durMin} min drive` : 'drive time'}</span>
           </div>
         </div>
 
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="r-status">Status</label>
-            <select
-              id="r-status"
-              className="select"
-              value={form.status}
-              onChange={(e) => set('status', e.target.value)}
-            >
-              {RIDE_STATUS.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(s)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="r-notes">Notes</label>
-            <input
-              id="r-notes"
-              className="input"
-              value={form.notes}
-              onChange={(e) => set('notes', e.target.value)}
-              autoComplete="off"
-            />
-          </div>
+        <div className="field">
+          <label htmlFor="r-notes">Notes</label>
+          <input
+            id="r-notes"
+            className="input"
+            value={form.notes}
+            onChange={(e) => set('notes', e.target.value)}
+            autoComplete="off"
+          />
         </div>
 
         <div className="modal-actions">

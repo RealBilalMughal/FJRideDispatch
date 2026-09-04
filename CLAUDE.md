@@ -161,8 +161,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - Flight pick -> snapshot flight_no/code, auto block_type + city, and the
   flight_time fills check-in (pickup) or check-out (dropoff). check-in/out each
   keep an `_old` (auto) + `_new` (as dispatched) value; table shows all four.
-- `start_at`/`end_at` (the vehicle-busy window) auto-suggest from the primary
-  time +/- ORS duration +/- 30-min buffer; editable.
+- The form asks only for **Ride starts** (auto-suggested: pickup = check-in -
+  drive time, dropoff = check-out; editable). **ETA** (= start + ORS drive time)
+  and the internal `end_at` (= start + drive + 30-min buffer, for the vehicle
+  conflict) are computed, never typed. No status field - rides land as
+  `dispatched`; completion waits on a future driver app.
+- **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
+  reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
 - Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
   `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
   Also a route icon (Google Maps), View/Edit/Delete, status inline-select.

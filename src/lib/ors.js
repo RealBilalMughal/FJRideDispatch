@@ -36,6 +36,36 @@ export async function routeInfo(coords) {
   }
 }
 
+// Reorder the crew stops for the shortest total drive (ORS optimization / Vroom).
+// `crewCoords`: [{ id, lat, lng }] ; `airport`: { lat, lng }.
+// pickup  -> vehicle ends at the airport ; dropoff -> vehicle starts at it.
+// Returns the reordered array of crew ids, or null (unchanged / can't optimise).
+export async function optimizeCrewOrder(block, crewCoords, airport) {
+  const cc = (crewCoords || []).filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lng))
+  if (!KEY || cc.length < 3 || !Number.isFinite(airport?.lat)) return null
+  if (block !== 'pickup' && block !== 'dropoff') return null
+  const vehicle = { id: 1, profile: 'driving-car' }
+  if (block === 'pickup') vehicle.end = [airport.lng, airport.lat]
+  else vehicle.start = [airport.lng, airport.lat]
+  try {
+    const res = await fetch('https://api.openrouteservice.org/optimization', {
+      method: 'POST',
+      headers: { Authorization: KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobs: cc.map((c, i) => ({ id: i + 1, location: [c.lng, c.lat] })),
+        vehicles: [vehicle],
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const steps = (data?.routes?.[0]?.steps || []).filter((s) => s.type === 'job')
+    if (steps.length !== cc.length) return null
+    return steps.map((s) => cc[s.id - 1].id)
+  } catch {
+    return null
+  }
+}
+
 // Google Maps directions URL for an ordered list of {seq, lat, lng}. No key.
 export function gmapsRoute(points) {
   const pts = [...(points || [])]

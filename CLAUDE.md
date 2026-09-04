@@ -274,12 +274,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     (minutes) -> the two ride-time buffers Rides' auto-suggest and Generate use
     (see the Ride section above). Defaults (90 / 30) live in `rideRoute.js`
     as `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN`.
-  - Both panels take their city list from `useCity().allowedCities` (never
-    `allCities`) and lock to the active global city filter (`cityId`) when
-    it's on one city - a disabled field, no re-picking; on "All" it's a normal
-    dropdown over every city the caller can see. Saving calls
-    `useCity().reloadCities()` so open/new Ride forms and the Crew page pick
-    the change up live, no full reload.
+  - Both panels: **read-only view by default, "Edit" reveals the form** (same
+    pattern as Profile) - pick a city from an always-live `<select>` (list from
+    `useCity().allowedCities`, never `allCities`; defaults to the active global
+    city filter but isn't locked to it - switching cities always swaps in that
+    city's values, in view or edit mode) and its current values
+    show read-only, with an Edit button top-right of the panel head. Editing
+    disables the city select (finish or Cancel first) and has Cancel/**Save**
+    buttons - Save is plain text, no icon. Saving calls `useCity().reloadCities()`
+    so open/new Ride forms and the Crew page pick the change up live.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

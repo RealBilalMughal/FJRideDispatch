@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Save, Shield, Timer } from 'lucide-react'
+import { MapPinned, Pencil, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -72,35 +72,45 @@ export default function Settings() {
 // ── Airport Locations ────────────────────────────────────────────────────
 // A settings UI over the existing cities.airport_name / airport_lat /
 // airport_lng columns that Ride Dispatch routing already reads - this only
-// edits those three fields, no routing logic lives here. `allowedCities` is
-// already city-scoped for the caller (a Lahore-only user only ever sees
-// Lahore); when the global city filter is on one city the picker locks to
-// it, on "All" it's a picker over every city the caller can see.
+// edits those three fields, no routing logic lives here. The city picker is
+// always live (not tied to the global topbar city filter) - pick any city
+// this admin page can see (`allowedCities`) and its current values show up;
+// nothing is editable until "Edit" is pressed, same read-only-by-default
+// pattern as Profile.
 function AirportLocationsPanel() {
   const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
-  const locked = activeCityId != null
-  const initialCity = useMemo(
-    () => (locked && cities.find((c) => c.id === activeCityId)) || cities[0],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  // default selection = the active global city filter if one is set, else the first city
+  const [cityId, setCityId] = useState(
+    () => (activeCityId != null && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
   )
-  const [cityId, setCityId] = useState(initialCity?.id ?? '')
-  const [name, setName] = useState(initialCity?.airport_name ?? '')
-  const [coordinates, setCoordinates] = useState(fmtLatLng(initialCity?.airport_lat, initialCity?.airport_lng))
+  const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
+  const [coordinates, setCoordinates] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const cityName = cities.find((c) => String(c.id) === String(cityId))?.name || ''
-
   const pickCity = (id) => {
     setCityId(id)
-    const c = cities.find((x) => String(x.id) === String(id))
-    setName(c?.airport_name ?? '')
-    setCoordinates(fmtLatLng(c?.airport_lat, c?.airport_lng))
+    setEditing(false)
     setErr('')
   }
 
+  const startEdit = () => {
+    setName(city?.airport_name ?? '')
+    setCoordinates(fmtLatLng(city?.airport_lat, city?.airport_lng))
+    setErr('')
+    setEditing(true)
+  }
+
+  const cancel = () => {
+    setErr('')
+    setEditing(false)
+  }
+
   const pin = useMemo(() => parseLatLng(coordinates), [coordinates])
+  const viewPin = useMemo(() => parseLatLng(fmtLatLng(city?.airport_lat, city?.airport_lng)), [city])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -120,6 +130,7 @@ function AirportLocationsPanel() {
     setBusy(false)
     if (error) return setErr(error.message)
     toast.success('Airport updated')
+    setEditing(false)
     reloadCities?.()
   }
 
@@ -133,68 +144,95 @@ function AirportLocationsPanel() {
             routes pickup/drop-off legs to and from this point.
           </div>
         </div>
+        {!editing && cities.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
+            <Pencil size={13} /> Edit
+          </button>
+        )}
       </div>
 
       {cities.length === 0 ? (
         <p className="field-hint">No cities found.</p>
       ) : (
-        <form className="modal-form set-form" onSubmit={submit}>
-          {err && <div className="modal-error">{err}</div>}
-
+        <div className="set-form">
           <div className="field">
             <label htmlFor="ap-city">City</label>
-            {locked ? (
-              <input className="input" value={cityName} disabled />
-            ) : (
-              <select id="ap-city" className="select" value={cityId} onChange={(e) => pickCity(e.target.value)}>
-                {cities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <select
+              id="ap-city"
+              className="select"
+              value={cityId}
+              onChange={(e) => pickCity(e.target.value)}
+              disabled={editing}
+            >
+              {cities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="field">
-            <label htmlFor="ap-name">Airport name</label>
-            <input
-              id="ap-name"
-              className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. LHE Airport"
-              autoComplete="off"
-            />
-          </div>
+          {editing ? (
+            <form className="modal-form" onSubmit={submit}>
+              {err && <div className="modal-error">{err}</div>}
 
-          <div className="field">
-            <label htmlFor="ap-coord">Airport coordinates</label>
-            <input
-              id="ap-coord"
-              className="input"
-              value={coordinates}
-              onChange={(e) => setCoordinates(e.target.value)}
-              placeholder="31.521600, 74.403600"
-              autoComplete="off"
-            />
-            <span className="field-hint">
-              Paste “latitude, longitude”. Drag the pin on the map to fine-tune.
-            </span>
-          </div>
+              <div className="field">
+                <label htmlFor="ap-name">Airport name</label>
+                <input
+                  id="ap-name"
+                  className="input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. LHE Airport"
+                  autoComplete="off"
+                  autoFocus
+                />
+              </div>
 
-          <StopMap
-            lat={pin?.lat ?? null}
-            lng={pin?.lng ?? null}
-            onChange={({ lat, lng }) => setCoordinates(fmtLatLng(lat, lng))}
-          />
+              <div className="field">
+                <label htmlFor="ap-coord">Airport coordinates</label>
+                <input
+                  id="ap-coord"
+                  className="input"
+                  value={coordinates}
+                  onChange={(e) => setCoordinates(e.target.value)}
+                  placeholder="31.521600, 74.403600"
+                  autoComplete="off"
+                />
+                <span className="field-hint">
+                  Paste “latitude, longitude”. Drag the pin on the map to fine-tune.
+                </span>
+              </div>
 
-          <div className="modal-actions">
-            <button type="submit" className="btn btn-square" disabled={busy}>
-              <Save size={13} /> {busy ? 'Saving…' : 'Save airport'}
-            </button>
-          </div>
-        </form>
+              <StopMap
+                lat={pin?.lat ?? null}
+                lng={pin?.lng ?? null}
+                onChange={({ lat, lng }) => setCoordinates(fmtLatLng(lat, lng))}
+              />
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-square" disabled={busy}>
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <div className="view-row">
+                <span className="view-label">Airport name</span>
+                <span className="view-value">{city?.airport_name || '—'}</span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Coordinates</span>
+                <span className="view-value">{fmtLatLng(city?.airport_lat, city?.airport_lng) || '—'}</span>
+              </div>
+              {viewPin && <StopMap lat={viewPin.lat} lng={viewPin.lng} interactive={false} height={200} />}
+            </div>
+          )}
+        </div>
       )}
     </>
   )
@@ -205,28 +243,37 @@ function AirportLocationsPanel() {
 // cities.checkin_buffer_min / checkout_buffer_min:
 //   Pickup Time = Check-in (Actual if set) - Check-in buffer - drive time
 //   Drop Time   = Check-out (Actual if set) + Check-out buffer
+// Same always-live city picker + read-only-until-Edit pattern as Airport
+// Locations above.
 function RideBufferTimePanel() {
   const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
-  const locked = activeCityId != null
-  const initialCity = useMemo(
-    () => (locked && cities.find((c) => c.id === activeCityId)) || cities[0],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  const [cityId, setCityId] = useState(
+    () => (activeCityId != null && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
   )
-  const [cityId, setCityId] = useState(initialCity?.id ?? '')
-  const [checkin, setCheckin] = useState(initialCity?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
-  const [checkout, setCheckout] = useState(initialCity?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
+  const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+
+  const [editing, setEditing] = useState(false)
+  const [checkin, setCheckin] = useState('')
+  const [checkout, setCheckout] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const cityName = cities.find((c) => String(c.id) === String(cityId))?.name || ''
-
   const pickCity = (id) => {
     setCityId(id)
-    const c = cities.find((x) => String(x.id) === String(id))
-    setCheckin(c?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
-    setCheckout(c?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
+    setEditing(false)
     setErr('')
+  }
+
+  const startEdit = () => {
+    setCheckin(city?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
+    setCheckout(city?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
+    setErr('')
+    setEditing(true)
+  }
+
+  const cancel = () => {
+    setErr('')
+    setEditing(false)
   }
 
   const submit = async (e) => {
@@ -245,6 +292,7 @@ function RideBufferTimePanel() {
     setBusy(false)
     if (error) return setErr(error.message)
     toast.success('Buffer times updated')
+    setEditing(false)
     reloadCities?.()
   }
 
@@ -258,62 +306,92 @@ function RideBufferTimePanel() {
             Check-out buffer. Each city keeps its own buffer.
           </div>
         </div>
+        {!editing && cities.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
+            <Pencil size={13} /> Edit
+          </button>
+        )}
       </div>
 
       {cities.length === 0 ? (
         <p className="field-hint">No cities found.</p>
       ) : (
-        <form className="modal-form set-form" onSubmit={submit}>
-          {err && <div className="modal-error">{err}</div>}
-
+        <div className="set-form">
           <div className="field">
             <label htmlFor="bf-city">City</label>
-            {locked ? (
-              <input className="input" value={cityName} disabled />
-            ) : (
-              <select id="bf-city" className="select" value={cityId} onChange={(e) => pickCity(e.target.value)}>
-                {cities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <select
+              id="bf-city"
+              className="select"
+              value={cityId}
+              onChange={(e) => pickCity(e.target.value)}
+              disabled={editing}
+            >
+              {cities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="bf-cin">Check-in buffer (min)</label>
-              <input
-                id="bf-cin"
-                type="number"
-                min="0"
-                className="input"
-                value={checkin}
-                onChange={(e) => setCheckin(e.target.value)}
-              />
-              <span className="field-hint">Pickup: at the airport this long before check-in</span>
-            </div>
-            <div className="field">
-              <label htmlFor="bf-cout">Check-out buffer (min)</label>
-              <input
-                id="bf-cout"
-                type="number"
-                min="0"
-                className="input"
-                value={checkout}
-                onChange={(e) => setCheckout(e.target.value)}
-              />
-              <span className="field-hint">Drop-off: added on top of check-out</span>
-            </div>
-          </div>
+          {editing ? (
+            <form className="modal-form" onSubmit={submit}>
+              {err && <div className="modal-error">{err}</div>}
 
-          <div className="modal-actions">
-            <button type="submit" className="btn btn-square" disabled={busy}>
-              <Save size={13} /> {busy ? 'Saving…' : 'Save buffer times'}
-            </button>
-          </div>
-        </form>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="bf-cin">Check-in buffer (min)</label>
+                  <input
+                    id="bf-cin"
+                    type="number"
+                    min="0"
+                    className="input"
+                    value={checkin}
+                    onChange={(e) => setCheckin(e.target.value)}
+                    autoFocus
+                  />
+                  <span className="field-hint">Pickup: at the airport this long before check-in</span>
+                </div>
+                <div className="field">
+                  <label htmlFor="bf-cout">Check-out buffer (min)</label>
+                  <input
+                    id="bf-cout"
+                    type="number"
+                    min="0"
+                    className="input"
+                    value={checkout}
+                    onChange={(e) => setCheckout(e.target.value)}
+                  />
+                  <span className="field-hint">Drop-off: added on top of check-out</span>
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-square" disabled={busy}>
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <div className="view-row">
+                <span className="view-label">Check-in buffer</span>
+                <span className="view-value">
+                  {city?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN} min
+                </span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Check-out buffer</span>
+                <span className="view-value">
+                  {city?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN} min
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </>
   )

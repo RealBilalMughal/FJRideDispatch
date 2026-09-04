@@ -1,5 +1,8 @@
 .stop-map {
   position: relative;
+  /* own stacking context at level 0 so Leaflet's internal panes (z-index ~400)
+     never sit above a dropdown / menu rendered later in the form */
+  z-index: 0;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--r-md);

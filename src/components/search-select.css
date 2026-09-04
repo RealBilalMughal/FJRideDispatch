@@ -41,7 +41,7 @@
 
 .ss-menu {
   position: absolute;
-  z-index: 60;
+  z-index: 1000; /* above Leaflet map panes when a picker sits over a map */
   left: 0;
   right: 0;
   top: calc(100% + 4px);

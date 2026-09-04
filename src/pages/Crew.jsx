@@ -42,8 +42,7 @@ const EXPORT_COLS = [
   { key: 'designation', label: 'Designation' },
   { key: 'city', label: 'City' },
   { key: 'stop_name', label: 'Stop' },
-  { key: 'latitude', label: 'Latitude' },
-  { key: 'longitude', label: 'Longitude' },
+  { key: 'coordinates', label: 'Coordinates' },
   { key: 'is_active', label: 'Active' },
   { key: 'created_at', label: 'Created' },
 ]
@@ -54,13 +53,12 @@ const SAMPLE_COLS = [
   { key: 'designation', label: 'designation' },
   { key: 'city', label: 'city' },
   { key: 'stop_name', label: 'stop_name' },
-  { key: 'latitude', label: 'latitude' },
-  { key: 'longitude', label: 'longitude' },
+  { key: 'coordinates', label: 'coordinates' },
 ]
 
 const SAMPLE = [
-  { name: 'Ahmed Raza', phone: '03001234567', designation: 'Driver', city: 'Lahore', stop_name: 'Model Town Gate', latitude: '31.478100', longitude: '74.328700' },
-  { name: 'Bilal Khan', phone: '03217654321', designation: 'Captain', city: 'Islamabad', stop_name: 'F-7 Markaz', latitude: '33.719400', longitude: '73.055300' },
+  { name: 'Ahmed Raza', phone: '03001234567', designation: 'Driver', city: 'Lahore', stop_name: 'Model Town Gate', coordinates: '31.478100, 74.328700' },
+  { name: 'Bilal Khan', phone: '03217654321', designation: 'Captain', city: 'Islamabad', stop_name: 'F-7 Markaz', coordinates: '33.719400, 73.055300' },
 ]
 
 const gmapsUrl = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
@@ -211,8 +209,7 @@ export default function Crew() {
       designation: r.designation ?? '',
       city: r.city_name,
       stop_name: r.stop_name ?? '',
-      latitude: r.stop_lat ?? '',
-      longitude: r.stop_lng ?? '',
+      coordinates: fmtLatLng(r.stop_lat, r.stop_lng),
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
     }))
@@ -741,9 +738,11 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
         contact = toStored(local)
       }
 
-      // coordinates: separate latitude/longitude, else a combined "coordinates" cell
+      // coordinates: one "lat, lng" cell (same format as the Add Crew form).
+      // Still accepts separate latitude/longitude columns if that's what's given.
       const combined =
-        r.latitude && r.longitude ? `${r.latitude}, ${r.longitude}` : r.coordinates || ''
+        (r.coordinates || '').trim() ||
+        (r.latitude && r.longitude ? `${r.latitude}, ${r.longitude}` : '')
       const pin = combined ? parseLatLng(combined) : null
       if (combined && !pin) return skipped.push({ line, reason: 'bad coordinates' })
 
@@ -778,8 +777,9 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
 
         <p className="confirm-msg">
           Upload a CSV with columns{' '}
-          <b>name, phone, designation, city, stop_name, latitude, longitude</b>. City must be one you
-          have access to. Phone is a Pakistan mobile (e.g. 03001234567).
+          <b>name, phone, designation, city, stop_name, coordinates</b>. Coordinates are one cell,
+          like <code>31.478100, 74.328700</code> (same as the Add Crew form). City must be one you
+          have access to; phone is a Pakistan mobile.
         </p>
 
         <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={downloadSample}>

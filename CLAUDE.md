@@ -109,8 +109,9 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - `Dashboard` - placeholder, always visible
 - `Crew` (`crew` perm, sidebar group "Dispatch") - table (ID / Name / Phone /
   Designation / City / Stop / Coordinates), advanced filters, CSV export + import
-  (`crew-sample.csv`: name, phone, designation, city, stop_name, latitude,
-  longitude). Coordinates cell has a copy button + a pin that opens Google Maps.
+  (`crew-sample.csv`: name, phone, designation, city, stop_name, coordinates -
+  one `"lat, lng"` cell, same format as the form). Coordinates cell has a copy
+  button + a pin that opens Google Maps.
   Add/Edit modal: name, phone, designation (free text), city, stop name +
   **coordinates** ("31.9279, 74.9738" -> Leaflet / OpenStreetMap pin via
   `src/components/StopMap.jsx` - draggable, click-to-set, no key). One stop per

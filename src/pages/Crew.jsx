@@ -7,7 +7,6 @@ import {
   MapPin,
   Navigation,
   Pencil,
-  Plane,
   Plus,
   RefreshCw,
   Shield,
@@ -95,8 +94,8 @@ function CoordCell({ lat, lng }) {
 }
 
 export default function Crew() {
-  const { can, profile, isSuperAdmin } = useAuth()
-  const { cityId, cityName, allowedCities, reloadCities, ready: cityReady } = useCity()
+  const { can, profile } = useAuth()
+  const { cityId, cityName, allowedCities, ready: cityReady } = useCity()
 
   const canView = can('crew', 'view')
   const canAdd = can('crew', 'add')
@@ -115,7 +114,6 @@ export default function Crew() {
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit: bool }
   const [importOpen, setImportOpen] = useState(false)
-  const [airportOpen, setAirportOpen] = useState(false)
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
@@ -315,11 +313,6 @@ export default function Crew() {
           <button className="icon-btn" onClick={fetchRows} title="Refresh">
             <RefreshCw size={15} />
           </button>
-          {isSuperAdmin && (
-            <button className="btn btn-ghost btn-square btn-sm" onClick={() => setAirportOpen(true)}>
-              <Plane size={14} /> Airports
-            </button>
-          )}
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export
           </button>
@@ -467,18 +460,6 @@ export default function Crew() {
           onDone={(n) => {
             setImportOpen(false)
             if (n) fetchRows()
-          }}
-        />
-      )}
-
-      {airportOpen && (
-        <AirportSettingsModal
-          cities={allowedCities}
-          activeCityId={cityId}
-          onClose={() => setAirportOpen(false)}
-          onDone={() => {
-            setAirportOpen(false)
-            reloadCities?.()
           }}
         />
       )}
@@ -850,138 +831,6 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
           </button>
         </div>
       </div>
-    </Modal>
-  )
-}
-
-// ── Airport settings (per city) ─────────────────────────────────────────
-// A settings UI over the existing cities.airport_name / airport_lat /
-// airport_lng columns that Ride Dispatch routing already reads - this only
-// edits those three fields, no routing logic lives here. Saving pushes the
-// change through CityProvider.reloadCities() so Rides picks it up live.
-// `cities` is the caller's city-scoped list (allowedCities) - a Lahore-only
-// user only ever sees Lahore here. When the global city filter is on one
-// city (`activeCityId` set), the picker locks to it; on "All" it's a picker
-// over every city the caller can see.
-function AirportSettingsModal({ cities, activeCityId, onClose, onDone }) {
-  const locked = activeCityId != null
-  const initialCity = (locked && cities.find((c) => c.id === activeCityId)) || cities[0]
-  const [cityId, setCityId] = useState(initialCity?.id ?? '')
-  const [name, setName] = useState(initialCity?.airport_name ?? '')
-  const [coordinates, setCoordinates] = useState(fmtLatLng(initialCity?.airport_lat, initialCity?.airport_lng))
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const cityName = cities.find((c) => String(c.id) === String(cityId))?.name || ''
-
-  const pickCity = (id) => {
-    setCityId(id)
-    const c = cities.find((x) => String(x.id) === String(id))
-    setName(c?.airport_name ?? '')
-    setCoordinates(fmtLatLng(c?.airport_lat, c?.airport_lng))
-    setErr('')
-  }
-
-  const pin = useMemo(() => parseLatLng(coordinates), [coordinates])
-
-  const submit = async (e) => {
-    e.preventDefault()
-    setErr('')
-    if (!cityId) return setErr('Pick a city')
-    if (!name.trim()) return setErr('Airport name is required')
-    if (coordinates.trim() && !pin) return setErr('Coordinates must look like "31.9279, 74.9738"')
-    setBusy(true)
-    const { error } = await supabase
-      .from('cities')
-      .update({
-        airport_name: name.trim(),
-        airport_lat: pin ? pin.lat : null,
-        airport_lng: pin ? pin.lng : null,
-      })
-      .eq('id', Number(cityId))
-    setBusy(false)
-    if (error) return setErr(error.message)
-    toast.success('Airport updated')
-    onDone()
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Airport settings" width={520}>
-      <form className="modal-form" onSubmit={submit}>
-        {err && <div className="modal-error">{err}</div>}
-        <p className="confirm-msg">
-          Rename each city&rsquo;s airport and set its location — Ride Dispatch always
-          routes pickup/drop-off legs to and from this point.
-        </p>
-
-        {cities.length === 0 ? (
-          <p className="field-hint">No cities found.</p>
-        ) : (
-          <>
-            <div className="field">
-              <label htmlFor="ap-city">City</label>
-              {locked ? (
-                <input className="input" value={cityName} disabled />
-              ) : (
-                <select
-                  id="ap-city"
-                  className="select"
-                  value={cityId}
-                  onChange={(e) => pickCity(e.target.value)}
-                >
-                  {cities.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div className="field">
-              <label htmlFor="ap-name">Airport name</label>
-              <input
-                id="ap-name"
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. LHE Airport"
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="ap-coord">Airport coordinates</label>
-              <input
-                id="ap-coord"
-                className="input"
-                value={coordinates}
-                onChange={(e) => setCoordinates(e.target.value)}
-                placeholder="31.521600, 74.403600"
-                autoComplete="off"
-              />
-              <span className="field-hint">
-                Paste “latitude, longitude”. Drag the pin on the map to fine-tune.
-              </span>
-            </div>
-
-            <StopMap
-              lat={pin?.lat ?? null}
-              lng={pin?.lng ?? null}
-              onChange={({ lat, lng }) => setCoordinates(fmtLatLng(lat, lng))}
-            />
-          </>
-        )}
-
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-square" disabled={busy || cities.length === 0}>
-            {busy ? 'Saving…' : 'Save airport'}
-          </button>
-        </div>
-      </form>
     </Modal>
   )
 }

@@ -37,7 +37,8 @@ keys, tables or deploy targets with any other project.
   Active nav = accent text + a 3px accent bar on the left edge (no filled pill).
   lucide icons at `size={17}`. `src/components/Sidebar.jsx` + `layout.css`.
   Sections: Dispatch (Ride, Vehicle Board), Roster (Crew, Flights), Fleet
-  (Vendors, Drivers, Vehicles), Administration, Account.
+  (Vendors, Drivers, Vehicles), Administration (Users, Role Access, Settings),
+  Account.
 - **No topbar** - a floating profile chip top-right (`src/components/Topbar.jsx`).
 - **Modals** all use `src/components/Modal.jsx` (closes only via X / Esc, never a
   backdrop click). **Never `window.confirm` / `alert`** - use `ConfirmDialog.jsx`
@@ -79,8 +80,8 @@ keys, tables or deploy targets with any other project.
   `.eq('city_id', cityId)`; add-forms default to it. Role Access has a "City access"
   panel (By Role + By User) that writes `role_cities` / `user_cities`.
   `useCity().reloadCities()` re-fetches the raw `cities` rows (id, name, sort,
-  airport_*) on demand - used after the Crew page's Airport settings save so
-  `allCities`/`allowedCities` refresh without a full page reload.
+  airport_*, checkin/checkout_buffer_min) on demand - used after a save on the
+  Settings page so `allCities`/`allowedCities` refresh without a full page reload.
 
 ## Shared display-ID series
 - ONE sequence `public.ref_no_seq` (starts 1001) feeds every entity table's
@@ -123,16 +124,8 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   Add/Edit modal: name, phone, designation (free text), city, stop name +
   **coordinates** ("31.9279, 74.9738" -> Leaflet / OpenStreetMap pin via
   `src/components/StopMap.jsx` - draggable, click-to-set, no key). One stop per
-  crew. City-scoped.
-  - **Airport settings** - an "Airports" button at the top of the page header
-    (super_admin only, matching the `cities_super` RLS policy) opens
-    `AirportSettingsModal`: pick a city -> edit its `airport_name` + coordinates
-    (same `StopMap` pin UI as a crew stop) -> writes straight to
-    `cities.airport_name/airport_lat/airport_lng`, the exact columns Ride
-    Dispatch routing already reads. No routing logic lives here or changed for
-    this - it's purely a settings UI. Saving calls `useCity().reloadCities()`
-    (`CityProvider.jsx`) so `allCities`/`allowedCities` - and therefore Rides'
-    airport anchor - refresh app-wide without a full page reload.
+  crew. City-scoped. (Airport name/location editing lives on the **Settings**
+  page now, not here - see Pages -> Settings.)
 - `Vendors` / `Drivers` / `Vehicles` (`vendors`/`drivers`/`vehicles` perms, sidebar
   group **"Fleet"**) - Crew-style: city-scoped table, advanced filters, CSV
   export/import (`*-sample.csv`), View/Edit/Delete. All have a mandatory City.
@@ -207,11 +200,9 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   computed, never typed. `status` still defaults to `dispatched` on every
   insert but is no longer shown as a table/export column (see below);
   completion waits on a future driver app.
-- **Buffer times** (super_admin, Rides header, `Timer` icon) - `BufferSettingsModal`
-  edits a city's `checkin_buffer_min` / `checkout_buffer_min` (minutes). Same
-  city-scoping as Airports below: locked to the active global city filter, or a
-  picker over every allowed city on "All". `GenerateRidesModal` (bulk/recurring)
-  applies the same per-city formula. Saves call `useCity().reloadCities()`.
+  (Check-in/Check-out buffer minutes are edited on the **Settings** page now,
+  not here - see Pages -> Settings.) `GenerateRidesModal` (bulk/recurring)
+  applies the same per-city formula.
 - **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
 - Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
@@ -227,16 +218,8 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   header but without the block suffix, then just Flight and Note) - not the
   full View modal. CSV export gained a matching **Note** column (last).
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
-  edit per-city via the **Airports** button on the Crew page (see Pages ->
-  Crew), or directly on `cities.airport_*`.
-- **City-scoped settings pickers** (Airports on Crew, Buffer times on Rides,
-  both super_admin-only to match the `cities_super` RLS policy): both take
-  `cities={allowedCities}` (never `allCities`) plus the active global
-  `cityId` as `activeCityId`. When the topbar city filter is on one city the
-  picker **locks** to it (a disabled field, no re-picking); on "All" it's a
-  normal dropdown over every city the caller can see - so a Lahore-only view
-  only ever touches Lahore, an Islamabad-only view only Islamabad, an "All"
-  view can pick any.
+  edit per-city on the **Settings** page (see Pages -> Settings), or directly
+  on `cities.airport_*`.
 - **Crew count is its own column** - table/export column **"Count"** (just the
   number, `crewNamesText()`/`crewCount()` in `Rides.jsx`) sits right **after**
   "Crew" (names only); the form/view still show a
@@ -274,6 +257,29 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
   CRUD. Uses `ConfirmDialog` for role delete (not window.confirm).
+- `Settings` (`/settings`, sidebar group "Administration", **super_admin only** -
+  gated directly on `isSuperAdmin` in `Sidebar.jsx`/`Settings.jsx`, NOT part of
+  the `PERMISSION_PAGES` catalogue, since every write here hits `cities` whose
+  RLS (`cities_super`) is hard-coded to `current_user_role() = 'super_admin'`
+  regardless of any page-permission row - granting a role "view" here would be
+  misleading). Same left-list-plus-panel shell as Role Access (`.set-layout` in
+  `Settings.css`, sized down from `.ra-layout`), two sections, no nested
+  routes - a local `section` state swaps the panel, like Role Access's mode
+  switch:
+  - **Airport Locations** - pick a city -> edit its `airport_name` + coordinates
+    (`StopMap` pin, same UI as a Crew stop) -> writes `cities.airport_name/
+    airport_lat/airport_lng`, the columns Ride Dispatch routing already reads.
+    No routing logic lives here.
+  - **Ride Buffer Time** - edit a city's `checkin_buffer_min` / `checkout_buffer_min`
+    (minutes) -> the two ride-time buffers Rides' auto-suggest and Generate use
+    (see the Ride section above). Defaults (90 / 30) live in `rideRoute.js`
+    as `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN`.
+  - Both panels take their city list from `useCity().allowedCities` (never
+    `allCities`) and lock to the active global city filter (`cityId`) when
+    it's on one city - a disabled field, no re-picking; on "All" it's a normal
+    dropdown over every city the caller can see. Saving calls
+    `useCity().reloadCities()` so open/new Ride forms and the Crew page pick
+    the change up live, no full reload.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

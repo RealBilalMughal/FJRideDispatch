@@ -66,6 +66,15 @@ export const primaryTimeSlot = (block) =>
 export const rideTimeLabel = (block) =>
   block === 'pickup' ? 'Pickup Time' : block === 'dropoff' ? 'Drop Time' : 'Ride Time'
 
+// Default Check-in / Check-out buffer minutes (per-city override lives on
+// cities.checkin_buffer_min / checkout_buffer_min, edited at
+// Settings -> Ride Buffer Time). Used as the fallback until a city record
+// loads.
+//   Pickup Time = Check-in (Actual if set) - checkin buffer - drive time
+//   Drop Time   = Check-out (Actual if set) + checkout buffer
+export const DEFAULT_CHECKIN_BUFFER_MIN = 90
+export const DEFAULT_CHECKOUT_BUFFER_MIN = 30
+
 export const RIDE_STATUS = ['scheduled', 'dispatched', 'enroute', 'completed', 'cancelled']
 export const statusLabel = (s) =>
   ({ scheduled: 'Scheduled', dispatched: 'Dispatched', enroute: 'En route', completed: 'Completed', cancelled: 'Cancelled' })[s] || s

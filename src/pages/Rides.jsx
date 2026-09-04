@@ -13,7 +13,6 @@ import {
   Route as RouteIcon,
   Shield,
   Sparkles,
-  Timer,
   Trash2,
   X,
 } from 'lucide-react'
@@ -29,6 +28,8 @@ import {
   blockLabel,
   buildRoutePoints,
   crewRule,
+  DEFAULT_CHECKIN_BUFFER_MIN,
+  DEFAULT_CHECKOUT_BUFFER_MIN,
   primaryTimeSlot,
   rideTimeLabel,
   routeComplete,
@@ -51,9 +52,6 @@ import './Rides.css'
 
 const PAGE_SIZE = 15
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
-// per-city fallbacks, used only until a city's own cities.checkin/checkout_buffer_min loads
-const DEFAULT_CHECKIN_BUFFER_MIN = 90 // pickup: must be AT the airport this long before check-in
-const DEFAULT_CHECKOUT_BUFFER_MIN = 30 // dropoff: added on top of check-out
 const NIL = '00000000-0000-0000-0000-000000000000'
 
 const SELECT = `
@@ -134,8 +132,8 @@ function CrewCell({ rc }) {
 }
 
 export default function Rides() {
-  const { can, profile, isSuperAdmin } = useAuth()
-  const { allowedCities, cityId, cityName, reloadCities } = useCity()
+  const { can, profile } = useAuth()
+  const { allowedCities, cityId, cityName } = useCity()
 
   const canView = can('rides', 'view')
   const canAdd = can('rides', 'add')
@@ -197,7 +195,6 @@ export default function Rides() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [genOpen, setGenOpen] = useState(false)
-  const [bufferOpen, setBufferOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit }
   const [noteFor, setNoteFor] = useState(null) // a ride row, for the note popup
   const [pending, setPending] = useState(null) // { ids, label }
@@ -539,11 +536,6 @@ export default function Rides() {
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export
           </button>
-          {isSuperAdmin && (
-            <button className="btn btn-ghost btn-square btn-sm" onClick={() => setBufferOpen(true)}>
-              <Timer size={14} /> Buffer times
-            </button>
-          )}
           {canAdd && (
             <button className="btn btn-ghost btn-square btn-sm" onClick={() => setGenOpen(true)}>
               <CalendarRange size={14} /> Generate
@@ -741,17 +733,6 @@ export default function Rides() {
           onDone={() => {
             setGenOpen(false)
             fetchRows()
-          }}
-        />
-      )}
-      {bufferOpen && (
-        <BufferSettingsModal
-          cities={allowedCities}
-          activeCityId={cityId}
-          onClose={() => setBufferOpen(false)}
-          onDone={() => {
-            setBufferOpen(false)
-            reloadCities?.()
           }}
         />
       )}
@@ -1803,123 +1784,6 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
           </button>
         </div>
       </div>
-    </Modal>
-  )
-}
-
-// ── Buffer times (per city) ───────────────────────────────────────────────
-// Global settings for the two ride-time buffers, kept per city on
-// cities.checkin_buffer_min / checkout_buffer_min:
-//   Pickup Time = Check-in (Actual if set) - Check-in buffer - drive time
-//   Drop Time   = Check-out (Actual if set) + Check-out buffer
-// `cities` is the caller's city-scoped list (allowedCities). When the global
-// city filter is on one city, the picker locks to it; on "All" it's a picker
-// over every city the caller can see. Saving pushes the change through
-// CityProvider.reloadCities() so open/new ride forms pick it up live.
-function BufferSettingsModal({ cities, activeCityId, onClose, onDone }) {
-  const locked = activeCityId != null
-  const initialCity = (locked && cities.find((c) => c.id === activeCityId)) || cities[0]
-  const [cityId, setCityId] = useState(initialCity?.id ?? '')
-  const [checkin, setCheckin] = useState(initialCity?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
-  const [checkout, setCheckout] = useState(initialCity?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const cityName = cities.find((c) => String(c.id) === String(cityId))?.name || ''
-
-  const pickCity = (id) => {
-    setCityId(id)
-    const c = cities.find((x) => String(x.id) === String(id))
-    setCheckin(c?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
-    setCheckout(c?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
-    setErr('')
-  }
-
-  const submit = async (e) => {
-    e.preventDefault()
-    setErr('')
-    if (!cityId) return setErr('Pick a city')
-    const ci = Number(checkin)
-    const co = Number(checkout)
-    if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
-    if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
-    setBusy(true)
-    const { error } = await supabase
-      .from('cities')
-      .update({ checkin_buffer_min: Math.round(ci), checkout_buffer_min: Math.round(co) })
-      .eq('id', Number(cityId))
-    setBusy(false)
-    if (error) return setErr(error.message)
-    toast.success('Buffer times updated')
-    onDone()
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Buffer times" width={460}>
-      <form className="modal-form" onSubmit={submit}>
-        {err && <div className="modal-error">{err}</div>}
-        <p className="confirm-msg">
-          Pickup Time = Check-in − Check-in buffer − drive time. Drop Time = Check-out +
-          Check-out buffer. Each city keeps its own buffer.
-        </p>
-
-        {cities.length === 0 ? (
-          <p className="field-hint">No cities found.</p>
-        ) : (
-          <>
-            <div className="field">
-              <label htmlFor="bf-city">City</label>
-              {locked ? (
-                <input className="input" value={cityName} disabled />
-              ) : (
-                <select id="bf-city" className="select" value={cityId} onChange={(e) => pickCity(e.target.value)}>
-                  {cities.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="bf-cin">Check-in buffer (min)</label>
-                <input
-                  id="bf-cin"
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={checkin}
-                  onChange={(e) => setCheckin(e.target.value)}
-                />
-                <span className="field-hint">Pickup: at the airport this long before check-in</span>
-              </div>
-              <div className="field">
-                <label htmlFor="bf-cout">Check-out buffer (min)</label>
-                <input
-                  id="bf-cout"
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={checkout}
-                  onChange={(e) => setCheckout(e.target.value)}
-                />
-                <span className="field-hint">Drop-off: added on top of check-out</span>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-square" disabled={busy || cities.length === 0}>
-            {busy ? 'Saving…' : 'Save buffer times'}
-          </button>
-        </div>
-      </form>
     </Modal>
   )
 }

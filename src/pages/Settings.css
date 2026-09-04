@@ -1,0 +1,103 @@
+/* Administration -> Settings: left list + right panel, same shape as
+   Role Access's .ra-layout (kept page-scoped rather than shared). */
+.set-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 0;
+  align-items: start;
+}
+
+.set-list {
+  border-right: 1px solid var(--border);
+  padding-right: 20px;
+  margin-right: 28px;
+}
+
+@media (max-width: 860px) {
+  .set-layout {
+    grid-template-columns: 1fr;
+  }
+  .set-list {
+    display: flex;
+    gap: 4px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 12px;
+    margin-right: 0;
+    margin-bottom: 24px;
+  }
+}
+
+.set-list-head {
+  padding: 4px 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .set-list-head {
+    display: none;
+  }
+}
+
+.set-list-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.set-list-item:hover {
+  background: var(--surface);
+  color: var(--heading);
+}
+
+.set-list-item.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.set-list-item .set-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.set-panel {
+  min-width: 0;
+}
+
+.set-panel-head {
+  padding: 0 0 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.set-panel-head h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--heading);
+}
+
+.set-panel-head .sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.5;
+  max-width: 560px;
+}
+
+.set-form {
+  max-width: 480px;
+}

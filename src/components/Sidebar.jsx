@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Calendar, Car, IdCard, LayoutDashboard, Plane, Route, ShieldCheck, Store, UserRound, Users2, UsersRound } from 'lucide-react'
+import { Calendar, Car, IdCard, LayoutDashboard, Plane, Route, Settings, ShieldCheck, Store, UserRound, Users2, UsersRound } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 // Grouped like the BlackDrivo / GraphicSpark admin left panel: labelled
@@ -36,6 +36,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/users', label: 'User Management', icon: UsersRound, page: 'users' },
       { to: '/role-access', label: 'Role Access', icon: ShieldCheck, page: 'roles' },
+      { to: '/settings', label: 'Settings', icon: Settings, superAdminOnly: true },
     ],
   },
   {
@@ -48,6 +49,7 @@ export default function Sidebar({ open, onNavigate }) {
   const { can, isSuperAdmin } = useAuth()
 
   const isVisible = (item) => {
+    if (item.superAdminOnly) return isSuperAdmin
     if (item.page === 'roles') return isSuperAdmin || can('roles', 'view')
     if (item.page) return can(item.page, 'view')
     return true

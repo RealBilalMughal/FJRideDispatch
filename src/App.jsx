@@ -15,6 +15,7 @@ const Drivers = lazy(() => import('./pages/Drivers'))
 const Vehicles = lazy(() => import('./pages/Vehicles'))
 const Users = lazy(() => import('./pages/Users'))
 const RoleAccess = lazy(() => import('./pages/RoleAccess'))
+const Settings = lazy(() => import('./pages/Settings'))
 const Profile = lazy(() => import('./pages/Profile'))
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="vehicles" element={<Vehicles />} />
           <Route path="users" element={<Users />} />
           <Route path="role-access" element={<RoleAccess />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="profile" element={<Profile />} />
         </Route>
       </Route>

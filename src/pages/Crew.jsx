@@ -96,7 +96,7 @@ function CoordCell({ lat, lng }) {
 
 export default function Crew() {
   const { can, profile, isSuperAdmin } = useAuth()
-  const { cityId, cityName, allowedCities, allCities, reloadCities, ready: cityReady } = useCity()
+  const { cityId, cityName, allowedCities, reloadCities, ready: cityReady } = useCity()
 
   const canView = can('crew', 'view')
   const canAdd = can('crew', 'add')
@@ -473,7 +473,8 @@ export default function Crew() {
 
       {airportOpen && (
         <AirportSettingsModal
-          cities={allCities}
+          cities={allowedCities}
+          activeCityId={cityId}
           onClose={() => setAirportOpen(false)}
           onDone={() => {
             setAirportOpen(false)
@@ -858,12 +859,20 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
 // airport_lng columns that Ride Dispatch routing already reads - this only
 // edits those three fields, no routing logic lives here. Saving pushes the
 // change through CityProvider.reloadCities() so Rides picks it up live.
-function AirportSettingsModal({ cities, onClose, onDone }) {
-  const [cityId, setCityId] = useState(cities[0]?.id ?? '')
-  const [name, setName] = useState(cities[0]?.airport_name ?? '')
-  const [coordinates, setCoordinates] = useState(fmtLatLng(cities[0]?.airport_lat, cities[0]?.airport_lng))
+// `cities` is the caller's city-scoped list (allowedCities) - a Lahore-only
+// user only ever sees Lahore here. When the global city filter is on one
+// city (`activeCityId` set), the picker locks to it; on "All" it's a picker
+// over every city the caller can see.
+function AirportSettingsModal({ cities, activeCityId, onClose, onDone }) {
+  const locked = activeCityId != null
+  const initialCity = (locked && cities.find((c) => c.id === activeCityId)) || cities[0]
+  const [cityId, setCityId] = useState(initialCity?.id ?? '')
+  const [name, setName] = useState(initialCity?.airport_name ?? '')
+  const [coordinates, setCoordinates] = useState(fmtLatLng(initialCity?.airport_lat, initialCity?.airport_lng))
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  const cityName = cities.find((c) => String(c.id) === String(cityId))?.name || ''
 
   const pickCity = (id) => {
     setCityId(id)
@@ -911,18 +920,22 @@ function AirportSettingsModal({ cities, onClose, onDone }) {
           <>
             <div className="field">
               <label htmlFor="ap-city">City</label>
-              <select
-                id="ap-city"
-                className="select"
-                value={cityId}
-                onChange={(e) => pickCity(e.target.value)}
-              >
-                {cities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {locked ? (
+                <input className="input" value={cityName} disabled />
+              ) : (
+                <select
+                  id="ap-city"
+                  className="select"
+                  value={cityId}
+                  onChange={(e) => pickCity(e.target.value)}
+                >
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="field">

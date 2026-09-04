@@ -12,6 +12,7 @@ import {
   Route as RouteIcon,
   Shield,
   Sparkles,
+  Timer,
   Trash2,
   X,
 } from 'lucide-react'
@@ -48,8 +49,10 @@ import StatCards from '../components/data/StatCards'
 import './Rides.css'
 
 const PAGE_SIZE = 15
-const BUFFER_MIN = 30 // turnaround buffer around a ride's road time
-const AIRPORT_ARRIVAL_MIN = 90 // pickup: must be AT the airport this long before check-in
+const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
+// per-city fallbacks, used only until a city's own cities.checkin/checkout_buffer_min loads
+const DEFAULT_CHECKIN_BUFFER_MIN = 90 // pickup: must be AT the airport this long before check-in
+const DEFAULT_CHECKOUT_BUFFER_MIN = 30 // dropoff: added on top of check-out
 const NIL = '00000000-0000-0000-0000-000000000000'
 
 const SELECT = `
@@ -71,9 +74,9 @@ const EXPORT_COLS = [
   { key: 'flight_code', label: 'Code' },
   { key: 'block', label: 'Block' },
   { key: 'checkin_old', label: 'Check-in' },
-  { key: 'checkin_new', label: 'Check-in Actual' },
+  { key: 'checkin_new', label: 'Actual' },
   { key: 'checkout_old', label: 'Check-out' },
-  { key: 'checkout_new', label: 'Check-out Actual' },
+  { key: 'checkout_new', label: 'Actual' },
   { key: 'crew_count', label: 'Crew Count' },
   { key: 'crew', label: 'Crew' },
   { key: 'origin', label: 'Origin' },
@@ -84,7 +87,6 @@ const EXPORT_COLS = [
   { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
   { key: 'km', label: 'KM' },
-  { key: 'status', label: 'Status' },
 ]
 
 const etaOf = (startAt, durMin) =>
@@ -104,9 +106,27 @@ const crewCount = (rc) => (rc || []).length
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
+// Crew table cell: a single crew shows inline; 2+ stack one name per line
+// (below, not extending sideways) so the row stays a sane width.
+function CrewCell({ rc }) {
+  const list = [...(rc || [])]
+    .sort((a, b) => a.seq - b.seq)
+    .map((x) => x.crew?.name)
+    .filter(Boolean)
+  if (!list.length) return '—'
+  if (list.length === 1) return list[0]
+  return (
+    <div className="crew-cell-stack">
+      {list.map((n, i) => (
+        <div key={i}>{n}</div>
+      ))}
+    </div>
+  )
+}
+
 export default function Rides() {
-  const { can, profile } = useAuth()
-  const { allowedCities, cityId, cityName } = useCity()
+  const { can, profile, isSuperAdmin } = useAuth()
+  const { allowedCities, cityId, cityName, reloadCities } = useCity()
 
   const canView = can('rides', 'view')
   const canAdd = can('rides', 'add')
@@ -161,6 +181,7 @@ export default function Rides() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [genOpen, setGenOpen] = useState(false)
+  const [bufferOpen, setBufferOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit }
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
@@ -318,7 +339,6 @@ export default function Rides() {
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
-      status: statusLabel(r.status),
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
     downloadCsv(`rides-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(EXPORT_COLS, data))
@@ -345,11 +365,11 @@ export default function Rides() {
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
     { key: 'cio', header: 'Check-in', render: (r) => t12(r.checkin_old) },
-    { key: 'cin', header: 'Check-in Actual', render: (r) => t12(r.checkin_new) },
+    { key: 'cin', header: 'Actual', render: (r) => t12(r.checkin_new) },
     { key: 'coo', header: 'Check-out', render: (r) => t12(r.checkout_old) },
-    { key: 'con', header: 'Check-out Actual', render: (r) => t12(r.checkout_new) },
+    { key: 'con', header: 'Actual', render: (r) => t12(r.checkout_new) },
     { key: 'crewcount', header: 'Crew Count', render: (r) => r.crew_count },
-    { key: 'crew', header: 'Crew', render: (r) => r.crew_text },
+    { key: 'crew', header: 'Crew', render: (r) => <CrewCell rc={r.ride_crew} /> },
     { key: 'origin', header: 'Origin', render: (r) => r.origin_label || '—' },
     { key: 'dest', header: 'Destination', render: (r) => r.dest_label || '—' },
     { key: 'veh', header: 'Vehicle', render: (r) => r.vehicle_text },
@@ -373,7 +393,6 @@ export default function Rides() {
       header: 'KM',
       render: (r) => (r.distance_km != null ? Number(r.distance_km).toFixed(2) : '—'),
     },
-    { key: 'status', header: 'Status', render: (r) => statusLabel(r.status) },
     {
       key: 'actions',
       header: '',
@@ -437,6 +456,11 @@ export default function Rides() {
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export
           </button>
+          {isSuperAdmin && (
+            <button className="btn btn-ghost btn-square btn-sm" onClick={() => setBufferOpen(true)}>
+              <Timer size={14} /> Buffer times
+            </button>
+          )}
           {canAdd && (
             <button className="btn btn-ghost btn-square btn-sm" onClick={() => setGenOpen(true)}>
               <CalendarRange size={14} /> Generate
@@ -557,6 +581,17 @@ export default function Rides() {
           }}
         />
       )}
+      {bufferOpen && (
+        <BufferSettingsModal
+          cities={allowedCities}
+          activeCityId={cityId}
+          onClose={() => setBufferOpen(false)}
+          onDone={() => {
+            setBufferOpen(false)
+            reloadCities?.()
+          }}
+        />
+      )}
       {detail && (
         <RideModal
           row={detail.row}
@@ -672,6 +707,17 @@ function RideModal({
     const c = allowedCities.find((x) => x.id === cityId)
     return { name: c?.airport_name || '', lat: Number(c?.airport_lat), lng: Number(c?.airport_lng) }
   }, [allowedCities, cityId])
+  // this city's own Check-in / Check-out buffer (minutes); falls back to the
+  // defaults until the city record (or its buffer columns) is available
+  const cityBuffers = useMemo(() => {
+    const c = allowedCities.find((x) => x.id === cityId)
+    const ci = Number(c?.checkin_buffer_min)
+    const co = Number(c?.checkout_buffer_min)
+    return {
+      checkin: Number.isFinite(ci) ? ci : DEFAULT_CHECKIN_BUFFER_MIN,
+      checkout: Number.isFinite(co) ? co : DEFAULT_CHECKOUT_BUFFER_MIN,
+    }
+  }, [allowedCities, cityId])
 
   const rule = crewRule(form.block_type, form.deadhead_mode)
   const routePoints = useMemo(
@@ -742,9 +788,11 @@ function RideModal({
 
   const durMin = routeData?.durationMin ?? row?.duration_min ?? null
 
-  // auto-suggest "Pickup Time" / "Ride Time" from the block + its flight time + road duration.
-  // Pickup: crew must be AT the airport 90 min before check-in -> start = check-in - 90 - drive.
-  // Drop:   the ride begins when the crew checks out            -> start = check-out.
+  // auto-suggest "Pickup Time" / "Drop Time" from the block + its flight time + road duration,
+  // using THIS ride's city's own Check-in/Check-out buffer (cities.checkin/checkout_buffer_min).
+  // Anchor = the Actual time if set, else the scheduled one (checkin_new || checkin_old).
+  // Pickup:  crew must be AT the airport [checkin buffer] before check-in -> start = check-in - buffer - drive.
+  // Dropoff: the ride begins [checkout buffer] after the crew checks out  -> start = check-out + buffer.
   useEffect(() => {
     if (startTouched) return
     const anchor =
@@ -762,10 +810,21 @@ function RideModal({
     }
     set(
       'start_time',
-      form.block_type === 'pickup' ? fmt(mins - AIRPORT_ARRIVAL_MIN - (durMin ?? 0)) : anchor,
+      form.block_type === 'pickup'
+        ? fmt(mins - cityBuffers.checkin - (durMin ?? 0))
+        : fmt(mins + cityBuffers.checkout),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [durMin, form.block_type, form.checkin_new, form.checkin_old, form.checkout_new, form.checkout_old])
+  }, [
+    durMin,
+    form.block_type,
+    form.checkin_new,
+    form.checkin_old,
+    form.checkout_new,
+    form.checkout_old,
+    cityBuffers.checkin,
+    cityBuffers.checkout,
+  ])
 
   const startAt = toPkIso(form.ride_date, form.start_time)
   // ETA (arrival) = start + road minutes ; vehicle-busy end = start + road + buffer.
@@ -928,9 +987,9 @@ function RideModal({
             ['Block', blockLabel(row.block_type)],
             ['Date', fmtDate(row.ride_date)],
             ['Check-in', fmtTime12(row.checkin_old) || '—'],
-            ['Check-in Actual', fmtTime12(row.checkin_new) || '—'],
+            ['Actual', fmtTime12(row.checkin_new) || '—'],
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
-            ['Check-out Actual', fmtTime12(row.checkout_new) || '—'],
+            ['Actual', fmtTime12(row.checkout_new) || '—'],
             ['Crew Count', crewCount(row.ride_crew)],
             ['Crew', crewNamesText(row.ride_crew)],
             ['Origin', row.origin_label || '—'],
@@ -942,8 +1001,8 @@ function RideModal({
             [rideTimeLabel(row.block_type), row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
             ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
             ['Status', statusLabel(row.status)],
-          ].map(([k, v]) => (
-            <div className="view-row" key={k}>
+          ].map(([k, v], i) => (
+            <div className="view-row" key={`${k}-${i}`}>
               <span className="view-label">{k}</span>
               <span className="view-value">{v}</span>
             </div>
@@ -1083,7 +1142,7 @@ function RideModal({
               <span className="field-hint">Scheduled, from the flight</span>
             </div>
             <div className="field">
-              <label htmlFor="r-cin">Check-in Actual</label>
+              <label htmlFor="r-cin">Actual</label>
               <input
                 id="r-cin"
                 type="time"
@@ -1102,7 +1161,7 @@ function RideModal({
               <span className="field-hint">Scheduled, from the flight</span>
             </div>
             <div className="field">
-              <label htmlFor="r-con">Check-out Actual</label>
+              <label htmlFor="r-con">Actual</label>
               <input
                 id="r-con"
                 type="time"
@@ -1255,9 +1314,9 @@ function RideModal({
             />
             <span className="field-hint">
               {form.block_type === 'pickup'
-                ? `Auto: at the airport ${AIRPORT_ARRIVAL_MIN} min before check-in`
+                ? `Auto: at the airport ${cityBuffers.checkin} min before check-in`
                 : form.block_type === 'dropoff'
-                  ? 'Auto: when the crew checks out'
+                  ? `Auto: check-out + ${cityBuffers.checkout} min buffer`
                   : 'Set the departure time'}
             </span>
           </div>
@@ -1326,6 +1385,14 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
     lat: Number(cityObj?.airport_lat),
     lng: Number(cityObj?.airport_lng),
   }
+  const cityBuffers = {
+    checkin: Number.isFinite(Number(cityObj?.checkin_buffer_min))
+      ? Number(cityObj.checkin_buffer_min)
+      : DEFAULT_CHECKIN_BUFFER_MIN,
+    checkout: Number.isFinite(Number(cityObj?.checkout_buffer_min))
+      ? Number(cityObj.checkout_buffer_min)
+      : DEFAULT_CHECKOUT_BUFFER_MIN,
+  }
   const rule = crewRule(block, 'airport')
   const cityCrew = crew.filter((c) => c.city_id === cityId && !crewList.some((x) => x.id === c.id))
 
@@ -1374,7 +1441,11 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
       let end_at = null
       if (ft) {
         const anchorMs = new Date(toPkIso(date, ft)).getTime()
-        start_at = new Date(block === 'pickup' ? anchorMs - durMs : anchorMs).toISOString()
+        start_at = new Date(
+          block === 'pickup'
+            ? anchorMs - cityBuffers.checkin * 60000 - durMs
+            : anchorMs + cityBuffers.checkout * 60000,
+        ).toISOString()
         end_at = new Date(new Date(start_at).getTime() + ((info?.durationMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
       }
       return {
@@ -1541,6 +1612,123 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
           </button>
         </div>
       </div>
+    </Modal>
+  )
+}
+
+// ── Buffer times (per city) ───────────────────────────────────────────────
+// Global settings for the two ride-time buffers, kept per city on
+// cities.checkin_buffer_min / checkout_buffer_min:
+//   Pickup Time = Check-in (Actual if set) - Check-in buffer - drive time
+//   Drop Time   = Check-out (Actual if set) + Check-out buffer
+// `cities` is the caller's city-scoped list (allowedCities). When the global
+// city filter is on one city, the picker locks to it; on "All" it's a picker
+// over every city the caller can see. Saving pushes the change through
+// CityProvider.reloadCities() so open/new ride forms pick it up live.
+function BufferSettingsModal({ cities, activeCityId, onClose, onDone }) {
+  const locked = activeCityId != null
+  const initialCity = (locked && cities.find((c) => c.id === activeCityId)) || cities[0]
+  const [cityId, setCityId] = useState(initialCity?.id ?? '')
+  const [checkin, setCheckin] = useState(initialCity?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
+  const [checkout, setCheckout] = useState(initialCity?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const cityName = cities.find((c) => String(c.id) === String(cityId))?.name || ''
+
+  const pickCity = (id) => {
+    setCityId(id)
+    const c = cities.find((x) => String(x.id) === String(id))
+    setCheckin(c?.checkin_buffer_min ?? DEFAULT_CHECKIN_BUFFER_MIN)
+    setCheckout(c?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
+    setErr('')
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setErr('')
+    if (!cityId) return setErr('Pick a city')
+    const ci = Number(checkin)
+    const co = Number(checkout)
+    if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
+    if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
+    setBusy(true)
+    const { error } = await supabase
+      .from('cities')
+      .update({ checkin_buffer_min: Math.round(ci), checkout_buffer_min: Math.round(co) })
+      .eq('id', Number(cityId))
+    setBusy(false)
+    if (error) return setErr(error.message)
+    toast.success('Buffer times updated')
+    onDone()
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Buffer times" width={460}>
+      <form className="modal-form" onSubmit={submit}>
+        {err && <div className="modal-error">{err}</div>}
+        <p className="confirm-msg">
+          Pickup Time = Check-in − Check-in buffer − drive time. Drop Time = Check-out +
+          Check-out buffer. Each city keeps its own buffer.
+        </p>
+
+        {cities.length === 0 ? (
+          <p className="field-hint">No cities found.</p>
+        ) : (
+          <>
+            <div className="field">
+              <label htmlFor="bf-city">City</label>
+              {locked ? (
+                <input className="input" value={cityName} disabled />
+              ) : (
+                <select id="bf-city" className="select" value={cityId} onChange={(e) => pickCity(e.target.value)}>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="bf-cin">Check-in buffer (min)</label>
+                <input
+                  id="bf-cin"
+                  type="number"
+                  min="0"
+                  className="input"
+                  value={checkin}
+                  onChange={(e) => setCheckin(e.target.value)}
+                />
+                <span className="field-hint">Pickup: at the airport this long before check-in</span>
+              </div>
+              <div className="field">
+                <label htmlFor="bf-cout">Check-out buffer (min)</label>
+                <input
+                  id="bf-cout"
+                  type="number"
+                  min="0"
+                  className="input"
+                  value={checkout}
+                  onChange={(e) => setCheckout(e.target.value)}
+                />
+                <span className="field-hint">Drop-off: added on top of check-out</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-square" disabled={busy || cities.length === 0}>
+            {busy ? 'Saving…' : 'Save buffer times'}
+          </button>
+        </div>
+      </form>
     </Modal>
   )
 }

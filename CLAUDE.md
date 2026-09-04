@@ -62,7 +62,8 @@ keys, tables or deploy targets with any other project.
   the built-in `admin` row in a migration so plain admins keep access.
 - Migrations: `..._init_auth_permissions.sql`, `..._cities_crew.sql`,
   `..._fleet.sql`, `..._flights.sql`, `20260903160000_flight_block.sql`,
-  `20260904170000_rides.sql` (all APPLIED).
+  `20260904170000_rides.sql`, `20260904190000_vehicle_shifts.sql`,
+  `20260905120000_ride_buffers.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -183,37 +184,57 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - Flight pick -> snapshot flight_no/code, auto block_type + city, and the
   flight_time fills check-in (pickup) or check-out (dropoff). check-in/out each
   keep an `_old` (scheduled, from the flight) + `_new` (as dispatched) value;
-  labelled **"Check-in" / "Check-in Actual"** (and check-out) in the table,
-  export and view. Route point labels are the **stop name** (not the crew name);
-  the Vehicle column/field shows `vehicle_no` only; the Starts column is
-  **"Ride Time"**.
+  labelled **"Check-in" / "Actual"** (and "Check-out" / "Actual") in the table,
+  export and view - two columns per pair, the second always just "Actual".
+  Route point labels are the **stop name** (not the crew name); the Vehicle
+  column/field shows `vehicle_no` only; the Starts column is **"Ride Time"**.
 - **Shift + driver**: when a vehicle is picked, a Day/Night toggle (auto from the
   ride's start time vs `dispatch_settings`, dispatcher can flip) picks that
   vehicle's day or night driver. The ride snapshots `shift` + `driver_id`. Table
   and view show Shift + Driver; export too.
 - The form's check-in/out fields are **block-conditional**: Pickup shows
-  Check-in (scheduled, disabled) + Check-in Actual (editable); Drop Off shows
-  Check-out + Check-out Actual; deadhead/return_leg show neither.
+  Check-in (scheduled, disabled) + Actual (editable); Drop Off shows Check-out
+  + Actual; deadhead/return_leg show neither.
 - The start-time field is labelled **"Pickup Time"** (pickup), **"Drop Time"**
   (dropoff) or **"Ride Time"** (else) - `rideTimeLabel()` in `rideRoute.js`.
-  Auto-suggested: pickup = check-in minus a 90-min **airport-arrival buffer**
-  (`AIRPORT_ARRIVAL_MIN` in `Rides.jsx`) minus drive time, so the vehicle is AT
-  the airport 90 min before check-in; dropoff = check-out. Editable. **ETA**
-  (= start + ORS drive time) and the internal `end_at` (= start + drive +
-  30-min buffer, for the vehicle conflict) are computed, never typed. No status
-  field - rides land as `dispatched`; completion waits on a future driver app.
+  Auto-suggested from the anchor time (Actual if set, else scheduled) and
+  **this ride's city's own buffer** (`cities.checkin_buffer_min` /
+  `checkout_buffer_min`, defaults 90 / 30): pickup = check-in − checkin buffer
+  − drive time, so the vehicle is AT the airport that long before check-in;
+  dropoff = check-out **+** checkout buffer. Editable. **ETA** (= start + ORS
+  drive time) and the internal `end_at` (= start + drive + 30-min turnaround
+  buffer, for the vehicle conflict - a separate, fixed `BUFFER_MIN`) are
+  computed, never typed. `status` still defaults to `dispatched` on every
+  insert but is no longer shown as a table/export column (see below);
+  completion waits on a future driver app.
+- **Buffer times** (super_admin, Rides header, `Timer` icon) - `BufferSettingsModal`
+  edits a city's `checkin_buffer_min` / `checkout_buffer_min` (minutes). Same
+  city-scoping as Airports below: locked to the active global city filter, or a
+  picker over every allowed city on "All". `GenerateRidesModal` (bulk/recurring)
+  applies the same per-city formula. Saves call `useCity().reloadCities()`.
 - **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
 - Table: **Return Leg** action on dropoff rides -> ConfirmDialog -> creates a
   `return_leg` ride (last crew -> Airport, same vehicle, `return_of_ride_id` set).
-  Also a route icon (Google Maps), View/Edit/Delete, status inline-select.
+  Also a route icon (Google Maps), View/Edit/Delete. **No Status column on the
+  table/export for now** (still shown in the read-only view row) - revisit later.
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
   edit per-city via the **Airports** button on the Crew page (see Pages ->
   Crew), or directly on `cities.airport_*`.
+- **City-scoped settings pickers** (Airports on Crew, Buffer times on Rides,
+  both super_admin-only to match the `cities_super` RLS policy): both take
+  `cities={allowedCities}` (never `allCities`) plus the active global
+  `cityId` as `activeCityId`. When the topbar city filter is on one city the
+  picker **locks** to it (a disabled field, no re-picking); on "All" it's a
+  normal dropdown over every city the caller can see - so a Lahore-only view
+  only ever touches Lahore, an Islamabad-only view only Islamabad, an "All"
+  view can pick any.
 - **Crew count is its own column** - table/export column **"Crew Count"** (just
   the number) sits right before **"Crew"** (names only, `crewNamesText()` in
   `Rides.jsx`); the form/view still show a
-  `<span className="badge badge-accent">N</span>` next to the label. The
+  `<span className="badge badge-accent">N</span>` next to the label. In the
+  **table** (not export/CSV, which stays a flat comma list), 2+ crew render
+  stacked one name per line (`CrewCell`) instead of running sideways. The
   **Flight No** column/export label is now just **"Flight"**.
 - **KM is a plain 2-decimal number** (`12.50`, no "km" suffix) in the KM table
   column and CSV export - the column header already says KM. It's positioned

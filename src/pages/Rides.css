@@ -73,6 +73,13 @@
   color: var(--danger);
 }
 
+/* Crew table cell: 2+ crew stack one name per line instead of running sideways */
+.crew-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .ride-km-badge {
   display: inline-block;
   margin-left: 6px;

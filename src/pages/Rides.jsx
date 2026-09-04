@@ -62,7 +62,6 @@ import './Rides.css'
 
 const PAGE_SIZE = 15
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
-const NIL = '00000000-0000-0000-0000-000000000000'
 
 const SELECT = `
   id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
@@ -1536,26 +1535,31 @@ function RideModal({
     ? new Date(new Date(startAt).getTime() + ((durMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
     : null
 
-  // vehicle conflict pre-check
+  // vehicle conflict pre-check — TEMPORARILY DISABLED (commented out) per
+  // request, to be reworked/re-applied properly later. Leaving `conflict`
+  // permanently null disables the submit-block and the "Busy on Ride ..."
+  // hint below without touching either of those call sites.
   useEffect(() => {
-    if (!form.vehicle_id || !startAt || !endAt) {
-      setConflict(null)
-      return
-    }
-    let alive = true
-    supabase
-      .from('rides')
-      .select('ref_no, start_at, end_at')
-      .eq('vehicle_id', form.vehicle_id)
-      .lt('start_at', endAt)
-      .gt('end_at', startAt)
-      .neq('id', row?.id ?? NIL)
-      .then(({ data }) => {
-        if (alive) setConflict(data?.[0] || null)
-      })
-    return () => {
-      alive = false
-    }
+    setConflict(null)
+    // if (!form.vehicle_id || !startAt || !endAt) {
+    //   setConflict(null)
+    //   return
+    // }
+    // let alive = true
+    // const NIL = '00000000-0000-0000-0000-000000000000'
+    // supabase
+    //   .from('rides')
+    //   .select('ref_no, start_at, end_at')
+    //   .eq('vehicle_id', form.vehicle_id)
+    //   .lt('start_at', endAt)
+    //   .gt('end_at', startAt)
+    //   .neq('id', row?.id ?? NIL)
+    //   .then(({ data }) => {
+    //     if (alive) setConflict(data?.[0] || null)
+    //   })
+    // return () => {
+    //   alive = false
+    // }
   }, [form.vehicle_id, startAt, endAt, row?.id])
 
   const cityCrew = crew.filter((c) => c.city_id === cityId && !crewList.some((x) => x.id === c.id))

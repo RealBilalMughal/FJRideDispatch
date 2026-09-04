@@ -174,9 +174,18 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).
-  Vehicle double-booking is blocked by an `EXCLUDE USING gist` on
-  `(vehicle_id, tstzrange(start_at, end_at))` - client pre-checks and shows
-  "busy on Ride N till <time>". Ride logic lives in `src/lib/rideRoute.js`.
+  Vehicle double-booking is still blocked at the DB level by an
+  `EXCLUDE USING gist` on `(vehicle_id, tstzrange(start_at, end_at))` (a save
+  that truly overlaps still fails with the `23P01` -> "already booked for an
+  overlapping time" mapped error, `mapRideError()`). **The client-side
+  pre-check/warning is temporarily disabled** - the `RideModal` conflict
+  `useEffect` (was: query `rides` for an overlapping `start_at`/`end_at` on
+  the same vehicle, driving the "Busy on Ride N till <time>" field hint and
+  blocking Save) now just does `setConflict(null)` with the real query
+  commented out directly below it, per an explicit request to turn it off
+  for now and rework it properly later - re-enable by uncommenting that block
+  (restores its own local `NIL` placeholder-uuid constant too). Ride logic
+  lives in `src/lib/rideRoute.js`.
 - **Block -> route** (`buildRoutePoints`): pickup `crew1..crewN -> Airport`;
   dropoff `Airport -> crew1..crewN`; deadhead `airport` mode `Airport -> 1 crew`
   / `crew` mode `crew1 -> crew2` (exactly 2); return_leg `1 crew -> Airport`.

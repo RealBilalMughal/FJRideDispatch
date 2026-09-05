@@ -131,9 +131,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Pages
 - `Dashboard` (`/`, always visible - the landing page) - ride analytics over
-  a Today/Week/Month/All date range (**default Today**; custom from/to inputs
-  too - same `.date-tabs` + `presetRange()` pattern as the Rides filter bar)
-  and the global city filter. Borderless metric cards (`Dashboard.css`, an
+  a Today / Week / **This Month** / Month / All date range (**default This
+  Month**; custom from/to inputs too - `.date-tabs` + `presetRange()`, same
+  as the Rides filter bar but with the extra `this-month` preset =
+  month-to-date, 1st → today, vs `month` = the full calendar month) and the
+  global city filter. Borderless metric cards (`Dashboard.css`, an
   intentional exception to the no-cards rule; white with `--shadow-sm`, 14px
   radius, an icon chip each). Sections:
   - **Hero row**: Total rides (filled in the **Fly Jinnah brand red
@@ -153,13 +155,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     horizontal grid, hover tooltip, no entry animation. Shown only when the
     range spans >1 day (hidden on the Today default), below the block/shift
     cards.
-  - **Peak hours** - a weekday×hour heatmap (`PeakHeatmap`, plain CSS grid,
-    no lib): 7 rows (Sun–Sat) × 24 cells, each `rgba(52,113,184, α)` with α
-    scaled to that cell's share of the busiest hour. Ride start times are
-    bucketed in **Pakistan time** via `pkHourWeekday()` in `lib/time.js`
-    (same +5h-then-UTC-getters trick as `pkNow`). The range query's
-    `RANGE_SELECT` gained `start_at` for this. Horizontally scrolls on
-    narrow screens.
+  - **Peak hours** - a compact weekday×hour heatmap (`PeakHeatmap`, plain
+    CSS grid, no lib): 7 short rows (Sun–Sat) × 24 cells, each
+    `rgba(52,113,184, α)` with α scaled to that cell's share of the busiest
+    hour, `0h/6h/12h/18h` column labels, a Less–More swatch legend.
+    Ride start times bucketed in **Pakistan time** via `pkHourWeekday()` in
+    `lib/time.js` (same +5h-then-UTC-getters trick as `pkNow`). The range
+    query's `RANGE_SELECT` gained `start_at` for this. Scrolls horizontally
+    on narrow screens.
   - **Rides by block** | **Shift** - the two-column card split; divider is a
     `border-right` on the block *grid* so it's only card-tall, not `h2`-tall.
     2×2 blocks below 560px.

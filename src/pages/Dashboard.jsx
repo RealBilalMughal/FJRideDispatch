@@ -24,6 +24,7 @@ import './Dashboard.css'
 const DATE_PRESETS = [
   { value: 'today', label: 'Today' },
   { value: 'week', label: 'Week' },
+  { value: 'this-month', label: 'This Month' },
   { value: 'month', label: 'Month' },
   { value: 'all', label: 'All' },
 ]
@@ -82,8 +83,8 @@ export default function Dashboard() {
   const canRides = can('rides', 'view')
   const name = (profile?.full_name || '').split(' ')[0]
 
-  const [preset, setPreset] = useState('today')
-  const initial = presetRange('today')
+  const [preset, setPreset] = useState('this-month')
+  const initial = presetRange('this-month')
   const [from, setFrom] = useState(initial.from)
   const [to, setTo] = useState(initial.to)
 
@@ -502,6 +503,7 @@ function PerDayChart({ data }) {
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
 const hourLabel = (h) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
+const heatColor = (c, max) => (c ? `rgba(52,113,184,${0.14 + 0.8 * (c / max)})` : 'var(--surface)')
 
 // weekday x hour ride-start heatmap. `grid` is [7][24] of counts.
 function PeakHeatmap({ grid, max }) {
@@ -512,7 +514,7 @@ function PeakHeatmap({ grid, max }) {
           <span />
           {HOURS.map((h) => (
             <span key={h} className="dash-heat-hour">
-              {h % 3 === 0 ? hourLabel(h) : ''}
+              {h % 6 === 0 ? `${h}h` : ''}
             </span>
           ))}
         </div>
@@ -524,13 +526,18 @@ function PeakHeatmap({ grid, max }) {
                 key={h}
                 className="dash-heat-cell"
                 title={`${WEEKDAY[wd]} ${hourLabel(h)} — ${c} ride(s)`}
-                style={{
-                  background: c ? `rgba(52,113,184,${0.12 + 0.82 * (c / max)})` : 'var(--surface)',
-                }}
+                style={{ background: heatColor(c, max) }}
               />
             ))}
           </div>
         ))}
+      </div>
+      <div className="dash-heat-legend">
+        Less
+        {[0.06, 0.37, 0.68, 1].map((f) => (
+          <i key={f} style={{ background: heatColor(f, 1) }} />
+        ))}
+        More
       </div>
     </div>
   )

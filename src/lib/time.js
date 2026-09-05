@@ -100,6 +100,10 @@ export const addDays = (isoDate, n) => {
 export const presetRange = (preset) => {
   const today = pkToday()
   if (preset === 'today') return { from: today, to: today }
+  if (preset === 'this-month') {
+    // 1st of the current month -> today (month-to-date)
+    return { from: `${today.slice(0, 7)}-01`, to: today }
+  }
   if (preset === 'week') {
     const [y, m, d] = today.split('-').map(Number)
     const anchor = new Date(Date.UTC(y, m - 1, d))

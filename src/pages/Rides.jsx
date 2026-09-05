@@ -120,6 +120,11 @@ const crewNames = (rc) =>
 
 const crewNamesText = (rc) => crewNames(rc) || '—'
 const crewCount = (rc) => (rc || []).length
+// a Return Leg (empty repositioning) and a Deadhead (crew repositioning, not
+// a real pickup/dropoff passenger count) both always display Count 0 -
+// forced, not derived from ride_crew.length.
+const ZERO_COUNT_BLOCKS = new Set(['return_leg', 'deadhead'])
+const displayCrewCount = (rc, block_type) => (ZERO_COUNT_BLOCKS.has(block_type) ? 0 : crewCount(rc))
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
@@ -271,6 +276,22 @@ export default function Rides() {
   }, [rows])
   const suffixFor = (block_type) =>
     block_type === 'return_leg' ? 'R' : block_type === 'deadhead' ? 'D' : block_type === 'pickup' ? 'P' : null
+  // walk return_of_ride_id up to the top-most ancestor (the original dropoff)
+  // so a companion Pickup chained off a Deadhead (dropoff -> deadhead ->
+  // pickup, 2 hops) still displays against the dropoff's own ref_no, not the
+  // deadhead's - "<dropoff ref>-D" AND "<dropoff ref>-P", never "<deadhead's
+  // own ref>-P".
+  const rootRefNo = (r) => {
+    let cur = r
+    let hops = 0
+    while (cur?.return_of_ride_id && hops < 5) {
+      const p = byId.get(cur.return_of_ride_id)
+      if (!p) break
+      cur = p
+      hops++
+    }
+    return cur.ref_no
+  }
 
   const list = useMemo(
     () =>
@@ -281,12 +302,9 @@ export default function Rides() {
           ...r,
           city_name: r.city?.name ?? '',
           crew_text: crewNamesText(r.ride_crew),
-          // a Return Leg carries no passenger (empty repositioning) - its
-          // ride_crew row is only there so the origin crew's name still
-          // shows in the Crew column; Count always displays 0 for it.
-          crew_count: r.block_type === 'return_leg' ? 0 : crewCount(r.ride_crew),
+          crew_count: displayCrewCount(r.ride_crew, r.block_type),
           vehicle_text: vehicleText(r.vehicle),
-          display_ref: suffix ? `${parent.ref_no}-${suffix}` : String(r.ref_no),
+          display_ref: suffix ? `${rootRefNo(r)}-${suffix}` : String(r.ref_no),
           return_leg: returnLegByParent.get(r.id) ?? null,
           // pre-duty_sheet_date rows (existing data) fall back to their own ride_date
           duty_sheet_display: r.duty_sheet_date || r.ride_date,
@@ -921,8 +939,6 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
   const cityFlights = flights.filter((f) => f.city_id === row.city_id)
   const [destCrewId, setDestCrewId] = useState('')
   const [flightId, setFlightId] = useState('')
-  const [checkinNew, setCheckinNew] = useState('')
-  const [checkoutNew, setCheckoutNew] = useState('')
   const [addPickup, setAddPickup] = useState(false)
   const [pickupFlightId, setPickupFlightId] = useState('')
   const [pickupCheckinNew, setPickupCheckinNew] = useState('')
@@ -932,13 +948,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
   const flightSlot = primaryTimeSlot(flight?.block_type) // 'checkin' | 'checkout' | null
   const pickupFlight = cityFlights.find((f) => f.id === pickupFlightId)
 
-  const pickFlight = (fid) => {
-    setFlightId(fid)
-    const f = cityFlights.find((x) => x.id === fid)
-    const ft = toTime24(f?.flight_time)
-    setCheckinNew(primaryTimeSlot(f?.block_type) === 'checkin' ? ft : '')
-    setCheckoutNew(primaryTimeSlot(f?.block_type) === 'checkout' ? ft : '')
-  }
+  const pickFlight = (fid) => setFlightId(fid)
 
   const [dhInfo, setDhInfo] = useState(null) // { distanceKm, durationMin }
   useEffect(() => {
@@ -1011,9 +1021,9 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
           ride_date: legRideDate,
           duty_sheet_date: legRideDate,
           checkin_old: flightSlot === 'checkin' ? ft || null : null,
-          checkin_new: flightSlot === 'checkin' ? checkinNew || ft || null : null,
+          checkin_new: flightSlot === 'checkin' ? ft || null : null,
           checkout_old: flightSlot === 'checkout' ? ft || null : null,
-          checkout_new: flightSlot === 'checkout' ? checkoutNew || ft || null : null,
+          checkout_new: flightSlot === 'checkout' ? ft || null : null,
           vehicle_id: row.vehicle_id,
           shift: row.vehicle_id ? shift : null,
           driver_id: driverId || null,
@@ -1105,7 +1115,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
           .single()
         if (pErr) throw new Error(mapRideError(pErr, row.vehicle_id, vehicles))
         await supabase.from('ride_crew').insert({ ride_id: pr.id, crew_id: destCrew.id, seq: 0 })
-        toast.success(`Deadhead + Pickup rides created (${row.ref_no}-D, ${dh.ref_no}-P)`)
+        toast.success(`Deadhead + Pickup rides created (${row.ref_no}-D, ${row.ref_no}-P)`)
       } else {
         toast.success(`Deadhead ride created (${row.ref_no}-D)`)
       }
@@ -1233,45 +1243,6 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
               </span>
             </div>
 
-            {flightSlot === 'checkin' && (
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="dh-cio">Check-in</label>
-                  <input id="dh-cio" type="time" className="input" value={toTime24(flight?.flight_time)} disabled />
-                  <span className="field-hint">Scheduled, from the flight</span>
-                </div>
-                <div className="field">
-                  <label htmlFor="dh-cin">Actual</label>
-                  <input
-                    id="dh-cin"
-                    type="time"
-                    className="input"
-                    value={checkinNew}
-                    onChange={(e) => setCheckinNew(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-            {flightSlot === 'checkout' && (
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="dh-coo">Check-out</label>
-                  <input id="dh-coo" type="time" className="input" value={toTime24(flight?.flight_time)} disabled />
-                  <span className="field-hint">Scheduled, from the flight</span>
-                </div>
-                <div className="field">
-                  <label htmlFor="dh-con">Actual</label>
-                  <input
-                    id="dh-con"
-                    type="time"
-                    className="input"
-                    value={checkoutNew}
-                    onChange={(e) => setCheckoutNew(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
             <div className="field">
               <label>
                 Route{' '}
@@ -1284,7 +1255,8 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
               </label>
               <span className="field-hint">
                 Ride Time {fmtTimeOnly12(dhStartAt) || '—'} (dropoff arrival + {deadheadBufferMin} min Deadhead
-                buffer) · ETA {dhEta ? fmtTimeOnly12(dhEta) : 'needs a route'}
+                buffer) · {destCrew?.name || 'Destination crew'}&rsquo;s ETA{' '}
+                {dhEta ? fmtTimeOnly12(dhEta) : 'needs a route'}
               </span>
             </div>
 
@@ -1712,7 +1684,7 @@ function RideModal({
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
             ['Actual', fmtTime12(row.checkout_new) || '—'],
             ['Crew', crewNamesText(row.ride_crew)],
-            ['Count', row.block_type === 'return_leg' ? 0 : crewCount(row.ride_crew)],
+            ['Count', displayCrewCount(row.ride_crew, row.block_type)],
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
             ['Vehicle', row.vehicle?.vehicle_no || '—'],

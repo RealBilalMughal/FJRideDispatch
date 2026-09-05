@@ -271,16 +271,22 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   - **Deadhead** (`block_type: 'deadhead'`, `deadhead_mode: 'crew'`) - last
     crew's stop -> a newly picked crew's stop (`SearchSelect`, both ends as
     `ride_crew` this time - a real repositioning move, not empty like Return
-    Leg). A Flight is required (`SearchSelect`) purely as a snapshot/reference
-    ("which flight this deadhead was for") - if that flight is itself
-    pickup/dropoff type, its Check-in/Check-out (scheduled, disabled) +
-    Actual (editable) show, same block-conditional pattern as the main Ride
-    form's flight-pick. Live KM/duration preview (`ride-km-badge`) as soon as
-    a destination is picked. An optional **"Also create a Pickup ride"**
-    checkbox additionally creates a companion Pickup ride for that same new
-    crew (crew -> Airport, its own separately-picked flight, its Ride Time via
-    the normal Check-in-buffer auto-suggest formula) - only shown/required
-    when checked.
+    Leg, but still not a real passenger pickup/dropoff, so its **Count also
+    always displays 0** in the table/export/view, same forced-zero treatment
+    as Return Leg - see `displayCrewCount()`). A Flight is required
+    (`SearchSelect`) purely as a snapshot/reference ("which flight this
+    deadhead was for") - no Check-in/Check-out/Actual fields are shown for
+    it (a Deadhead has no dispatch-vs-scheduled distinction of its own); the
+    Route field's hint line is the only timing shown, auto-computed and
+    never manually entered: **"Ride Time HH:MM (dropoff arrival + N min
+    Deadhead buffer) · <destination crew>'s ETA HH:MM"**. Live KM/duration
+    preview (`ride-km-badge`) as soon as a destination is picked. An optional
+    **"Also create a Pickup ride"** checkbox additionally creates a companion
+    Pickup ride for that same new crew (crew -> Airport, its own
+    separately-picked flight - this one DOES keep its own Check-in/Actual
+    fields, since it's a real pickup with its own dispatch - its Ride Time
+    via the normal Check-in-buffer auto-suggest formula) - only shown/
+    required when checked.
   Both Return Leg and Deadhead: **Ride Time = the dropoff ride's own ETA
   (arrival at the crew stop) + that city's buffer** (`cities.return_leg_buffer_min`
   / `deadhead_buffer_min`, defaults 10 / 15, edited at Settings -> Ride Buffer
@@ -288,13 +294,20 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   3:10 PM; the leg's own ETA (to its destination) comes from the normal
   `duration_min` computation - no manual time entry either way. Both, and the
   companion Pickup, chain via `return_of_ride_id` (Deadhead's parent = the
-  dropoff ride; the companion Pickup's parent = the *Deadhead* ride) and
-  **display with a suffix over their real, independent `ref_no`** - purely
-  cosmetic, computed client-side in `Rides.jsx`'s `list` memo (`suffixFor()` +
-  a `return_of_ride_id -> id` map off the already-loaded `rows`, no extra
-  query): Return Leg `"<dropoff ref>-R"`, Deadhead `"<dropoff ref>-D"`,
-  companion Pickup `"<deadhead's own ref_no>-P"` (not chained through the
-  Deadhead's own `-D` display string).
+  dropoff ride; the companion Pickup's parent = the *Deadhead* ride, so the
+  DB relation is still 2 hops for it - this is what the cascade-delete below
+  walks) and **display with a suffix over their real, independent `ref_no`** -
+  purely cosmetic, computed client-side in `Rides.jsx`'s `list` memo
+  (`suffixFor()` + `rootRefNo()`, which walks `return_of_ride_id` up to the
+  TOP-most ancestor regardless of how many hops, off a `return_of_ride_id ->
+  id` map built from the already-loaded `rows`, no extra query): Return Leg
+  `"<dropoff ref>-R"`, Deadhead `"<dropoff ref>-D"`, and the companion Pickup
+  **also `"<dropoff ref>-P"`** (walks Pickup -> Deadhead -> dropoff for the
+  ref_no, even though its own `return_of_ride_id` only points at the
+  Deadhead one hop up) - NOT the Deadhead's own real `ref_no`, which was an
+  earlier bug (`"<deadhead's own ref>-P"` showed as an unrelated-looking
+  number since a ref_no is assigned in creation order off the one shared
+  sequence, not to the dropoff's own value).
   **Deleting a ride cascades to whatever was auto-created from it** -
   `return_of_ride_id` is `on delete cascade` (migration
   `20260906140000_return_leg_cascade.sql`, was `on delete set null`, later

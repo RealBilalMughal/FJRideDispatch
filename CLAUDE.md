@@ -36,7 +36,7 @@ keys, tables or deploy targets with any other project.
 - **Left sidebar: LIGHT**, sectioned with uppercase labels + `#e6e6e6` brand strip.
   Active nav = accent text + a 3px accent bar on the left edge (no filled pill).
   lucide icons at `size={17}`. `src/components/Sidebar.jsx` + `layout.css`.
-  Sections: Dispatch (Ride, Vehicle Board), Roster (Crew, Flights), Fleet
+  Sections: Dispatch (Ride, Vehicle Board, Tracker), Roster (Crew, Flights), Fleet
   (Vendors, Drivers, Vehicles), Administration (Users, Role Access, Settings),
   Account.
 - **No topbar** - a floating profile chip top-right (`src/components/Topbar.jsx`).
@@ -399,16 +399,25 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   rendered as plain unstyled `<button>`s). The Map tab's Leaflet container is
   640px tall (`BoardMap`'s `.stop-map` - this page also now imports
   `components/stop-map.css` directly for the same reason, rather than relying
-  on some other page's chunk to have pulled it in first). A third **Tracker**
-  tab appears only when at least one city in play has a Live Tracker link set
-  (Settings -> Live Tracker, per city - see below): `trackerCities` (off
-  `useCity().allowedCities`, already loaded, no extra query) is every allowed
-  city with a `tracker_url` set, filtered down to just the active city when
-  one is selected, or left as every such city when the topbar filter is on
-  All. `TrackerFrame` iframes each one (`<iframe src={c.tracker_url}>`) -
-  a single city gets one full 640px-tall frame; multiple (the All case) stack
-  vertically at 420px each with a city-name label above, so it's clear which
-  is which.
+  on some other page's chunk to have pulled it in first). No Tracker tab here
+  any more - it's its own page (below).
+- **Tracker** (`/tracker`, sidebar label "Tracker", group "Dispatch", gated
+  on `rides` view like Vehicle Board - reuses that permission, no separate
+  `PERMISSION_PAGES` entry) - a full page (not a Vehicle Board tab, moved out
+  of there) just for live GPS tracking: each city's own Live Tracker link
+  (Settings -> Live Tracker, `cities.tracker_url`) embedded as big as the
+  viewport reasonably allows (`Tracker.css`'s `.tk-frame`,
+  `height: max(420px, calc(100vh - 200px))` - a floor so it never collapses
+  on a short viewport, not literal edge-to-edge since the page keeps its
+  normal header). `trackerCities` (off `useCity().allowedCities`, already
+  loaded, no extra query) is every allowed city with a `tracker_url` set,
+  filtered to just the active city when one is selected, or left as every
+  such city when the topbar filter is on All - a single city gets one full
+  `.tk-frame`; multiple (the All case) stack vertically at half that height
+  each (`.tk-frame-split`) with a city-name label above, so it's clear which
+  is which. Confirmed via response headers that AI Track's sharing links
+  carry no `X-Frame-Options`/`frame-ancestors` restriction, so plain
+  `<iframe>` embedding works, no proxy or scraping needed.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -453,14 +462,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     the two panels above (an earlier version tried one global link on a
     one-row `app_settings` singleton table, but the real fleet has a
     separate link per city, so that table was dropped in the very next
-    migration - never had real data). Vehicle Board's Tracker tab
-    (`VehicleBoard.jsx`) shows the active city's link, or every city's link
-    when the topbar filter is on All (see the Ride section's Vehicle Board
-    entry) - it only appears once at least one relevant city has a link set.
-    Confirmed via response headers that AI Track's sharing links carry no
-    `X-Frame-Options`/`frame-ancestors` restriction, so plain `<iframe>`
-    embedding works, no proxy or scraping needed. Links are written straight
-    into `cities.tracker_url` through this panel's own save, never committed
+    migration - never had real data). Shown on the standalone **Tracker**
+    page (`/tracker`, see Pages -> Tracker below), not a Vehicle Board tab.
+    Links are written straight into `cities.tracker_url` through this panel's
+    own save, never committed
     to a migration or the repo.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.

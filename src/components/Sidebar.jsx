@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Calendar, Car, IdCard, LayoutDashboard, Plane, Route, Settings, ShieldCheck, Store, UserRound, Users2, UsersRound } from 'lucide-react'
+import { Calendar, Car, IdCard, LayoutDashboard, Plane, Route, Satellite, Settings, ShieldCheck, Store, UserRound, Users2, UsersRound } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 // Grouped like the BlackDrivo / GraphicSpark admin left panel: labelled
@@ -14,6 +14,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/rides', label: 'Ride', icon: Route, page: 'rides' },
       { to: '/vehicle-board', label: 'Vehicle Board', icon: Calendar, page: 'rides' },
+      { to: '/tracker', label: 'Tracker', icon: Satellite, page: 'rides' },
     ],
   },
   {

@@ -8,6 +8,7 @@ import Login from './pages/Login'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Rides = lazy(() => import('./pages/Rides'))
 const VehicleBoard = lazy(() => import('./pages/VehicleBoard'))
+const Tracker = lazy(() => import('./pages/Tracker'))
 const Crew = lazy(() => import('./pages/Crew'))
 const Flights = lazy(() => import('./pages/Flights'))
 const Vendors = lazy(() => import('./pages/Vendors'))
@@ -28,6 +29,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="rides" element={<Rides />} />
           <Route path="vehicle-board" element={<VehicleBoard />} />
+          <Route path="tracker" element={<Tracker />} />
           <Route path="crew" element={<Crew />} />
           <Route path="flights" element={<Flights />} />
           <Route path="vendors" element={<Vendors />} />

@@ -3,7 +3,7 @@ import { MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leafle
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Map as MapIcon, RefreshCw, Rows3, Satellite, Shield } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Map as MapIcon, RefreshCw, Rows3, Shield } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -29,28 +29,15 @@ const minsOf = (iso) => {
 
 export default function VehicleBoard() {
   const { can } = useAuth()
-  const { cityId, cityName, allowedCities } = useCity()
+  const { cityId, cityName } = useCity()
   const canView = can('rides', 'view')
 
   const [date, setDate] = useState(pkToday)
-  const [tab, setTab] = useState('board') // board | map | tracker
+  const [tab, setTab] = useState('board') // board | map
   const [rides, setRides] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
   const [openRide, setOpenRide] = useState(null)
-  // each city keeps its own tracker link (cities.tracker_url, from
-  // useCity()'s already-loaded rows - no extra query). One city selected ->
-  // just that city's link (if set); All -> every allowed city that has one.
-  const trackerCities = useMemo(() => {
-    const withLink = allowedCities.filter((c) => c.tracker_url)
-    return cityId == null ? withLink : withLink.filter((c) => c.id === cityId)
-  }, [allowedCities, cityId])
-  // e.g. switching the topbar filter to a city with no link while already on
-  // this tab - fall back rather than leaving the page on a blank pane with
-  // no tab shown as active.
-  useEffect(() => {
-    if (tab === 'tracker' && trackerCities.length === 0) setTab('board')
-  }, [tab, trackerCities])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -143,11 +130,6 @@ export default function VehicleBoard() {
             <button className={tab === 'map' ? 'on' : ''} onClick={() => setTab('map')}>
               <MapIcon size={13} /> Map
             </button>
-            {trackerCities.length > 0 && (
-              <button className={tab === 'tracker' ? 'on' : ''} onClick={() => setTab('tracker')}>
-                <Satellite size={13} /> Tracker
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -206,11 +188,9 @@ export default function VehicleBoard() {
             </div>
           )}
         </div>
-      ) : tab === 'map' ? (
+      ) : (
         <BoardMap rides={rides} onPick={setOpenRide} />
-      ) : trackerCities.length > 0 ? (
-        <TrackerFrame cities={trackerCities} />
-      ) : null}
+      )}
 
       {openRide && (
         <Modal open onClose={() => setOpenRide(null)} title={`Ride ${openRide.ref_no}`} width={440}>
@@ -255,29 +235,6 @@ export default function VehicleBoard() {
           </div>
         </Modal>
       )}
-    </div>
-  )
-}
-
-// Embeds each city's own tracker sharing link (Settings -> Live Tracker) -
-// one city selected -> a single full-height frame; All -> one per city that
-// has a link, stacked with a name label so it's clear which is which.
-function TrackerFrame({ cities }) {
-  const single = cities.length === 1
-  return (
-    <div className="vb-tracker-list">
-      {cities.map((c) => (
-        <div key={c.id} className="vb-tracker-item">
-          {!single && <div className="vb-tracker-label">{c.name}</div>}
-          <div className="stop-map" style={{ height: single ? 640 : 420 }}>
-            <iframe
-              src={c.tracker_url}
-              title={`Live Tracker - ${c.name}`}
-              style={{ width: '100%', height: '100%', border: 0 }}
-            />
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

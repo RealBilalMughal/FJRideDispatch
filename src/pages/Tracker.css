@@ -1,0 +1,23 @@
+.tk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tk-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 6px;
+}
+
+/* "full screen" = fills whatever's left below the topbar/page header, with a
+   sane floor so it never collapses on a short viewport - not literal
+   edge-to-edge (the page keeps its normal header), just as tall as it can be. */
+.tk-frame {
+  height: max(420px, calc(100vh - 200px));
+}
+
+.tk-frame-split {
+  height: max(320px, calc((100vh - 240px) / 2));
+}

@@ -400,19 +400,33 @@ function Metric({ icon: Icon, value, label, sub, trend, cls }) {
   )
 }
 
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const weekdayOf = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return WEEKDAY[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
+}
+
 function PerDayChart({ data }) {
   const max = Math.max(1, ...data.map((d) => d.count))
+  const dense = data.length > 14 // week -> "Mon", month -> "M"
   return (
     <div className="dash-chart">
-      {data.map((d) => (
-        <div
-          className="dash-chart-col"
-          key={d.date}
-          title={`${fmtDate(d.date)} — ${d.count} ride(s)`}
-        >
-          <div className="dash-chart-bar" style={{ height: `${(d.count / max) * 100}%` }} />
-        </div>
-      ))}
+      {data.map((d) => {
+        const wd = weekdayOf(d.date)
+        return (
+          <div
+            className="dash-chart-col"
+            key={d.date}
+            title={`${fmtDate(d.date)} — ${d.count} ride(s)`}
+          >
+            <div className="dash-chart-bars">
+              <div className="dash-chart-bar" style={{ height: `${(d.count / max) * 100}%` }} />
+            </div>
+            <span className="dash-chart-day">{dense ? wd[0] : wd}</span>
+            <span className="dash-chart-date">{Number(d.date.slice(8, 10))}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }

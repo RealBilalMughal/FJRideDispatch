@@ -145,8 +145,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     `from`; skipped for the All range). Green up / red down / muted flat;
     white on the accent card.
   - **Rides per day** - a hand-rolled CSS bar chart (`.dash-chart`, no
-    charting lib), one bar per day in range, shown only when the range spans
-    >1 day (so it's hidden on the Today default).
+    charting lib), one bar per day in range with a weekday + date label
+    under each (3-letter weekday for ≤14 bars, single letter when denser),
+    shown only when the range spans >1 day (hidden on the Today default).
+    Positioned below the block/shift cards.
   - **Rides by block** | **Shift** - the two-column card split; divider is a
     `border-right` on the block *grid* so it's only card-tall, not `h2`-tall.
     2×2 blocks below 560px.

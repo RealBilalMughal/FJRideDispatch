@@ -128,7 +128,18 @@ off). `roles[]` validated against `public.roles`. Client wrapper: `src/lib/admin
 Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Pages
-- `Dashboard` - placeholder, always visible
+- `Dashboard` (`/`, always visible - the landing page) - ride totals over a
+  Today/Week/Month/All date range (default Month; custom from/to inputs too -
+  same `.date-tabs` + `presetRange()` pattern as the Rides filter bar) and
+  the global city filter. Top `StatCards`: Total rides, Total distance
+  (Σ `distance_km`), Crew moved (Σ `displayCrewCount` - so Deadhead/Return
+  Leg contribute 0, matching the table). Then two `.dash-grid` tile blocks:
+  **By block** (Pickup / Drop Off / Deadhead / Return leg - each with a
+  count + KM sum) and **By shift** (Day trips / Night trips - count + KM
+  sum). A user without `rides` view just sees a welcome placeholder (RLS
+  would return nothing anyway). Fetches `block_type, distance_km, shift,
+  ride_crew(seq)` filtered by `ride_date` in range - one query, no joins
+  beyond the crew count.
 - `Crew` (`crew` perm, sidebar group "Roster") - table (ID / Name / Phone /
   Designation / City / Stop / Coordinates), advanced filters, CSV export + import
   (`crew-sample.csv`: name, phone, designation, city, stop_name, coordinates -
@@ -294,10 +305,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   UTC, so during Pakistan's 12:00–4:59 AM it silently reports the *previous*
   calendar day, which is exactly the bug this fixed (a ride dated "today"
   wouldn't show up under the default Today filter). Date-string arithmetic
-  (Week/Month bounds; `addDays()`, also in `lib/time.js`, shared by Vehicle
-  Board's day nav and the Duty Sheet -1-day calc below) uses `Date.UTC(...)`
-  on the already-correct date's Y/M/D, never local-timezone `Date`
-  parsing/getters, for the same reason.
+  (`presetRange(preset)` -> `{ from, to }` for the Today/Week/Month/All tabs,
+  shared by the Rides filter bar and the Dashboard; `addDays()`; both in
+  `lib/time.js`) uses `Date.UTC(...)` on the already-correct date's Y/M/D,
+  never local-timezone `Date` parsing/getters, for the same reason.
 - The form's check-in/out fields are **block-conditional**: Pickup shows
   Check-in (scheduled, disabled) + Actual (editable); Drop Off shows Check-out
   + Actual; deadhead/return_leg show neither.
@@ -404,12 +415,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   edit per-city on the **Settings** page (see Pages -> Settings), or directly
   on `cities.airport_*`.
 - **Crew count is its own column** - table/export column **"Count"** (just the
-  number, `crewNamesText()`/`crewCount()` in `Rides.jsx`) sits right **after**
-  "Crew" (names only); the form/view still show a
-  `<span className="badge badge-accent">N</span>` next to the label. In the
-  **table** (not export/CSV, which stays a flat comma list), 2+ crew render
-  stacked one name per line (`CrewCell`) instead of running sideways. The
-  **Flight No** column/export label is now just **"Flight"**.
+  number; `displayCrewCount(ride_crew, block_type)` lives in `lib/rideRoute.js`
+  now so the Dashboard can reuse it - it forces 0 for `ZERO_COUNT_BLOCKS`
+  = `{return_leg, deadhead}`, else `ride_crew.length`) sits right **after**
+  "Crew" (names only, `crewNamesText()` in `Rides.jsx`); the form/view still
+  show a `<span className="badge badge-accent">N</span>` next to the label.
+  In the **table** (not export/CSV, which stays a flat comma list), 2+ crew
+  render stacked one name per line (`CrewCell`) instead of running sideways.
+  The **Flight No** column/export label is now just **"Flight"**.
 - **Filters**: Block, Flight, Vehicle, Shift, Driver are all always-visible
   in the filter bar's `inline` row (no collapsible "Filters" panel - one
   click). Block/Shift are small fixed enums so they stay plain `<select>`s;
@@ -426,6 +439,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   custom range (typing one clears the active tab - `datePreset` becomes `''`).
   **Today is the default on every load** (`useState('today')`), and is the
   neutral state `activeCount`/Clear resets back to, not an empty filter.
+- **Summary** button (Rides header, `Sigma` icon, toggles `.rides-summary`) -
+  a panel over the **currently filtered** rides: a total (count + Σ KM) and
+  a per-**Duty-Sheet-date** breakdown (newest first, each date's ride count +
+  KM sum). Off by default.
 - **KM is a plain 2-decimal number** (`12.50`, no "km" suffix) in the KM table
   column and CSV export - the column header already says KM. It's positioned
   **after ETA** (table + export column order: … Ride Time, ETA, KM, Status).

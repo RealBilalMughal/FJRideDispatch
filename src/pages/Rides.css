@@ -1,3 +1,39 @@
+/* Rides "Summary" panel - totals + a per-Duty-Sheet-date breakdown of the
+   currently filtered rides. Toggled by the Summary button in the header. */
+.rides-summary {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+}
+
+.rides-summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.rides-summary-total {
+  color: var(--accent);
+}
+
+.rides-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0 28px;
+}
+
+.rides-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
 /* Live Tracking card in the Ride view (see Rides.jsx's LiveTrackingCard) */
 .live-track {
   display: flex;
@@ -104,36 +140,8 @@
   font-weight: 700;
 }
 
-/* Today / Week / Month / All quick date-range tabs (filter bar) - flat underline */
-.date-tabs {
-  display: inline-flex;
-  gap: 14px;
-  padding: 0 2px;
-}
-
-.date-tabs button {
-  border: 0;
-  background: none;
-  padding: 4px 0 6px;
-  border-bottom: 2px solid transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.date-tabs button:hover {
-  color: var(--heading);
-}
-
-.date-tabs button.on {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.date-range-sep {
-  color: var(--muted);
-}
+/* .date-tabs / .date-range-sep moved to components/data/data.css so the
+   Dashboard (which loads data.css via StatCards, not Rides.css) gets them too. */
 
 /* Flight/Vehicle/Driver filters are type-to-search (SearchSelect) - give the
    wrapper a fixed width so the row doesn't jump around as a selection changes */

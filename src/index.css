@@ -154,6 +154,11 @@ svg {
   background: var(--surface);
 }
 
+.btn-ghost.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .btn-danger {
   --btn-bg: var(--danger);
 }

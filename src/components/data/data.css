@@ -122,6 +122,38 @@
   outline: none;
 }
 
+/* Today / Week / Month / All quick date-range tabs - flat underline. Used by
+   the Rides filter bar and the Dashboard header. */
+.date-tabs {
+  display: inline-flex;
+  gap: 14px;
+  padding: 0 2px;
+}
+
+.date-tabs button {
+  border: 0;
+  background: none;
+  padding: 4px 0 6px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.date-tabs button:hover {
+  color: var(--heading);
+}
+
+.date-tabs button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.date-range-sep {
+  color: var(--muted);
+}
+
 .filter-toggle,
 .filter-clear {
   display: inline-flex;

@@ -83,6 +83,34 @@ export const addDays = (isoDate, n) => {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
 }
 
+// A Today/Week/Month/All quick-filter preset -> a concrete { from, to } pair
+// of "YYYY-MM-DD" strings ({ from: '', to: '' } for "all"). Week = Mon–Sun of
+// the current week, Month = the calendar month - both anchored on pkToday()
+// and computed with Date.UTC on its Y/M/D so they're independent of the
+// browser's own timezone (same reasoning as addDays above). Shared by the
+// Rides filter bar and the Dashboard.
+export const presetRange = (preset) => {
+  const today = pkToday()
+  if (preset === 'today') return { from: today, to: today }
+  if (preset === 'week') {
+    const [y, m, d] = today.split('-').map(Number)
+    const anchor = new Date(Date.UTC(y, m - 1, d))
+    const mon = new Date(anchor)
+    mon.setUTCDate(anchor.getUTCDate() - ((anchor.getUTCDay() + 6) % 7))
+    const sun = new Date(mon)
+    sun.setUTCDate(mon.getUTCDate() + 6)
+    return { from: mon.toISOString().slice(0, 10), to: sun.toISOString().slice(0, 10) }
+  }
+  if (preset === 'month') {
+    const [y, m] = today.split('-').map(Number)
+    return {
+      from: new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10),
+      to: new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10),
+    }
+  }
+  return { from: '', to: '' }
+}
+
 // ISO -> "14:30" local (for a time input)
 export const isoToLocalTime = (iso) => {
   if (!iso) return ''

@@ -13,6 +13,14 @@ export const BLOCK_TYPES = [
 ]
 export const blockLabel = (v) => BLOCK_TYPES.find((b) => b.value === v)?.label || (v ? v : '—')
 
+// A Return Leg / Deadhead repositions crew, it isn't a passenger pickup or
+// drop-off, so its crew count always DISPLAYS 0 - table, CSV export, the
+// ride view, and the dashboard "crew moved" total - forced, not derived from
+// how many ride_crew rows it happens to carry.
+export const ZERO_COUNT_BLOCKS = new Set(['return_leg', 'deadhead'])
+export const displayCrewCount = (rideCrew, block) =>
+  ZERO_COUNT_BLOCKS.has(block) ? 0 : (rideCrew || []).length
+
 // how many crew the block needs: { min, max } (max null = unlimited)
 export function crewRule(block, deadheadMode) {
   if (block === 'pickup' || block === 'dropoff') return { min: 1, max: null }

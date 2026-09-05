@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Route as RouteIcon,
   Shield,
+  Sigma,
   Sparkles,
   Trash2,
   X,
@@ -29,6 +30,7 @@ import {
   isoToLocalDate,
   isoToLocalTime,
   pkToday,
+  presetRange,
   toPkIso,
   toTime24,
 } from '../lib/time'
@@ -41,6 +43,7 @@ import {
   DEFAULT_CHECKOUT_BUFFER_MIN,
   DEFAULT_DEADHEAD_BUFFER_MIN,
   DEFAULT_RETURN_LEG_BUFFER_MIN,
+  displayCrewCount,
   primaryTimeSlot,
   rideTimeLabel,
   routeComplete,
@@ -121,12 +124,6 @@ const crewNames = (rc) =>
     .join(', ')
 
 const crewNamesText = (rc) => crewNames(rc) || '—'
-const crewCount = (rc) => (rc || []).length
-// a Return Leg (empty repositioning) and a Deadhead (crew repositioning, not
-// a real pickup/dropoff passenger count) both always display Count 0 -
-// forced, not derived from ride_crew.length.
-const ZERO_COUNT_BLOCKS = new Set(['return_leg', 'deadhead'])
-const displayCrewCount = (rc, block_type) => (ZERO_COUNT_BLOCKS.has(block_type) ? 0 : crewCount(rc))
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
@@ -219,6 +216,7 @@ export default function Rides() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [genOpen, setGenOpen] = useState(false)
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [detail, setDetail] = useState(null) // { row, edit }
   const [noteFor, setNoteFor] = useState(null) // a ride row, for the note popup
   const [pending, setPending] = useState(null) // { ids, label }
@@ -229,34 +227,11 @@ export default function Rides() {
   // Today/Week/Month presets -> a concrete [dateFrom, dateTo]; "all" clears the range.
   // Typing a date directly (see the inputs below) sets datePreset back to '' (custom).
   const applyDatePreset = (p) => {
+    const { from, to } = presetRange(p)
     setDatePreset(p)
     setPage(1)
-    if (p === 'today') {
-      setDateFrom(today)
-      setDateTo(today)
-    } else if (p === 'week') {
-      // pure calendar-date arithmetic anchored on `today` (already Pakistan-
-      // correct) via Date.UTC, so it's independent of the browser's own
-      // timezone - see pkToday() in lib/time.js for why that matters.
-      const [y, m, d] = today.split('-').map(Number)
-      const anchor = new Date(Date.UTC(y, m - 1, d))
-      const day = anchor.getUTCDay()
-      const mon = new Date(anchor)
-      mon.setUTCDate(anchor.getUTCDate() - ((day + 6) % 7)) // Monday of this week
-      const sun = new Date(mon)
-      sun.setUTCDate(mon.getUTCDate() + 6)
-      setDateFrom(mon.toISOString().slice(0, 10))
-      setDateTo(sun.toISOString().slice(0, 10))
-    } else if (p === 'month') {
-      const [y, m] = today.split('-').map(Number)
-      const first = new Date(Date.UTC(y, m - 1, 1))
-      const last = new Date(Date.UTC(y, m, 0))
-      setDateFrom(first.toISOString().slice(0, 10))
-      setDateTo(last.toISOString().slice(0, 10))
-    } else {
-      setDateFrom('')
-      setDateTo('')
-    }
+    setDateFrom(from)
+    setDateTo(to)
   }
 
   // "Create Ride" (on a dropoff ride) can chain up to 3 rides, each auto-
@@ -375,6 +350,23 @@ export default function Rides() {
       withVehicle: list.filter((r) => r.vehicle_id).length,
     }),
     [list, today],
+  )
+
+  // Summary panel: the currently-filtered rides grouped by their Duty Sheet
+  // date (newest first), with each date's ride count + KM total.
+  const dutySheetSummary = useMemo(() => {
+    const m = new Map()
+    for (const r of filtered) {
+      const cur = m.get(r.duty_sheet_display) || { count: 0, km: 0 }
+      cur.count += 1
+      cur.km += Number(r.distance_km) || 0
+      m.set(r.duty_sheet_display, cur)
+    }
+    return [...m.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
+  }, [filtered])
+  const summaryKm = useMemo(
+    () => filtered.reduce((a, r) => a + (Number(r.distance_km) || 0), 0),
+    [filtered],
   )
 
   const doDelete = async () => {
@@ -552,6 +544,12 @@ export default function Rides() {
           <button className="icon-btn" onClick={fetchRows} title="Refresh">
             <RefreshCw size={15} />
           </button>
+          <button
+            className={`btn btn-ghost btn-square btn-sm${summaryOpen ? ' on' : ''}`}
+            onClick={() => setSummaryOpen((v) => !v)}
+          >
+            <Sigma size={14} /> Summary
+          </button>
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export
           </button>
@@ -699,6 +697,31 @@ export default function Rides() {
           </>
         }
       />
+
+      {summaryOpen && (
+        <div className="rides-summary">
+          <div className="rides-summary-head">
+            <span>Summary</span>
+            <span className="rides-summary-total">
+              {filtered.length} ride(s) · {summaryKm.toLocaleString(undefined, { maximumFractionDigits: 1 })} km
+            </span>
+          </div>
+          {dutySheetSummary.length === 0 ? (
+            <span className="field-hint">No rides in the current filter.</span>
+          ) : (
+            <div className="rides-summary-grid">
+              {dutySheetSummary.map(([d, v]) => (
+                <div className="rides-summary-row" key={d}>
+                  <span>{fmtDate(d)}</span>
+                  <span>
+                    {v.count} · {v.km.toLocaleString(undefined, { maximumFractionDigits: 1 })} km
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {canDelete && (
         <BulkDeleteBar

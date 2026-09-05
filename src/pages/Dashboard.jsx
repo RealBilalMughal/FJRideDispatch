@@ -31,7 +31,6 @@ const BLOCKS = [
 ]
 const km = (r) => Number(r.distance_km) || 0
 const fmtKm = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} km`
-const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 100) : 0)
 
 export default function Dashboard() {
   const { profile, can } = useAuth()
@@ -93,7 +92,11 @@ export default function Dashboard() {
 
   const num = (x) => (loading ? '…' : x)
   const rangeLabel =
-    preset === 'all' ? 'all time' : preset ? DATE_PRESETS.find((p) => p.value === preset)?.label.toLowerCase() : 'custom range'
+    preset === 'all'
+      ? 'all time'
+      : preset
+        ? DATE_PRESETS.find((p) => p.value === preset)?.label.toLowerCase()
+        : 'custom range'
 
   return (
     <div className="page">
@@ -150,69 +153,44 @@ export default function Dashboard() {
       ) : (
         <>
           <div className="dash-hero">
-            <HeroCard icon={RouteIcon} value={num(s.total)} label="Total rides" sub={`${num(s.total)} in ${rangeLabel}`} />
-            <HeroCard icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" sub="road km, all blocks" />
-            <HeroCard
-              icon={Users2}
-              value={num(s.crew)}
-              label="Crew moved"
-              sub="pickups + drop-offs only"
-            />
+            <Metric hero icon={RouteIcon} value={num(s.total)} label="Total rides" />
+            <Metric hero icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" />
+            <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
           </div>
 
           <section className="dash-section">
             <h2>Rides by block</h2>
             <div className="dash-grid">
-              {BLOCKS.map(({ key, icon: Icon }) => {
-                const b = s.blk[key]
-                return (
-                  <div className={`dash-card blk-${key}`} key={key}>
-                    <div className="dash-ico">
-                      <Icon size={18} strokeWidth={1.75} />
-                    </div>
-                    <div className="dash-headline">
-                      <span className="dash-num">{num(b.count)}</span>
-                      <span className="dash-name">{blockLabel(key)}</span>
-                    </div>
-                    <span className="dash-sub">{num(fmtKm(b.km))}</span>
-                    <div className="dash-bar">
-                      <div style={{ width: `${loading ? 0 : pct(b.count, s.total)}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
+              {BLOCKS.map(({ key, icon }) => (
+                <Metric
+                  key={key}
+                  cls={`blk-${key}`}
+                  icon={icon}
+                  value={num(s.blk[key].count)}
+                  label={blockLabel(key)}
+                  sub={num(fmtKm(s.blk[key].km))}
+                />
+              ))}
             </div>
           </section>
 
           <section className="dash-section">
             <h2>Day vs Night</h2>
-            <div className="dash-grid dash-grid-2">
-              <div className="dash-card shift-day">
-                <div className="dash-ico">
-                  <Sun size={18} strokeWidth={1.75} />
-                </div>
-                <div className="dash-headline">
-                  <span className="dash-num">{num(s.shift.day.count)}</span>
-                  <span className="dash-name">Day trips</span>
-                </div>
-                <span className="dash-sub">{num(fmtKm(s.shift.day.km))}</span>
-                <div className="dash-bar">
-                  <div style={{ width: `${loading ? 0 : pct(s.shift.day.count, s.total)}%` }} />
-                </div>
-              </div>
-              <div className="dash-card shift-night">
-                <div className="dash-ico">
-                  <Moon size={18} strokeWidth={1.75} />
-                </div>
-                <div className="dash-headline">
-                  <span className="dash-num">{num(s.shift.night.count)}</span>
-                  <span className="dash-name">Night trips</span>
-                </div>
-                <span className="dash-sub">{num(fmtKm(s.shift.night.km))}</span>
-                <div className="dash-bar">
-                  <div style={{ width: `${loading ? 0 : pct(s.shift.night.count, s.total)}%` }} />
-                </div>
-              </div>
+            <div className="dash-grid">
+              <Metric
+                cls="shift-day"
+                icon={Sun}
+                value={num(s.shift.day.count)}
+                label="Day trips"
+                sub={num(fmtKm(s.shift.day.km))}
+              />
+              <Metric
+                cls="shift-night"
+                icon={Moon}
+                value={num(s.shift.night.count)}
+                label="Night trips"
+                sub={num(fmtKm(s.shift.night.km))}
+              />
             </div>
           </section>
         </>
@@ -221,11 +199,11 @@ export default function Dashboard() {
   )
 }
 
-function HeroCard({ icon: Icon, value, label, sub }) {
+function Metric({ icon: Icon, value, label, sub, hero, cls }) {
   return (
-    <div className="dash-card dash-card-hero">
+    <div className={`dash-card${hero ? ' dash-card-hero' : ''}${cls ? ` ${cls}` : ''}`}>
       <div className="dash-ico">
-        <Icon size={19} strokeWidth={1.75} />
+        <Icon size={15} strokeWidth={1.75} />
       </div>
       <div className="dash-headline">
         <span className="dash-num">{value}</span>

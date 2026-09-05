@@ -133,14 +133,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - `Dashboard` (`/`, always visible - the landing page) - ride totals over a
   Today/Week/Month/All date range (default Month; custom from/to inputs too -
   same `.date-tabs` + `presetRange()` pattern as the Rides filter bar) and
-  the global city filter. Bordered metric cards (`Dashboard.css`, an
+  the global city filter. Small bordered metric cards (`Dashboard.css`, an
   intentional exception to the no-cards rule - a dashboard reads better as
   cards): a hero row (Total rides, Total distance = Σ `distance_km`, Crew
   moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
   the table), then **Rides by block** (Pickup / Drop Off / Deadhead / Return
-  leg - each an icon-chipped card with count + KM sum + a proportion bar,
-  colours matching the Vehicle Board block bars) and **Day vs Night**
-  (count + KM + bar each). A user without `rides` view just sees a welcome
+  leg - each an icon-chipped card with count + KM sum, chip colours matching
+  the Vehicle Board block bars) and **Day vs Night** (count + KM each). A
+  user without `rides` view just sees a welcome
   placeholder (RLS would return nothing anyway). Fetches `block_type,
   distance_km, shift, ride_crew(seq)` filtered by `ride_date` in range - one
   query, no joins beyond the crew count.

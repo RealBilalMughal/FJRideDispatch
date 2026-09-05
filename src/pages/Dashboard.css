@@ -1,41 +1,33 @@
-.dash-hero {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
+.dash-hero,
+.dash-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .dash-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .dash-section h2 {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--muted);
 }
 
-.dash-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 14px;
-}
-
-.dash-grid-2 {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  max-width: 620px;
-}
-
 .dash-card {
+  flex: 1 1 150px;
+  max-width: 210px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px;
+  gap: 9px;
+  padding: 13px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--bg);
 }
 
@@ -44,9 +36,9 @@
 }
 
 .dash-ico {
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: var(--accent-soft);
@@ -56,60 +48,39 @@
 .dash-headline {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
 }
 
 .dash-num {
   font-family: var(--font-heading);
-  font-size: 27px;
+  font-size: 19px;
   font-weight: 700;
   line-height: 1;
   color: var(--heading);
 }
 
 .dash-card-hero .dash-num {
-  font-size: 31px;
+  font-size: 22px;
 }
 
 .dash-name {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   color: var(--muted);
 }
 
 .dash-sub {
   font-size: 12px;
-  color: var(--muted);
-  margin-top: -2px;
-}
-
-.dash-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.dash-card-hero .dash-bar {
-  background: var(--border);
-}
-
-.dash-bar > div {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transition: width 0.3s ease;
+  font-weight: 600;
+  color: var(--body);
 }
 
 /* per-block accent (matches the Vehicle Board bar colours) */
 .dash-card.blk-pickup .dash-ico {
   background: rgba(30, 135, 75, 0.14);
   color: var(--success);
-}
-.dash-card.blk-pickup .dash-bar > div {
-  background: var(--success);
 }
 .dash-card.blk-dropoff .dash-ico {
   background: var(--accent-soft);
@@ -119,23 +90,13 @@
   background: rgba(128, 133, 143, 0.16);
   color: var(--muted);
 }
-.dash-card.blk-deadhead .dash-bar > div {
-  background: var(--muted);
-}
 .dash-card.blk-return_leg .dash-ico {
   background: rgba(183, 121, 31, 0.16);
   color: var(--warning);
 }
-.dash-card.blk-return_leg .dash-bar > div {
-  background: var(--warning);
-}
-
 .dash-card.shift-day .dash-ico {
   background: rgba(183, 121, 31, 0.14);
   color: var(--warning);
-}
-.dash-card.shift-day .dash-bar > div {
-  background: var(--warning);
 }
 .dash-card.shift-night .dash-ico {
   background: var(--accent-soft);

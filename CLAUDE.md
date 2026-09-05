@@ -506,17 +506,18 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   card box; rows hover/select like the **sidebar nav**: accent text + a 3px
   accent left bar, no fill) with a "Vehicles" head, a search box, and the
   list; the AI Track view fills the rest (`.tk-layout`, `min-height:
-  max(440px, calc(100vh - 184px))`; stacks on ≤720px). The gaps around it are
-  deliberately tight - `.tk-page` overrides `.page`'s 20px `gap` to 6px, and
-  `.tk-view`'s column gap is 6px - so the map gets as much height as possible.
-  `.tk-list` carries `margin-top: 32px` (= the `.tk-bar` row's 26px min-height
-  + the 6px gap) so its `border-right` divider starts level with the map top
-  and runs exactly the map's height; `.tk-map` height is
-  `max(408px, calc(100vh - 216px))`, the matching figure.
-  - A **`.tk-bar` row above the map, outside it**: the selected-vehicle bar
-    (`.tk-selbar` - "All vehicles" back button + vehicle_no + `· status · kph`)
-    on the left, the **AI Track / Map** switch (`.tk-viewswitch`,
-    `margin-left: auto`) on the right. **Default AI Track.**
+  max(440px, calc(100vh - 140px))`; stacks on ≤720px). The chrome around it is
+  deliberately minimal so the map gets as much height as possible:
+  `.app-content:has(.tk-page)` pulls the page's own top/bottom padding in to
+  8px / 14px, `.tk-page` overrides `.page`'s 20px `gap` to 4px, and
+  `.tk-view`'s column gap is 4px. `.tk-list` carries `margin-top: 32px`
+  (≈ the `.tk-bar` row + the gap) so its `border-right` divider starts level
+  with the map top and runs exactly the map's height; `.tk-map` height is
+  `max(408px, calc(100vh - 172px))`, the matching figure.
+  - A **`.tk-bar` row above the map, outside it**: the selected-vehicle
+    breadcrumb (`.tk-selbar` - a borderless "‹ All vehicles" text link, then
+    `/ <vehicle_no> · status · kph`) on the left, the **AI Track / Map** switch
+    (`.tk-viewswitch`, `margin-left: auto`) on the right. **Default AI Track.**
   - **AI Track** - a plain `<iframe>` of AI Track's own map/trails/UI.
     Default is the city's fleet `<iframe src={cities.tracker_url}>` (single
     city, or one per city stacked when the topbar filter is All); picking a

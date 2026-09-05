@@ -24,10 +24,14 @@
   border-bottom-color: var(--accent);
 }
 
-/* tighten the gap under the page header - the tracker wants the map as tall
-   as it can get */
+/* the tracker wants the map as tall as it can get - pull the page's own top
+   and bottom padding right in, and tighten the gap under the header. */
+.app-content:has(.tk-page) {
+  padding-top: 8px;
+  padding-bottom: 14px;
+}
 .tk-page {
-  gap: 6px;
+  gap: 4px;
 }
 
 /* left list (Settings-panel look: flat, a hairline divider, no card box)
@@ -36,7 +40,7 @@
   display: flex;
   gap: 0;
   align-items: stretch;
-  min-height: max(440px, calc(100vh - 184px));
+  min-height: max(440px, calc(100vh - 140px));
 }
 
 .tk-list {
@@ -182,25 +186,24 @@
 .tk-selbar {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   min-width: 0;
 }
+/* a breadcrumb, not a button: "‹ All vehicles / AUK-980 · Stopped · 0 kph" */
 .tk-back {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg);
-  color: var(--heading);
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
   font: inherit;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
 }
 .tk-back:hover {
-  border-color: var(--accent);
   color: var(--accent);
 }
 .tk-view-name {
@@ -208,6 +211,12 @@
   font-weight: 700;
   font-size: 13px;
   color: var(--heading);
+}
+.tk-view-name::before {
+  content: '/';
+  margin-right: 7px;
+  color: var(--border);
+  font-weight: 400;
 }
 .tk-view-sub {
   font-size: 11.5px;
@@ -228,12 +237,12 @@
    inside can size off it - a flex `flex:1` alone leaves them 0-tall here */
 .tk-map {
   flex: 1 1 auto;
-  /* = the layout height (100vh - 184px) minus the .tk-bar row (26) + gap (6),
+  /* = the layout height (100vh - 140px) minus the .tk-bar row (~28) + gap (4),
      so the map bottom lands exactly on the list divider's bottom */
-  height: max(408px, calc(100vh - 216px));
+  height: max(408px, calc(100vh - 172px));
 }
 .tk-map-split {
-  height: max(300px, calc((100vh - 272px) / 2));
+  height: max(300px, calc((100vh - 230px) / 2));
 }
 
 @media (max-width: 720px) {

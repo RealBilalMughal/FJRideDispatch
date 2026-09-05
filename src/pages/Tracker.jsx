@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Search, Shield } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import { ArrowLeft, Map as MapIcon, Radio, Search, Shield } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -9,10 +12,50 @@ import './Tracker.css'
 
 const POLL_MS = 15000
 const STALE_MS = 60 * 60 * 1000
+const FALLBACK = [30.3753, 69.3451]
 const STATUS_LABEL = { green: 'Moving', red: 'Stopped', blue: 'Offline', yellow: 'Engine on' }
 const STATUS_COLOR = { green: '#1e874b', red: '#c0392b', blue: '#0e7490', yellow: '#b7791f' }
 const colorOf = (s) => STATUS_COLOR[s] || '#c9ccd1'
 const plate = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, '')
+
+const markerIcon = (status, on) =>
+  L.divIcon({
+    className: '',
+    html: `<span style="display:block;width:${on ? 20 : 15}px;height:${on ? 20 : 15}px;border-radius:50%;background:${colorOf(status)};border:${on ? 3 : 2}px solid #fff;box-shadow:0 0 ${on ? 9 : 4}px rgba(0,0,0,.5)"></span>`,
+    iconSize: [on ? 20 : 15, on ? 20 : 15],
+    iconAnchor: [on ? 10 : 7, on ? 10 : 7],
+  })
+
+function FlyTo({ target }) {
+  const map = useMap()
+  useEffect(() => {
+    map.invalidateSize()
+    if (target) map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 16), { duration: 0.8 })
+  }, [map, target])
+  return null
+}
+
+function FitAll({ pts }) {
+  const map = useMap()
+  const done = useRef(false)
+  useEffect(() => {
+    if (done.current || pts.length === 0) return
+    done.current = true
+    const id = setTimeout(() => {
+      map.invalidateSize()
+      if (pts.length === 1) map.setView([pts[0].lat, pts[0].lng], 13)
+      else {
+        try {
+          map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.25))
+        } catch {
+          /* ignore */
+        }
+      }
+    }, 200)
+    return () => clearTimeout(id)
+  }, [map, pts])
+  return null
+}
 
 export default function Tracker() {
   const { can } = useAuth()
@@ -43,8 +86,8 @@ export default function Tracker() {
     }
   }, [canView, cityId])
 
-  // live status/speed for the list dots - AI Track's /items only returns
-  // recently-pinged vehicles, so accumulate by plate; drop after STALE_MS.
+  // live positions - AI Track's /items only returns recently-pinged vehicles,
+  // so accumulate by plate; drop after STALE_MS. Reset on a city switch.
   const [fixes, setFixes] = useState({})
   useEffect(() => {
     setFixes({})
@@ -71,7 +114,9 @@ export default function Tracker() {
   }, [canView, links])
 
   const [q, setQ] = useState('')
-  const [sel, setSel] = useState(null) // selected vehicle row, or null
+  const [selId, setSelId] = useState(null)
+  const [flyTarget, setFlyTarget] = useState(null)
+  const [view, setView] = useState('embed') // 'embed' (AI Track) | 'map' (ours)
 
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -83,6 +128,17 @@ export default function Tracker() {
         return a.v.vehicle_no.localeCompare(b.v.vehicle_no)
       })
   }, [vehicles, fixes, q])
+
+  const mapPts = useMemo(
+    () => rows.filter((r) => r.fix).map((r) => ({ id: r.v.id, ...r.fix, name: r.v.vehicle_no })),
+    [rows],
+  )
+  const selRow = rows.find((r) => r.v.id === selId) || null
+
+  const pick = (row) => {
+    setSelId(row.v.id)
+    if (row.fix) setFlyTarget({ lat: row.fix.lat, lng: row.fix.lng, t: Date.now() })
+  }
 
   if (!canView) {
     return (
@@ -98,6 +154,8 @@ export default function Tracker() {
 
   const liveCount = rows.filter((r) => r.fix).length
   const single = trackerCities.length === 1
+  // AI Track view: a picked vehicle with its own link -> focus it; else the fleet
+  const focusEmbed = view === 'embed' && selRow?.v.tracker_url
 
   return (
     <div className="page tk-page">
@@ -108,6 +166,18 @@ export default function Tracker() {
             {cityName} · {liveCount} of {vehicles.length} vehicle{vehicles.length === 1 ? '' : 's'} live
           </p>
         </div>
+        {links.length > 0 && (
+          <div className="page-actions">
+            <div className="tk-viewswitch">
+              <button className={view === 'embed' ? 'on' : ''} onClick={() => setView('embed')}>
+                <Radio size={13} /> AI Track
+              </button>
+              <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>
+                <MapIcon size={13} /> Map
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {links.length === 0 ? (
@@ -139,9 +209,8 @@ export default function Tracker() {
                   <button
                     key={v.id}
                     type="button"
-                    className={`tk-list-item${sel?.v.id === v.id ? ' on' : ''}`}
-                    onClick={() => setSel({ v, fix })}
-                    title={v.tracker_url ? 'Focus this vehicle on the map' : 'No per-vehicle link (add one on Vehicles)'}
+                    className={`tk-list-item${selId === v.id ? ' on' : ''}`}
+                    onClick={() => pick({ v, fix })}
                   >
                     <span className="tk-dot" style={{ background: fix ? colorOf(fix.status) : '#c9ccd1' }} />
                     <span className="tk-item-main">
@@ -157,37 +226,35 @@ export default function Tracker() {
           </aside>
 
           <div className="tk-view">
-            {sel?.v.tracker_url ? (
-              <>
-                <div className="tk-view-bar">
-                  <button type="button" className="tk-back" onClick={() => setSel(null)}>
-                    <ArrowLeft size={13} /> All vehicles
-                  </button>
-                  <span className="tk-view-name">{sel.v.vehicle_no}</span>
-                </div>
+            {selRow && (
+              <div className="tk-view-bar">
+                <button type="button" className="tk-back" onClick={() => setSelId(null)}>
+                  <ArrowLeft size={13} /> All vehicles
+                </button>
+                <span className="tk-view-name">{selRow.v.vehicle_no}</span>
+                {selRow.fix && (
+                  <span className="tk-view-sub">
+                    {STATUS_LABEL[selRow.fix.status] || '—'} · {Math.round(selRow.fix.speed)} kph
+                  </span>
+                )}
+                {view === 'embed' && !selRow.v.tracker_url && (
+                  <span className="tk-hint">no per-vehicle link — showing the fleet</span>
+                )}
+              </div>
+            )}
+
+            {view === 'embed' ? (
+              focusEmbed ? (
                 <div className="stop-map tk-map">
                   <iframe
-                    key={sel.v.id}
-                    src={sel.v.tracker_url}
-                    title={`Tracker — ${sel.v.vehicle_no}`}
+                    key={selRow.v.id}
+                    src={selRow.v.tracker_url}
+                    title={`Tracker — ${selRow.v.vehicle_no}`}
                     style={{ width: '100%', height: '100%', border: 0 }}
                   />
                 </div>
-              </>
-            ) : (
-              <>
-                {sel && !sel.v.tracker_url && (
-                  <div className="tk-view-bar">
-                    <span className="tk-hint">
-                      {sel.v.vehicle_no} has no per-vehicle tracker link — add one on the Vehicles page to
-                      focus it here.
-                    </span>
-                    <button type="button" className="tk-back" onClick={() => setSel(null)}>
-                      Dismiss
-                    </button>
-                  </div>
-                )}
-                {trackerCities.map((c) => (
+              ) : (
+                trackerCities.map((c) => (
                   <div key={c.id} className="tk-frame-wrap">
                     {!single && <div className="tk-frame-label">{c.name}</div>}
                     <div className={`stop-map tk-map${single ? '' : ' tk-map-split'}`}>
@@ -198,8 +265,33 @@ export default function Tracker() {
                       />
                     </div>
                   </div>
-                ))}
-              </>
+                ))
+              )
+            ) : (
+              <div className="stop-map tk-map">
+                <MapContainer center={FALLBACK} zoom={6} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  />
+                  <FitAll pts={mapPts} />
+                  <FlyTo target={flyTarget} />
+                  {mapPts.map((v) => (
+                    <Marker
+                      key={v.id}
+                      position={[v.lat, v.lng]}
+                      icon={markerIcon(v.status, selId === v.id)}
+                      zIndexOffset={selId === v.id ? 1000 : 0}
+                      eventHandlers={{ click: () => pick({ v: { id: v.id }, fix: v }) }}
+                    >
+                      <Tooltip permanent={selId === v.id} direction="top" offset={[0, -10]}>
+                        {v.name} · {Math.round(v.speed)} kph
+                      </Tooltip>
+                    </Marker>
+                  ))}
+                </MapContainer>
+                {mapPts.length === 0 && <span className="stop-map-hint">Waiting for live positions…</span>}
+              </div>
             )}
           </div>
         </div>

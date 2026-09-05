@@ -1,5 +1,31 @@
+/* AI Track / Map view switch - flat underline tabs, self-contained here */
+.tk-viewswitch {
+  display: inline-flex;
+  gap: 18px;
+}
+.tk-viewswitch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tk-viewswitch button:hover {
+  color: var(--heading);
+}
+.tk-viewswitch button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 /* left list (Settings-panel look: flat, a hairline divider, no card box)
-   + the AI Track view, filling whatever's left below the header. */
+   + the AI Track / Map view, filling whatever's left below the header. */
 .tk-layout {
   display: flex;
   gap: 0;
@@ -124,19 +150,21 @@
   transition: color 0.14s;
 }
 
-/* right side: the AI Track view (its own map/UI, unchanged) */
+/* right side: the live map (or a vehicle's AI Track view) */
 .tk-view {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .tk-view-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 26px;
 }
 .tk-back {
   display: inline-flex;
@@ -162,13 +190,12 @@
   color: var(--heading);
 }
 .tk-hint {
-  flex: 1;
   font-size: 12px;
   color: var(--muted);
 }
 
 .tk-frame-wrap + .tk-frame-wrap {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .tk-frame-label {
   font-size: 12px;
@@ -177,12 +204,14 @@
   margin-bottom: 6px;
 }
 
+/* an explicit height (not just min-height) so the Leaflet container / iframe
+   inside can size off it - a flex `flex:1` alone leaves them 0-tall here */
 .tk-map {
-  flex: 1;
-  min-height: max(440px, calc(100vh - 220px));
+  flex: 1 1 auto;
+  height: max(440px, calc(100vh - 230px));
 }
 .tk-map-split {
-  min-height: max(320px, calc((100vh - 260px) / 2));
+  height: max(320px, calc((100vh - 300px) / 2));
 }
 
 @media (max-width: 720px) {

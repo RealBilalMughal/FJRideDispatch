@@ -507,14 +507,18 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   accent left bar, no fill) with a "Vehicles" head, a search box, and the
   list; the AI Track view fills the rest (`.tk-layout`, `min-height:
   max(440px, calc(100vh - 200px))`; stacks on ≤720px).
-  - The map is **AI Track's own** (a plain `<iframe>`, its map/trails/UI) -
-    reverted from a short-lived custom Leaflet map. Default: the city's
-    fleet `<iframe src={cities.tracker_url}>` (single city, or one per city
-    stacked when the topbar filter is All).
-  - Clicking a vehicle whose `vehicles.tracker_url` is set swaps the iframe
-    to that **per-vehicle** sharing link - AI Track's own view focused on
-    that one vehicle - with a "← All vehicles" bar to go back. A vehicle
-    with no per-vehicle link shows a hint to add one on the Vehicles page.
+  - Header **AI Track / Map** switch (`.tk-viewswitch`), **default AI Track**.
+  - **AI Track** - a plain `<iframe>` of AI Track's own map/trails/UI.
+    Default is the city's fleet `<iframe src={cities.tracker_url}>` (single
+    city, or one per city stacked when the topbar filter is All); picking a
+    vehicle whose `vehicles.tracker_url` is set swaps to that per-vehicle
+    link (AI Track focused on it). Can't be panned from outside (confirmed:
+    the sharing page takes no focus URL param), hence the Map view for that.
+  - **Map** - our own Leaflet map, a coloured dot per live vehicle. Clicking
+    a list row **or** a marker `map.flyTo()`s to it, enlarges its dot, pins
+    a tooltip and raises its `zIndexOffset`. This is the click-to-zoom view.
+  - `.tk-map` needs an explicit `height` (not just `min-height`) or the
+    Leaflet container / iframe inside collapses to 0.
   **The vehicle roster is our own `vehicles` table** (city-scoped, active
   only) so the list never flickers - live status/speed just decorates the
   rows, matched by plate (`vehicle_no` ↔ AI Track's `name`, both

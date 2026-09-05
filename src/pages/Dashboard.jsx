@@ -174,6 +174,8 @@ export default function Dashboard() {
             </section>
           </div>
 
+          <div className="dash-col-divider" aria-hidden="true" />
+
           <div className="dash-col-side">
             <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
             <section className="dash-section">

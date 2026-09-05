@@ -22,6 +22,19 @@
   gap: 18px;
 }
 
+/* vertical rule between the main and side columns */
+.dash-col-divider {
+  flex: 0 0 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+
+@media (max-width: 720px) {
+  .dash-col-divider {
+    display: none;
+  }
+}
+
 .dash-section {
   display: flex;
   flex-direction: column;

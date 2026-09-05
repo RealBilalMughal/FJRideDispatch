@@ -171,31 +171,6 @@ export default function Tracker() {
             {cityName} · {liveCount} of {vehicles.length} vehicle{vehicles.length === 1 ? '' : 's'} live
           </p>
         </div>
-        {links.length > 0 && (
-          <div className="page-actions tk-actions">
-            {selRow && (
-              <div className="tk-selbar">
-                <button type="button" className="tk-back" onClick={() => setSelId(null)}>
-                  <ArrowLeft size={13} /> All vehicles
-                </button>
-                <span className="tk-view-name">{selRow.v.vehicle_no}</span>
-                {selRow.fix && (
-                  <span className="tk-view-sub">
-                    {STATUS_LABEL[selRow.fix.status] || '—'} · {Math.round(selRow.fix.speed)} kph
-                  </span>
-                )}
-              </div>
-            )}
-            <div className="tk-viewswitch">
-              <button className={view === 'embed' ? 'on' : ''} onClick={() => setView('embed')}>
-                <Radio size={13} /> AI Track
-              </button>
-              <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>
-                <MapIcon size={13} /> Map
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {links.length === 0 ? (
@@ -244,6 +219,31 @@ export default function Tracker() {
           </aside>
 
           <div className="tk-view">
+            <div className="tk-bar">
+              {selRow ? (
+                <div className="tk-selbar">
+                  <button type="button" className="tk-back" onClick={() => setSelId(null)}>
+                    <ArrowLeft size={12} /> All vehicles
+                  </button>
+                  <span className="tk-view-name">{selRow.v.vehicle_no}</span>
+                  {selRow.fix && (
+                    <span className="tk-view-sub">
+                      · {STATUS_LABEL[selRow.fix.status] || '—'} · {Math.round(selRow.fix.speed)} kph
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span />
+              )}
+              <div className="tk-viewswitch">
+                <button className={view === 'embed' ? 'on' : ''} onClick={() => setView('embed')}>
+                  <Radio size={13} /> AI Track
+                </button>
+                <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>
+                  <MapIcon size={13} /> Map
+                </button>
+              </div>
+            </div>
             {view === 'embed' ? (
               focusEmbed ? (
                 <div className="stop-map tk-map">

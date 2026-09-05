@@ -506,8 +506,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   card box; rows hover/select like the **sidebar nav**: accent text + a 3px
   accent left bar, no fill) with a "Vehicles" head, a search box, and the
   list; the AI Track view fills the rest (`.tk-layout`, `min-height:
-  max(440px, calc(100vh - 200px))`; stacks on ≤720px).
-  - Header **AI Track / Map** switch (`.tk-viewswitch`), **default AI Track**.
+  max(440px, calc(100vh - 200px))`; stacks on ≤720px). `.tk-list` carries
+  `margin-top: 38px` so its `border-right` divider starts level with the map
+  top (past the `.tk-bar` row) and runs exactly the map's height.
+  - A **`.tk-bar` row above the map, outside it**: the selected-vehicle bar
+    (`.tk-selbar` - "All vehicles" back button + vehicle_no + `· status · kph`)
+    on the left, the **AI Track / Map** switch (`.tk-viewswitch`,
+    `margin-left: auto`) on the right. **Default AI Track.**
   - **AI Track** - a plain `<iframe>` of AI Track's own map/trails/UI.
     Default is the city's fleet `<iframe src={cities.tracker_url}>` (single
     city, or one per city stacked when the topbar filter is All); picking a

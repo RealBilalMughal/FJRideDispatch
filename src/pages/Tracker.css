@@ -40,6 +40,9 @@
   border-right: 1px solid var(--border);
   padding-right: 20px;
   margin-right: 24px;
+  /* drop past the .tk-bar row so the divider starts level with the map top
+     and runs exactly the map's height */
+  margin-top: 38px;
 }
 
 .tk-list-head {
@@ -156,28 +159,37 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 10px;
 }
 
-/* header: the selected-vehicle bar sits left of the AI Track / Map switch */
-.tk-actions {
-  gap: 16px;
+/* row above the map, outside it: selected-vehicle bar on the left, the
+   AI Track / Map switch on the right. */
+.tk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+.tk-bar .tk-viewswitch {
+  margin-left: auto;
 }
 .tk-selbar {
   display: inline-flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
 }
 .tk-back {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
+  gap: 4px;
+  padding: 3px 8px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--heading);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -210,10 +222,10 @@
    inside can size off it - a flex `flex:1` alone leaves them 0-tall here */
 .tk-map {
   flex: 1 1 auto;
-  height: max(440px, calc(100vh - 230px));
+  height: max(420px, calc(100vh - 270px));
 }
 .tk-map-split {
-  height: max(320px, calc((100vh - 300px) / 2));
+  height: max(320px, calc((100vh - 320px) / 2));
 }
 
 @media (max-width: 720px) {
@@ -227,6 +239,7 @@
     border-bottom: 1px solid var(--border);
     padding-right: 0;
     margin-right: 0;
+    margin-top: 0;
     margin-bottom: 18px;
     padding-bottom: 12px;
     max-height: 240px;
@@ -234,7 +247,10 @@
   .tk-list-item.on::before {
     left: -2px;
   }
+  .tk-bar {
+    flex-wrap: wrap;
+  }
   .tk-map {
-    min-height: max(360px, calc(100vh - 420px));
+    height: max(360px, calc(100vh - 440px));
   }
 }

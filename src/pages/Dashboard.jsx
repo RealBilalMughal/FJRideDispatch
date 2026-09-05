@@ -12,6 +12,7 @@ import {
   Users2,
   Waypoints,
 } from 'lucide-react'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -406,27 +407,63 @@ const weekdayOf = (iso) => {
   return WEEKDAY[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
 }
 
+// recharts axis tick: two stacked lines - weekday over day-of-month
+function DayTick({ x, y, payload, dense }) {
+  const wd = weekdayOf(payload.value)
+  return (
+    <g transform={`translate(${x},${y + 10})`} textAnchor="middle">
+      <text fill="#80858f" fontSize={9} fontWeight={700}>
+        {(dense ? wd[0] : wd).toUpperCase()}
+      </text>
+      <text fill="#2d2c2b" fontSize={10} fontWeight={600} dy={11}>
+        {Number(payload.value.slice(8, 10))}
+      </text>
+    </g>
+  )
+}
+
 function PerDayChart({ data }) {
-  const max = Math.max(1, ...data.map((d) => d.count))
-  const dense = data.length > 14 // week -> "Mon", month -> "M"
+  const dense = data.length > 14
   return (
     <div className="dash-chart">
-      {data.map((d) => {
-        const wd = weekdayOf(d.date)
-        return (
-          <div
-            className="dash-chart-col"
-            key={d.date}
-            title={`${fmtDate(d.date)} — ${d.count} ride(s)`}
-          >
-            <div className="dash-chart-bars">
-              <div className="dash-chart-bar" style={{ height: `${(d.count / max) * 100}%` }} />
-            </div>
-            <span className="dash-chart-day">{dense ? wd[0] : wd}</span>
-            <span className="dash-chart-date">{Number(d.date.slice(8, 10))}</span>
-          </div>
-        )
-      })}
+      <ResponsiveContainer width="100%" height={170}>
+        <BarChart data={data} margin={{ top: 6, right: 6, bottom: 8, left: -12 }} barCategoryGap="18%">
+          <CartesianGrid vertical={false} stroke="#e4e4e4" strokeDasharray="2 3" />
+          <XAxis
+            dataKey="date"
+            interval={dense ? 'preserveStartEnd' : 0}
+            axisLine={false}
+            tickLine={false}
+            tick={<DayTick dense={dense} />}
+            height={34}
+          />
+          <YAxis
+            allowDecimals={false}
+            width={38}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 10, fill: '#80858f' }}
+          />
+          <Tooltip
+            cursor={{ fill: 'rgba(52,113,184,0.08)' }}
+            contentStyle={{
+              borderRadius: 8,
+              border: '1px solid #e4e4e4',
+              fontSize: 12,
+              boxShadow: '0 6px 20px rgba(16,24,40,0.09)',
+            }}
+            labelFormatter={(_, pl) => (pl && pl[0] ? fmtDate(pl[0].payload.date) : '')}
+            formatter={(v) => [v, 'Rides']}
+          />
+          <Bar
+            dataKey="count"
+            fill="#3471b8"
+            radius={[3, 3, 0, 0]}
+            maxBarSize={44}
+            isAnimationActive={false}
+          />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   )
 }

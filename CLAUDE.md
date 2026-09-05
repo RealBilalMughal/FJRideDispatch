@@ -144,11 +144,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     query over `[prevFrom, prevTo]`, the same span immediately before
     `from`; skipped for the All range). Green up / red down / muted flat;
     white on the accent card.
-  - **Rides per day** - a hand-rolled CSS bar chart (`.dash-chart`, no
-    charting lib), one bar per day in range with a weekday + date label
-    under each (3-letter weekday for ≤14 bars, single letter when denser),
-    shown only when the range spans >1 day (hidden on the Today default).
-    Positioned below the block/shift cards.
+  - **Rides per day** - a **recharts** `<BarChart>` in a `<ResponsiveContainer>`
+    (`recharts` was already a dep; this is the only place it's used - it adds
+    ~107KB gzip to the lazy-loaded Dashboard chunk, nowhere else). One bar
+    per day, a custom two-line `DayTick` (weekday over day-of-month; 3-letter
+    weekday for ≤14 bars, single letter when denser), dashed horizontal
+    grid, hover tooltip, no entry animation. Shown only when the range spans
+    >1 day (hidden on the Today default). Positioned below the block/shift
+    cards.
   - **Rides by block** | **Shift** - the two-column card split; divider is a
     `border-right` on the block *grid* so it's only card-tall, not `h2`-tall.
     2×2 blocks below 560px.

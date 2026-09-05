@@ -188,46 +188,18 @@
   color: var(--accent);
 }
 
-/* ---- rides-per-day mini bar chart ---- */
+/* ---- rides-per-day bar chart (recharts) ---- */
 .dash-chart {
-  display: flex;
-  gap: 3px;
-  padding: 10px 12px 8px;
+  padding: 12px 14px 8px;
   border-radius: 12px;
   background: var(--bg);
   box-shadow: var(--shadow-sm);
 }
-.dash-chart-col {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
+.dash-chart .recharts-cartesian-axis-tick text {
+  font-family: inherit;
 }
-.dash-chart-bars {
-  width: 100%;
-  height: 84px;
-  display: flex;
-  align-items: flex-end;
-}
-.dash-chart-bar {
-  width: 100%;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--accent);
-}
-.dash-chart-day {
-  font-size: 9px;
+.dash-chart .recharts-tooltip-label {
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.dash-chart-date {
-  font-size: 10px;
-  font-weight: 600;
   color: var(--heading);
 }
 

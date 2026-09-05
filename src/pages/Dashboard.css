@@ -1,8 +1,25 @@
-.dash-hero,
-.dash-grid {
+/* two columns: a wide main column (top-metrics + block cards) and a narrow
+   side column (Crew moved + the shift cards). Stacks on narrow screens. */
+.dash-cols {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.dash-col-main {
+  flex: 3 1 400px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.dash-col-side {
+  flex: 1 1 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .dash-section {
@@ -19,9 +36,25 @@
   color: var(--muted);
 }
 
+.dash-row {
+  display: flex;
+  gap: 12px;
+}
+
+/* 4 block cards -> a tidy 2x2, lined up under the two top-metric cards */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.dash-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .dash-card {
-  flex: 1 1 150px;
-  max-width: 210px;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -31,28 +64,19 @@
   background: var(--bg);
 }
 
-/* hero cards fill the row evenly, sized to the screen (no fixed cap) */
-.dash-hero .dash-card {
-  flex: 1 1 160px;
-  max-width: none;
+/* main column: the two top metrics split the row evenly */
+.dash-row .dash-card {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* side column: Crew moved + both shift cards all full column width */
+.dash-col-side > .dash-card,
+.dash-stack .dash-card {
+  width: 100%;
 }
 
 .dash-card-hero {
   background: var(--surface);
-}
-
-/* divider between the block cards and the day/night cards */
-.dash-divider {
-  flex: 0 0 1px;
-  align-self: stretch;
-  background: var(--border);
-  margin: 0 5px;
-}
-
-@media (max-width: 680px) {
-  .dash-divider {
-    display: none;
-  }
 }
 
 .dash-ico {

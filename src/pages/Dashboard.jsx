@@ -151,44 +151,52 @@ export default function Dashboard() {
           <p>You don&rsquo;t have access to ride data, so there&rsquo;s nothing to summarise here yet.</p>
         </div>
       ) : (
-        <>
-          <div className="dash-hero">
-            <Metric hero icon={RouteIcon} value={num(s.total)} label="Total rides" />
-            <Metric hero icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" />
-            <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
+        <div className="dash-cols">
+          <div className="dash-col-main">
+            <div className="dash-row">
+              <Metric hero icon={RouteIcon} value={num(s.total)} label="Total rides" />
+              <Metric hero icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" />
+            </div>
+            <section className="dash-section">
+              <h2>Rides by block</h2>
+              <div className="dash-grid">
+                {BLOCKS.map(({ key, icon }) => (
+                  <Metric
+                    key={key}
+                    cls={`blk-${key}`}
+                    icon={icon}
+                    value={num(s.blk[key].count)}
+                    label={blockLabel(key)}
+                    sub={num(fmtKm(s.blk[key].km))}
+                  />
+                ))}
+              </div>
+            </section>
           </div>
 
-          <section className="dash-section">
-            <h2>Rides by block &amp; shift</h2>
-            <div className="dash-grid">
-              {BLOCKS.map(({ key, icon }) => (
+          <div className="dash-col-side">
+            <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
+            <section className="dash-section">
+              <h2>Shift</h2>
+              <div className="dash-stack">
                 <Metric
-                  key={key}
-                  cls={`blk-${key}`}
-                  icon={icon}
-                  value={num(s.blk[key].count)}
-                  label={blockLabel(key)}
-                  sub={num(fmtKm(s.blk[key].km))}
+                  cls="shift-day"
+                  icon={Sun}
+                  value={num(s.shift.day.count)}
+                  label="Day trips"
+                  sub={num(fmtKm(s.shift.day.km))}
                 />
-              ))}
-              <div className="dash-divider" aria-hidden="true" />
-              <Metric
-                cls="shift-day"
-                icon={Sun}
-                value={num(s.shift.day.count)}
-                label="Day trips"
-                sub={num(fmtKm(s.shift.day.km))}
-              />
-              <Metric
-                cls="shift-night"
-                icon={Moon}
-                value={num(s.shift.night.count)}
-                label="Night trips"
-                sub={num(fmtKm(s.shift.night.km))}
-              />
-            </div>
-          </section>
-        </>
+                <Metric
+                  cls="shift-night"
+                  icon={Moon}
+                  value={num(s.shift.night.count)}
+                  label="Night trips"
+                  sub={num(fmtKm(s.shift.night.km))}
+                />
+              </div>
+            </section>
+          </div>
+        </div>
       )}
     </div>
   )

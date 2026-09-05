@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { MapPinned, Pencil, Satellite, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -494,28 +494,42 @@ function RideBufferTimePanel() {
 }
 
 // ── Live Tracker ─────────────────────────────────────────────────────────
-// One global (not per-city) sharing link from the fleet's GPS tracker
-// service (e.g. AI Track), stored on the app_settings singleton row
-// (id = true). Embedded read-only on the Vehicle Board's Tracker tab, which
-// only shows when this is set. Same read-only-until-Edit pattern as the
-// other panels, minus the City field - this isn't city-scoped.
+// Each city keeps its own GPS tracker sharing link (e.g. AI Track) on
+// cities.tracker_url - same City-field-mirrors-the-global-filter +
+// read-only-until-Edit pattern as Airport Locations / Ride Buffer Time
+// above. The Vehicle Board's Tracker tab embeds the active city's link, or
+// every city's link (that has one) when the topbar filter is on All.
 function LiveTrackerPanel() {
-  const [row, setRow] = useState(null)
+  const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
+  const locked = activeCityId != null
+  const [cityId, setCityId] = useState(
+    () => (locked && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
+  )
+  const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+  const cityName = city?.name || ''
+
   const [editing, setEditing] = useState(false)
   const [url, setUrl] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const load = useCallback(async () => {
-    const { data } = await supabase.from('app_settings').select('tracker_url').eq('id', true).single()
-    setRow(data)
-  }, [])
+  // the topbar filter can change while this page stays mounted - follow it
   useEffect(() => {
-    load()
-  }, [load])
+    if (locked && cities.some((c) => c.id === activeCityId)) {
+      setCityId(activeCityId)
+      setEditing(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, activeCityId])
+
+  const pickCity = (id) => {
+    setCityId(id)
+    setEditing(false)
+    setErr('')
+  }
 
   const startEdit = () => {
-    setUrl(row?.tracker_url ?? '')
+    setUrl(city?.tracker_url ?? '')
     setErr('')
     setEditing(true)
   }
@@ -526,16 +540,20 @@ function LiveTrackerPanel() {
 
   const submit = async (e) => {
     e.preventDefault()
+    setErr('')
+    if (!cityId) return setErr('Pick a city')
     const trimmed = url.trim()
     if (trimmed && !/^https:\/\//i.test(trimmed)) return setErr('Must be a full https:// link')
-    setErr('')
     setBusy(true)
-    const { error } = await supabase.from('app_settings').update({ tracker_url: trimmed || null }).eq('id', true)
+    const { error } = await supabase
+      .from('cities')
+      .update({ tracker_url: trimmed || null })
+      .eq('id', Number(cityId))
     setBusy(false)
     if (error) return setErr(error.message)
     toast.success('Tracker link updated')
     setEditing(false)
-    load()
+    reloadCities?.()
   }
 
   return (
@@ -544,50 +562,75 @@ function LiveTrackerPanel() {
         <div>
           <h3>Live Tracker</h3>
           <div className="sub">
-            The fleet&rsquo;s GPS tracker sharing link (all vehicles, one link) — embedded
-            as a live map on the Vehicle Board&rsquo;s Tracker tab. Leave it blank to hide
-            that tab.
+            Each city&rsquo;s own GPS tracker sharing link — embedded on the Vehicle
+            Board&rsquo;s Tracker tab for that city (or every city with a link set, when
+            viewing All). Leave a city blank to skip it.
           </div>
         </div>
-        {!editing && (
+        {!editing && cities.length > 0 && (
           <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
             <Pencil size={13} /> Edit
           </button>
         )}
       </div>
 
-      <div className="set-form">
-        {editing ? (
-          <form className="modal-form" onSubmit={submit}>
-            {err && <div className="modal-error">{err}</div>}
-            <div className="field">
-              <label htmlFor="tr-url">Tracker sharing link</label>
-              <input
-                id="tr-url"
-                className="input"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://login.aitrack.pk/sharing/..."
-                autoComplete="off"
-                autoFocus
-              />
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
-                Cancel
-              </button>
-              <button type="submit" className="btn btn-square" disabled={busy}>
-                {busy ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="view-row">
-            <span className="view-label">Tracker link</span>
-            <span className="view-value">{row?.tracker_url || '—'}</span>
+      {cities.length === 0 ? (
+        <p className="field-hint">No cities found.</p>
+      ) : (
+        <div className="set-form">
+          <div className="field">
+            <label htmlFor="tr-city">City</label>
+            {locked ? (
+              <input className="input" value={cityName} disabled />
+            ) : (
+              <select
+                id="tr-city"
+                className="select"
+                value={cityId}
+                onChange={(e) => pickCity(e.target.value)}
+                disabled={editing}
+              >
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-        )}
-      </div>
+
+          {editing ? (
+            <form className="modal-form" onSubmit={submit}>
+              {err && <div className="modal-error">{err}</div>}
+              <div className="field">
+                <label htmlFor="tr-url">Tracker sharing link</label>
+                <input
+                  id="tr-url"
+                  className="input"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://login.aitrack.pk/sharing/..."
+                  autoComplete="off"
+                  autoFocus
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-square" disabled={busy}>
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="view-row">
+              <span className="view-label">Tracker link</span>
+              <span className="view-value">{city?.tracker_url || '—'}</span>
+            </div>
+          )}
+        </div>
+      )}
     </>
   )
 }

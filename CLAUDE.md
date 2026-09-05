@@ -68,7 +68,8 @@ keys, tables or deploy targets with any other project.
   `20260906140000_return_leg_cascade.sql`, `20260906180000_duty_sheet_date.sql`,
   `20260906200000_deadhead_buffer.sql`, `20260906210000_disable_vehicle_window_excl.sql`,
   `20260906220000_route_geometry.sql`, `20260906230000_app_settings_tracker.sql`
-  (all APPLIED).
+  (superseded by the next one - dropped, no data ever depended on it),
+  `20260906240000_tracker_per_city.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -399,9 +400,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   640px tall (`BoardMap`'s `.stop-map` - this page also now imports
   `components/stop-map.css` directly for the same reason, rather than relying
   on some other page's chunk to have pulled it in first). A third **Tracker**
-  tab appears only when Settings -> Live Tracker has a link set - `TrackerFrame`
-  just `<iframe src={trackerUrl}>`s it at the same 640px height (one link
-  covers the whole fleet, so there's no per-vehicle picker).
+  tab appears only when at least one city in play has a Live Tracker link set
+  (Settings -> Live Tracker, per city - see below): `trackerCities` (off
+  `useCity().allowedCities`, already loaded, no extra query) is every allowed
+  city with a `tracker_url` set, filtered down to just the active city when
+  one is selected, or left as every such city when the topbar filter is on
+  All. `TrackerFrame` iframes each one (`<iframe src={c.tracker_url}>`) -
+  a single city gets one full 640px-tall frame; multiple (the All case) stack
+  vertically at 420px each with a city-name label above, so it's clear which
+  is which.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -440,20 +447,21 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     to the first city, switching shows that city's values immediately (view
     or edit mode). An effect re-syncs the selection if the topbar filter
     changes while the page stays mounted.
-  - **Live Tracker** - one **global** (not per-city, no City field) sharing
-    link from a GPS tracker service (e.g. AI Track - one link shows every
-    vehicle in the fleet already, so there's nothing to scope). Stored on
-    `public.app_settings`, a one-row singleton table (`id boolean primary
-    key default true`, `check (id)` - the standard trick for "exactly one
-    row"), RLS'd like `cities` (`app_settings_select`: any active user reads;
-    `app_settings_super`: super_admin writes). Same read-only-until-Edit
-    pattern as the other two panels; Vehicle Board's Tracker tab
-    (`VehicleBoard.jsx`) only appears once this is set, and just `<iframe>`s
-    the link directly - confirmed via response headers that AI Track's
-    sharing links carry no `X-Frame-Options`/`frame-ancestors` restriction,
-    so plain iframe embedding works, no proxy or scraping needed. The link
-    itself is deliberately never committed to a migration or the repo - it's
-    written straight into `app_settings` through this panel's own save.
+  - **Live Tracker** - each city keeps its **own** GPS tracker sharing link
+    (`cities.tracker_url`, e.g. one AI Track link per city) - same
+    City-field-mirrors-the-topbar-filter + read-only-until-Edit pattern as
+    the two panels above (an earlier version tried one global link on a
+    one-row `app_settings` singleton table, but the real fleet has a
+    separate link per city, so that table was dropped in the very next
+    migration - never had real data). Vehicle Board's Tracker tab
+    (`VehicleBoard.jsx`) shows the active city's link, or every city's link
+    when the topbar filter is on All (see the Ride section's Vehicle Board
+    entry) - it only appears once at least one relevant city has a link set.
+    Confirmed via response headers that AI Track's sharing links carry no
+    `X-Frame-Options`/`frame-ancestors` restriction, so plain `<iframe>`
+    embedding works, no proxy or scraping needed. Links are written straight
+    into `cities.tracker_url` through this panel's own save, never committed
+    to a migration or the repo.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

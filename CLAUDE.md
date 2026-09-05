@@ -137,13 +137,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   intentional exception to the no-cards rule - a dashboard reads better as
   cards): a hero row (Total rides, Total distance = Σ `distance_km`, Crew
   moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
-  the table). Laid out in two columns (`.dash-cols`, stacks on narrow
-  screens): the wide **main** column has Total rides + Total distance on top
-  then a one-row **Rides by block** grid (Pickup / Drop Off / Deadhead /
-  Return leg, edge-to-edge under those two, 2×2 only below 560px; chip
-  colours match the Vehicle Board block bars); the narrow **side** column
-  has Crew moved on top then a one-row **Shift** grid (Day trips / Night
-  trips) under it. Each card:
+  the table). A full-width hero row (Total rides / Total distance / Crew
+  moved), then a two-column split (`.dash-cols`, stacks on narrow screens)
+  with a hairline `.dash-col-divider` between: the wide left column is a
+  one-row **Rides by block** grid (Pickup / Drop Off / Deadhead / Return
+  leg, 2×2 only below 560px; chip colours match the Vehicle Board block
+  bars), the narrow right column a one-row **Shift** grid (Day trips /
+  Night trips). Each card:
   icon chip + count + KM sum. A user without `rides` view just sees a welcome
   placeholder (RLS would return nothing anyway). Fetches `block_type,
   distance_km, shift, ride_crew(seq)` filtered by `ride_date` in range - one

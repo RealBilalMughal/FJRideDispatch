@@ -1,5 +1,14 @@
-/* two columns: a wide main column (top-metrics + block cards) and a narrow
-   side column (Crew moved + the shift cards). Stacks on narrow screens. */
+/* full-width hero row (Total rides / Total distance / Crew moved) */
+.dash-hero {
+  display: flex;
+  gap: 12px;
+}
+.dash-hero .dash-card {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* below it: Rides by block (wide) | Shift (narrow). Stacks on narrow screens. */
 .dash-cols {
   display: flex;
   flex-wrap: wrap;
@@ -10,16 +19,10 @@
 .dash-col-main {
   flex: 3 1 400px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
 }
 
 .dash-col-side {
   flex: 1.25 1 270px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
 }
 
 /* vertical rule between the main and side columns */
@@ -49,24 +52,27 @@
   color: var(--muted);
 }
 
-.dash-row {
-  display: flex;
-  gap: 12px;
-}
-
-/* the 4 block cards fill one row, edge-to-edge under Total rides + Total
-   distance (2x2 only when the screen is too narrow for four) */
+/* the 4 block cards fill one row (2x2 only when too narrow for four) */
 .dash-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 
-/* Day / Night fill one row under Crew moved */
+/* Day / Night fill one row */
 .dash-stack {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
+}
+
+@media (max-width: 620px) {
+  .dash-hero {
+    flex-wrap: wrap;
+  }
+  .dash-hero .dash-card {
+    flex: 1 1 140px;
+  }
 }
 
 @media (max-width: 560px) {
@@ -83,16 +89,6 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg);
-}
-
-/* main column: the two top metrics split the row evenly */
-.dash-row .dash-card {
-  flex: 1 1 0;
-  min-width: 0;
-}
-/* the Crew moved card spans the side column; the shift cards are grid cells */
-.dash-col-side > .dash-card {
-  width: 100%;
 }
 
 .dash-card-hero {

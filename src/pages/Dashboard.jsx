@@ -151,13 +151,15 @@ export default function Dashboard() {
           <p>You don&rsquo;t have access to ride data, so there&rsquo;s nothing to summarise here yet.</p>
         </div>
       ) : (
-        <div className="dash-cols">
-          <div className="dash-col-main">
-            <div className="dash-row">
-              <Metric hero icon={RouteIcon} value={num(s.total)} label="Total rides" />
-              <Metric hero icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" />
-            </div>
-            <section className="dash-section">
+        <>
+          <div className="dash-hero">
+            <Metric hero icon={RouteIcon} value={num(s.total)} label="Total rides" />
+            <Metric hero icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" />
+            <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
+          </div>
+
+          <div className="dash-cols">
+            <section className="dash-section dash-col-main">
               <h2>Rides by block</h2>
               <div className="dash-grid">
                 {BLOCKS.map(({ key, icon }) => (
@@ -172,13 +174,10 @@ export default function Dashboard() {
                 ))}
               </div>
             </section>
-          </div>
 
-          <div className="dash-col-divider" aria-hidden="true" />
+            <div className="dash-col-divider" aria-hidden="true" />
 
-          <div className="dash-col-side">
-            <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
-            <section className="dash-section">
+            <section className="dash-section dash-col-side">
               <h2>Shift</h2>
               <div className="dash-stack">
                 <Metric
@@ -198,7 +197,7 @@ export default function Dashboard() {
               </div>
             </section>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

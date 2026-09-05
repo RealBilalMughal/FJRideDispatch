@@ -16,7 +16,7 @@
 }
 
 .dash-col-side {
-  flex: 1 1 230px;
+  flex: 1.25 1 270px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -41,17 +41,25 @@
   gap: 12px;
 }
 
-/* 4 block cards -> a tidy 2x2, lined up under the two top-metric cards */
+/* the 4 block cards fill one row, edge-to-edge under Total rides + Total
+   distance (2x2 only when the screen is too narrow for four) */
 .dash-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+/* Day / Night fill one row under Crew moved */
+.dash-stack {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
 
-.dash-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+@media (max-width: 560px) {
+  .dash-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .dash-card {
@@ -69,9 +77,8 @@
   flex: 1 1 0;
   min-width: 0;
 }
-/* side column: Crew moved + both shift cards all full column width */
-.dash-col-side > .dash-card,
-.dash-stack .dash-card {
+/* the Crew moved card spans the side column; the shift cards are grid cells */
+.dash-col-side > .dash-card {
   width: 100%;
 }
 

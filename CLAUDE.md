@@ -506,14 +506,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   card box; rows hover/select like the **sidebar nav**: accent text + a 3px
   accent left bar, no fill) with a "Vehicles" head, a search box, and the
   list; the AI Track view fills the rest (`.tk-layout`, `min-height:
-  max(440px, calc(100vh - 140px))`; stacks on ≤720px). The chrome around it is
+  max(440px, calc(100vh - 148px))`; stacks on ≤720px). The chrome around it is
   deliberately minimal so the map gets as much height as possible:
-  `.app-content:has(.tk-page)` pulls the page's own top/bottom padding in to
-  8px / 14px, `.tk-page` overrides `.page`'s 20px `gap` to 4px, and
-  `.tk-view`'s column gap is 4px. `.tk-list` carries `margin-top: 32px`
-  (≈ the `.tk-bar` row + the gap) so its `border-right` divider starts level
-  with the map top and runs exactly the map's height; `.tk-map` height is
-  `max(408px, calc(100vh - 172px))`, the matching figure.
+  `.app-content:has(.tk-page)` pulls the page's own *bottom* padding in to 14px
+  (top padding stays the app default), `.tk-page` overrides `.page`'s 20px
+  `gap` to 4px, and `.tk-view`'s column gap is 4px. `.tk-list` carries
+  `margin-top: 32px` (≈ the `.tk-bar` row + the gap) so its `border-right`
+  divider starts level with the map top and runs exactly the map's height;
+  `.tk-map` height is `max(408px, calc(100vh - 180px))`, the matching figure.
   - A **`.tk-bar` row above the map, outside it**: the selected-vehicle
     breadcrumb (`.tk-selbar` - a borderless "‹ All vehicles" text link, then
     `/ <vehicle_no> · status · kph`) on the left, the **AI Track / Map** switch

@@ -24,10 +24,10 @@
   border-bottom-color: var(--accent);
 }
 
-/* the tracker wants the map as tall as it can get - pull the page's own top
-   and bottom padding right in, and tighten the gap under the header. */
+/* the tracker wants the map as tall as it can get - pull the page's own
+   bottom padding in and tighten the gap under the header (top padding stays
+   the app default). */
 .app-content:has(.tk-page) {
-  padding-top: 8px;
   padding-bottom: 14px;
 }
 .tk-page {
@@ -40,7 +40,7 @@
   display: flex;
   gap: 0;
   align-items: stretch;
-  min-height: max(440px, calc(100vh - 140px));
+  min-height: max(440px, calc(100vh - 148px));
 }
 
 .tk-list {
@@ -237,12 +237,12 @@
    inside can size off it - a flex `flex:1` alone leaves them 0-tall here */
 .tk-map {
   flex: 1 1 auto;
-  /* = the layout height (100vh - 140px) minus the .tk-bar row (~28) + gap (4),
+  /* = the layout height (100vh - 148px) minus the .tk-bar row (~28) + gap (4),
      so the map bottom lands exactly on the list divider's bottom */
-  height: max(408px, calc(100vh - 172px));
+  height: max(408px, calc(100vh - 180px));
 }
 .tk-map-split {
-  height: max(300px, calc((100vh - 230px) / 2));
+  height: max(300px, calc((100vh - 238px) / 2));
 }
 
 @media (max-width: 720px) {

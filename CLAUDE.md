@@ -447,6 +447,19 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   deliberately tiny modal (title = `Ride <ref_no>`, same as the full view's
   header but without the block suffix, then just Flight and Note) - not the
   full View modal. CSV export gained a matching **Note** column (last).
+- **Pickup + "Also create a Deadhead"** - a checkbox under the crew list on
+  the **main Ride form** (Add only, `block_type === 'pickup'`, >=1 crew). On
+  submit it creates the Pickup ride PLUS a second ride the same moment: a
+  **Deadhead** (`deadhead_mode: 'airport'`), route **Airport -> the first
+  crew stop**, same vehicle/shift/driver/city/`ride_date`/`duty_sheet_date`
+  as the Pickup, `return_of_ride_id` = the Pickup. Timed to arrive
+  `cities.deadhead_buffer_min` before the Pickup starts: `start_at` =
+  Pickup `start_at` - ORS drive - that buffer, `end_at` = Pickup `start_at`.
+  Displays as **`<pickup ref>-PD`** (`suffixFor()` now takes the parent - a
+  deadhead child of a *pickup* is `-PD`, of a *dropoff* still `-D`), gets one
+  `ride_crew` row (that crew, seq 0) for the Crew column, cascades on delete
+  with the Pickup. Fails soft - if the deadhead insert errors, the Pickup
+  still stands (toast warns).
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
   edit per-city on the **Settings** page (see Pages -> Settings), or directly
   on `cities.airport_*`.

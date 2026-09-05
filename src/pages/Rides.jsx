@@ -254,8 +254,14 @@ export default function Rides() {
     })
     return m
   }, [rows])
-  const suffixFor = (block_type) =>
-    block_type === 'return_leg' ? 'R' : block_type === 'deadhead' ? 'D' : block_type === 'pickup' ? 'P' : null
+  //   pickup 1001  -> Deadhead   "1001-PD"  (parent = the pickup - the
+  //                               "also create a deadhead" box on the Ride form)
+  const suffixFor = (childBlock, parent) => {
+    if (childBlock === 'return_leg') return 'R'
+    if (childBlock === 'deadhead') return parent?.block_type === 'pickup' ? 'PD' : 'D'
+    if (childBlock === 'pickup') return 'P'
+    return null
+  }
   // walk return_of_ride_id up to the top-most ancestor (the original dropoff)
   // so a companion Pickup chained off a Deadhead (dropoff -> deadhead ->
   // pickup, 2 hops) still displays against the dropoff's own ref_no, not the
@@ -277,7 +283,7 @@ export default function Rides() {
     () =>
       rows.map((r) => {
         const parent = r.return_of_ride_id ? byId.get(r.return_of_ride_id) : null
-        const suffix = parent ? suffixFor(r.block_type) : null
+        const suffix = parent ? suffixFor(r.block_type, parent) : null
         return {
           ...r,
           city_name: r.city?.name ?? '',
@@ -539,7 +545,7 @@ export default function Rides() {
                   setPending({
                     ids: [r.id],
                     label: r.follow_on
-                      ? `ride ${r.display_ref} and its ${r.follow_on.block_type === 'deadhead' ? 'deadhead' : 'return leg'} ${r.ref_no}-${r.follow_on.block_type === 'deadhead' ? 'D' : 'R'}`
+                      ? `ride ${r.display_ref} and its ${r.follow_on.block_type === 'deadhead' ? 'deadhead' : 'return leg'} ${r.ref_no}-${suffixFor(r.follow_on.block_type, r)}`
                       : `ride ${r.display_ref}`,
                   })
                 }
@@ -1499,6 +1505,10 @@ function RideModal({
   const [dutySheetPrevDay, setDutySheetPrevDay] = useState(
     () => Boolean(row?.duty_sheet_date && row?.ride_date && row.duty_sheet_date === addDays(row.ride_date, -1)),
   )
+  // Pickup only, add-only: also create a Deadhead ride (Airport -> the first
+  // crew stop) so the vehicle is positioned before the pickup run. Chains off
+  // the pickup -> displays as "<pickup ref>-PD", cascades on delete.
+  const [alsoDeadhead, setAlsoDeadhead] = useState(false)
 
   const initialCrew = [...(row?.ride_crew || [])]
     .sort((a, b) => a.seq - b.seq)
@@ -1549,6 +1559,10 @@ function RideModal({
       checkin: Number.isFinite(ci) ? ci : DEFAULT_CHECKIN_BUFFER_MIN,
       checkout: Number.isFinite(co) ? co : DEFAULT_CHECKOUT_BUFFER_MIN,
     }
+  }, [allowedCities, cityId])
+  const deadheadBufferMin = useMemo(() => {
+    const d = Number(allowedCities.find((x) => x.id === cityId)?.deadhead_buffer_min)
+    return Number.isFinite(d) ? d : DEFAULT_DEADHEAD_BUFFER_MIN
   }, [allowedCities, cityId])
 
   const rule = crewRule(form.block_type, form.deadhead_mode)
@@ -1736,6 +1750,8 @@ function RideModal({
       return setErr(`This block takes exactly ${rule.max} crew`)
     if (!routeReady) return setErr('Route is incomplete — check the crew stops and airport have coordinates')
     if (form.vehicle_id && !startAt) return setErr('Set the ride start time for the vehicle')
+    if (isAdd && alsoDeadhead && form.block_type === 'pickup' && !startAt)
+      return setErr('Set the Pickup Time — the deadhead is timed to arrive just before it')
     if (form.vehicle_id && conflict)
       return setErr(`Vehicle busy on Ride ${conflict.ref_no} till ${fmtTimeOnly12(conflict.end_at)}`)
 
@@ -1775,17 +1791,19 @@ function RideModal({
       notes: form.notes.trim() || null,
     }
     let rideId = row?.id
+    let rideRefNo = row?.ref_no
     if (isAdd) {
       const res = await supabase
         .from('rides')
         .insert({ ...payload, created_by: createdBy ?? null })
-        .select('id')
+        .select('id, ref_no')
         .single()
       if (res.error) {
         setBusy(false)
         return setErr(mapRideError(res.error, form.vehicle_id, cityVehicles))
       }
       rideId = res.data.id
+      rideRefNo = res.data.ref_no
     } else {
       const res = await supabase.from('rides').update(payload).eq('id', row.id)
       if (res.error) {
@@ -1804,8 +1822,65 @@ function RideModal({
         return setErr(ins.error.message)
       }
     }
+
+    // Pickup + "Also create a Deadhead": one extra ride, Airport -> the first
+    // crew stop, on the same vehicle, timed to arrive `deadhead_buffer_min`
+    // before the pickup starts. Chains off the pickup (return_of_ride_id) so
+    // it shows as "<pickup ref>-PD" and cascades if the pickup is deleted.
+    let dhNote = ''
+    if (isAdd && alsoDeadhead && form.block_type === 'pickup' && crewList[0] && startAt) {
+      try {
+        const c1 = crewList[0]
+        const dhPts = buildRoutePoints('deadhead', 'airport', [{ ...c1, crew_id: c1.id }], airport)
+        const dhInfo = routeComplete(dhPts) ? await routeInfo(dhPts.map((p) => [p.lng, p.lat])) : null
+        const dhDrive = dhInfo?.durationMin ?? 0
+        const pickupStartMs = new Date(startAt).getTime()
+        const dhStart = new Date(pickupStartMs - (dhDrive + deadheadBufferMin) * 60000).toISOString()
+        const dhIns = await supabase
+          .from('rides')
+          .insert({
+            city_id: cityId,
+            flight_id: form.flight_id,
+            flight_no: form.flight_no,
+            flight_code: form.flight_code || null,
+            block_type: 'deadhead',
+            deadhead_mode: 'airport',
+            ride_date: form.ride_date,
+            duty_sheet_date: dutySheetDate,
+            vehicle_id: form.vehicle_id || null,
+            shift: form.vehicle_id ? shift : null,
+            driver_id: driverId || null,
+            airport_name: airport.name || null,
+            airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
+            airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
+            origin_label: dhPts[0]?.label || null,
+            origin_lat: dhPts[0]?.lat ?? null,
+            origin_lng: dhPts[0]?.lng ?? null,
+            dest_label: dhPts[1]?.label || null,
+            dest_lat: dhPts[1]?.lat ?? null,
+            dest_lng: dhPts[1]?.lng ?? null,
+            waypoints: dhPts,
+            route_geometry: dhInfo?.line ?? null,
+            distance_km: dhInfo?.distanceKm ?? null,
+            duration_min: dhInfo?.durationMin ?? null,
+            start_at: dhStart,
+            end_at: new Date(pickupStartMs).toISOString(),
+            status: 'dispatched',
+            return_of_ride_id: rideId,
+            created_by: createdBy ?? null,
+          })
+          .select('id')
+          .single()
+        if (dhIns.error) throw new Error(dhIns.error.message)
+        await supabase.from('ride_crew').insert({ ride_id: dhIns.data.id, crew_id: c1.id, seq: 0 })
+        dhNote = `, deadhead ${rideRefNo}-PD`
+      } catch (e2) {
+        toast.error(`Ride created, but the deadhead failed: ${e2.message}`)
+      }
+    }
+
     setBusy(false)
-    toast.success(isAdd ? 'Ride created' : 'Ride updated')
+    toast.success(isAdd ? `Ride created${dhNote}` : 'Ride updated')
     onDone()
   }
 
@@ -2077,6 +2152,16 @@ function RideModal({
                 <Sparkles size={13} /> {optimizing ? 'Optimising…' : 'Optimise stop order'}
               </button>
             )}
+          {isAdd && form.block_type === 'pickup' && crewList.length > 0 && (
+            <label className="check-line" style={{ marginTop: 10 }}>
+              <input
+                type="checkbox"
+                checked={alsoDeadhead}
+                onChange={(e) => setAlsoDeadhead(e.target.checked)}
+              />
+              Also create a Deadhead ride (Airport → {crewList[0].stop_name || crewList[0].name})
+            </label>
+          )}
         </div>
 
         {/* route preview */}

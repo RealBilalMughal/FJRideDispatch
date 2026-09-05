@@ -12,12 +12,12 @@ import {
   Users2,
   Waypoints,
 } from 'lucide-react'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
-import { addDays, fmtTimeOnly12, pkToday, presetRange } from '../lib/time'
+import { addDays, fmtTimeOnly12, pkHourWeekday, pkToday, presetRange } from '../lib/time'
 import { blockLabel, displayCrewCount } from '../lib/rideRoute'
 import './Dashboard.css'
 
@@ -71,7 +71,8 @@ function rollup(rows) {
   return { total: rows.length, totalKm, crew, blk, shift }
 }
 
-const RANGE_SELECT = 'block_type, distance_km, shift, ride_date, city_id, city:cities(name), ride_crew(seq)'
+const RANGE_SELECT =
+  'block_type, distance_km, shift, ride_date, start_at, city_id, city:cities(name), ride_crew(seq)'
 const LIVE_SELECT =
   'id, ref_no, block_type, start_at, end_at, vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(name))'
 
@@ -183,6 +184,21 @@ export default function Dashboard() {
       .sort((a, b) => new Date(a.start_at || 0) - new Date(b.start_at || 0))
       .slice(0, 8)
   }, [live])
+
+  // weekday (0=Sun..6=Sat) x hour (0..23) ride-start counts, in Pakistan time
+  const peak = useMemo(() => {
+    const grid = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0))
+    let max = 0
+    let any = false
+    for (const r of rows) {
+      if (!r.start_at) continue
+      const { hour, weekday } = pkHourWeekday(r.start_at)
+      grid[weekday][hour] += 1
+      any = true
+      if (grid[weekday][hour] > max) max = grid[weekday][hour]
+    }
+    return { grid, max, any }
+  }, [rows])
 
   const num = (x) => (loading ? '…' : x)
   const rangeLabel =
@@ -320,6 +336,13 @@ export default function Dashboard() {
             </section>
           )}
 
+          {peak.any && (
+            <section className="dash-section">
+              <h2>Peak hours</h2>
+              <PeakHeatmap grid={peak.grid} max={peak.max} />
+            </section>
+          )}
+
           {cityId == null && byCity.length > 0 && (
             <section className="dash-section">
               <h2>By city</h2>
@@ -426,8 +449,14 @@ function PerDayChart({ data }) {
   const dense = data.length > 14
   return (
     <div className="dash-chart">
-      <ResponsiveContainer width="100%" height={170}>
-        <BarChart data={data} margin={{ top: 6, right: 6, bottom: 8, left: -12 }} barCategoryGap="18%">
+      <ResponsiveContainer width="100%" height={190}>
+        <AreaChart data={data} margin={{ top: 8, right: 10, bottom: 8, left: -12 }}>
+          <defs>
+            <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#3471b8" stopOpacity={0.16} />
+              <stop offset="100%" stopColor="#3471b8" stopOpacity={0} />
+            </linearGradient>
+          </defs>
           <CartesianGrid vertical={false} stroke="#e4e4e4" strokeDasharray="2 3" />
           <XAxis
             dataKey="date"
@@ -445,7 +474,7 @@ function PerDayChart({ data }) {
             tick={{ fontSize: 10, fill: '#80858f' }}
           />
           <Tooltip
-            cursor={{ fill: 'rgba(52,113,184,0.08)' }}
+            cursor={{ stroke: '#3471b8', strokeWidth: 1, strokeDasharray: '3 3' }}
             contentStyle={{
               borderRadius: 8,
               border: '1px solid #e4e4e4',
@@ -455,15 +484,54 @@ function PerDayChart({ data }) {
             labelFormatter={(_, pl) => (pl && pl[0] ? fmtDate(pl[0].payload.date) : '')}
             formatter={(v) => [v, 'Rides']}
           />
-          <Bar
+          <Area
+            type="monotone"
             dataKey="count"
-            fill="#3471b8"
-            radius={[3, 3, 0, 0]}
-            maxBarSize={44}
+            stroke="#3471b8"
+            strokeWidth={2.5}
+            fill="url(#dashArea)"
+            dot={dense ? false : { r: 3, fill: '#fff', stroke: '#3471b8', strokeWidth: 2 }}
+            activeDot={{ r: 4 }}
             isAnimationActive={false}
           />
-        </BarChart>
+        </AreaChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => h)
+const hourLabel = (h) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
+
+// weekday x hour ride-start heatmap. `grid` is [7][24] of counts.
+function PeakHeatmap({ grid, max }) {
+  return (
+    <div className="dash-heat">
+      <div className="dash-heat-scroll">
+        <div className="dash-heat-hours">
+          <span />
+          {HOURS.map((h) => (
+            <span key={h} className="dash-heat-hour">
+              {h % 3 === 0 ? hourLabel(h) : ''}
+            </span>
+          ))}
+        </div>
+        {grid.map((row, wd) => (
+          <div className="dash-heat-row" key={wd}>
+            <span className="dash-heat-day">{WEEKDAY[wd]}</span>
+            {row.map((c, h) => (
+              <span
+                key={h}
+                className="dash-heat-cell"
+                title={`${WEEKDAY[wd]} ${hourLabel(h)} — ${c} ride(s)`}
+                style={{
+                  background: c ? `rgba(52,113,184,${0.12 + 0.82 * (c / max)})` : 'var(--surface)',
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

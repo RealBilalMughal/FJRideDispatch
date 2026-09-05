@@ -203,6 +203,45 @@
   color: var(--heading);
 }
 
+/* ---- peak-hours heatmap ---- */
+.dash-heat {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+.dash-heat-scroll {
+  overflow-x: auto;
+}
+.dash-heat-hours,
+.dash-heat-row {
+  display: grid;
+  grid-template-columns: 32px repeat(24, minmax(15px, 1fr));
+  gap: 3px;
+  min-width: 540px;
+}
+.dash-heat-row {
+  margin-top: 3px;
+}
+.dash-heat-hour {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: left;
+}
+.dash-heat-day {
+  display: flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.dash-heat-cell {
+  aspect-ratio: 1;
+  min-height: 15px;
+  border-radius: 3px;
+}
+
 /* ---- by-city table ---- */
 .dash-table {
   border-radius: 12px;

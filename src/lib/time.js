@@ -74,6 +74,14 @@ export const pkNow = () => new Date(Date.now() + PK_OFFSET_MS)
 // own timezone.
 export const pkToday = () => pkNow().toISOString().slice(0, 10)
 
+// an ISO instant -> its Pakistan-local hour (0-23) and weekday (0=Sun..6=Sat),
+// regardless of the browser's own timezone (same +5h-then-UTC-getters trick
+// as pkNow above).
+export const pkHourWeekday = (iso) => {
+  const d = new Date(new Date(iso).getTime() + PK_OFFSET_MS)
+  return { hour: d.getUTCHours(), weekday: d.getUTCDay() }
+}
+
 // "2026-09-05" + n -> "2026-09-05 + n days" (n may be negative). Pure
 // calendar-date arithmetic via Date.UTC on the date's own Y/M/D - never local-
 // timezone Date parsing/getters, so it's independent of the browser's own

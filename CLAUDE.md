@@ -144,14 +144,22 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     query over `[prevFrom, prevTo]`, the same span immediately before
     `from`; skipped for the All range). Green up / red down / muted flat;
     white on the accent card.
-  - **Rides per day** - a **recharts** `<BarChart>` in a `<ResponsiveContainer>`
-    (`recharts` was already a dep; this is the only place it's used - it adds
-    ~107KB gzip to the lazy-loaded Dashboard chunk, nowhere else). One bar
-    per day, a custom two-line `DayTick` (weekday over day-of-month; 3-letter
-    weekday for ≤14 bars, single letter when denser), dashed horizontal
-    grid, hover tooltip, no entry animation. Shown only when the range spans
-    >1 day (hidden on the Today default). Positioned below the block/shift
+  - **Rides per day** - a **recharts** `<AreaChart>` (monotone spline, soft
+    `#3471b8` gradient fill, dots at each point for ≤14 days else none) in a
+    `<ResponsiveContainer>` (`recharts` was already a dep; this + the heatmap
+    are its only uses - adds ~107KB gzip to the lazy-loaded Dashboard chunk,
+    nowhere else). Custom two-line `DayTick` (weekday over day-of-month;
+    3-letter weekday for ≤14 points, single letter when denser), dashed
+    horizontal grid, hover tooltip, no entry animation. Shown only when the
+    range spans >1 day (hidden on the Today default), below the block/shift
     cards.
+  - **Peak hours** - a weekday×hour heatmap (`PeakHeatmap`, plain CSS grid,
+    no lib): 7 rows (Sun–Sat) × 24 cells, each `rgba(52,113,184, α)` with α
+    scaled to that cell's share of the busiest hour. Ride start times are
+    bucketed in **Pakistan time** via `pkHourWeekday()` in `lib/time.js`
+    (same +5h-then-UTC-getters trick as `pkNow`). The range query's
+    `RANGE_SELECT` gained `start_at` for this. Horizontally scrolls on
+    narrow screens.
   - **Rides by block** | **Shift** - the two-column card split; divider is a
     `border-right` on the block *grid* so it's only card-tall, not `h2`-tall.
     2×2 blocks below 560px.

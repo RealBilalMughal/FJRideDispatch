@@ -39,7 +39,9 @@ keys, tables or deploy targets with any other project.
 
 ## UI conventions
 - **FLAT - no card containers.** Content sits on the white page; separate blocks
-  with a heading + a `1px var(--border)` hairline. Modals are the only floating panels.
+  with a heading + a `1px var(--border)` hairline. Modals are the only floating
+  panels. (The one deliberate exception: the **Dashboard**'s metric cards -
+  a dashboard genuinely reads better as scannable cards. Nowhere else.)
 - **Left sidebar: LIGHT**, sectioned with uppercase labels + `#e6e6e6` brand strip.
   Active nav = accent text + a 3px accent bar on the left edge (no filled pill).
   lucide icons at `size={17}`. `src/components/Sidebar.jsx` + `layout.css`.
@@ -131,15 +133,17 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - `Dashboard` (`/`, always visible - the landing page) - ride totals over a
   Today/Week/Month/All date range (default Month; custom from/to inputs too -
   same `.date-tabs` + `presetRange()` pattern as the Rides filter bar) and
-  the global city filter. Top `StatCards`: Total rides, Total distance
-  (Σ `distance_km`), Crew moved (Σ `displayCrewCount` - so Deadhead/Return
-  Leg contribute 0, matching the table). Then two `.dash-grid` tile blocks:
-  **By block** (Pickup / Drop Off / Deadhead / Return leg - each with a
-  count + KM sum) and **By shift** (Day trips / Night trips - count + KM
-  sum). A user without `rides` view just sees a welcome placeholder (RLS
-  would return nothing anyway). Fetches `block_type, distance_km, shift,
-  ride_crew(seq)` filtered by `ride_date` in range - one query, no joins
-  beyond the crew count.
+  the global city filter. Bordered metric cards (`Dashboard.css`, an
+  intentional exception to the no-cards rule - a dashboard reads better as
+  cards): a hero row (Total rides, Total distance = Σ `distance_km`, Crew
+  moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
+  the table), then **Rides by block** (Pickup / Drop Off / Deadhead / Return
+  leg - each an icon-chipped card with count + KM sum + a proportion bar,
+  colours matching the Vehicle Board block bars) and **Day vs Night**
+  (count + KM + bar each). A user without `rides` view just sees a welcome
+  placeholder (RLS would return nothing anyway). Fetches `block_type,
+  distance_km, shift, ride_crew(seq)` filtered by `ride_date` in range - one
+  query, no joins beyond the crew count.
 - `Crew` (`crew` perm, sidebar group "Roster") - table (ID / Name / Phone /
   Designation / City / Stop / Coordinates), advanced filters, CSV export + import
   (`crew-sample.csv`: name, phone, designation, city, stop_name, coordinates -

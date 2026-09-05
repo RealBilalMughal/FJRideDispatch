@@ -274,13 +274,6 @@ export default function Dashboard() {
             />
           </div>
 
-          {perDay.length > 1 && (
-            <section className="dash-section">
-              <h2>Rides per day</h2>
-              <PerDayChart data={perDay} />
-            </section>
-          )}
-
           <div className="dash-cols">
             <section className="dash-section dash-col-main">
               <h2>Rides by block</h2>
@@ -318,6 +311,13 @@ export default function Dashboard() {
               </div>
             </section>
           </div>
+
+          {perDay.length > 1 && (
+            <section className="dash-section">
+              <h2>Rides per day</h2>
+              <PerDayChart data={perDay} />
+            </section>
+          )}
 
           {cityId == null && byCity.length > 0 && (
             <section className="dash-section">

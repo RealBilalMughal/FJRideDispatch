@@ -498,7 +498,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   640px tall (`BoardMap`'s `.stop-map` - this page also now imports
   `components/stop-map.css` directly for the same reason, rather than relying
   on some other page's chunk to have pulled it in first). No Tracker tab here
-  any more - it's its own page (below).
+  any more - it's its own page (below). The vehicle-roster query embeds the
+  day driver as `driver:drivers!driver_id(name)` - the FK hint is **required**
+  because `vehicles` has two FKs to `drivers` (`driver_id` + `night_driver_id`),
+  so a bare `drivers(name)` embed 300s with `PGRST201` and the whole query
+  returns nothing ("No vehicles in this city." even when rides exist). The
+  Vehicles page sidesteps this by fetching `drivers` separately.
 - **Tracker** (`/tracker`, sidebar label "Tracker", group "Dispatch", gated
   on `rides` view like Vehicle Board - reuses that permission, no separate
   `PERMISSION_PAGES` entry) - a full page for live GPS tracking. Left

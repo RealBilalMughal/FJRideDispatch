@@ -459,7 +459,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   as the Pickup, `return_of_ride_id` = the Pickup. Timed to arrive
   `cities.deadhead_buffer_min` before the Pickup starts: `start_at` =
   Pickup `start_at` - ORS drive - that buffer, `end_at` = Pickup `start_at`.
-  Displays as **`<pickup ref>-PD`** (`suffixFor()` now takes the parent - a
+  Checking the box shows a live hint with that deadhead's own **Ride Time**
+  (when the driver must leave the airport), the drive minutes and the arrival
+  time - a separate debounced ORS call for the Airport→crew leg (`dhRoute`),
+  reused at submit. Displays as **`<pickup ref>-PD`** (`suffixFor()` now takes the parent - a
   deadhead child of a *pickup* is `-PD`, of a *dropoff* still `-D`), gets one
   `ride_crew` row (that crew, seq 0) for the Crew column, cascades on delete
   with the Pickup. Fails soft - if the deadhead insert errors, the Pickup

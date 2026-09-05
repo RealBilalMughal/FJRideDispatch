@@ -1497,6 +1497,7 @@ function RideModal({
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
+  const [dhRoute, setDhRoute] = useState(null) // "Also create a Deadhead" preview: { distanceKm, durationMin, line }
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
   const [startTouched, setStartTouched] = useState(false)
   const [shift, setShift] = useState(row?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
@@ -1638,6 +1639,30 @@ function RideModal({
     }
   }, [routeReady, routePoints])
 
+  // "Also create a Deadhead" (Pickup, add-mode): preview the Airport -> first
+  // crew leg so the form can show that deadhead's own Ride Time up front.
+  const dhFirstCrew = crewList[0]
+  useEffect(() => {
+    if (!(isAdd && alsoDeadhead && form.block_type === 'pickup' && dhFirstCrew)) {
+      setDhRoute(null)
+      return
+    }
+    const pts = buildRoutePoints('deadhead', 'airport', [{ ...dhFirstCrew, crew_id: dhFirstCrew.id }], airport)
+    if (!routeComplete(pts)) {
+      setDhRoute(null)
+      return
+    }
+    let alive = true
+    const id = setTimeout(async () => {
+      const info = await routeInfo(pts.map((p) => [p.lng, p.lat]))
+      if (alive) setDhRoute(info)
+    }, 400)
+    return () => {
+      alive = false
+      clearTimeout(id)
+    }
+  }, [isAdd, alsoDeadhead, form.block_type, dhFirstCrew, airport])
+
   // A multi-crew pickup / dropoff waits at every crew stop for them to board /
   // alight - crewCount * the city's crew-wait buffer (once there's >1 crew). It
   // folds into duration_min so ETA, end_at, the Pickup-Time auto-suggest and
@@ -1690,6 +1715,18 @@ function RideModal({
   const endAt = startAt
     ? new Date(new Date(startAt).getTime() + ((durMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
     : null
+
+  // "Also create a Deadhead": it must ARRIVE at the first crew stop
+  // `deadhead_buffer_min` before the pickup starts, so its own Ride Time =
+  // Pickup Time − Airport→crew drive − that buffer. Shown in the form and
+  // reused at submit.
+  const dhDriveMin = dhRoute?.durationMin ?? null
+  const dhStartAt =
+    alsoDeadhead && startAt && dhDriveMin != null
+      ? new Date(new Date(startAt).getTime() - (dhDriveMin + deadheadBufferMin) * 60000).toISOString()
+      : null
+  const dhArriveAt =
+    dhStartAt ? new Date(new Date(startAt).getTime() - deadheadBufferMin * 60000).toISOString() : null
 
   // vehicle conflict pre-check — TEMPORARILY DISABLED (commented out) per
   // request, to be reworked/re-applied properly later. Leaving `conflict`
@@ -1844,10 +1881,13 @@ function RideModal({
       try {
         const c1 = crewList[0]
         const dhPts = buildRoutePoints('deadhead', 'airport', [{ ...c1, crew_id: c1.id }], airport)
-        const dhInfo = routeComplete(dhPts) ? await routeInfo(dhPts.map((p) => [p.lng, p.lat])) : null
+        // reuse the form's preview route; only re-fetch if it isn't ready yet
+        const dhInfo =
+          dhRoute ?? (routeComplete(dhPts) ? await routeInfo(dhPts.map((p) => [p.lng, p.lat])) : null)
         const dhDrive = dhInfo?.durationMin ?? 0
         const pickupStartMs = new Date(startAt).getTime()
-        const dhStart = new Date(pickupStartMs - (dhDrive + deadheadBufferMin) * 60000).toISOString()
+        const dhStart =
+          dhStartAt ?? new Date(pickupStartMs - (dhDrive + deadheadBufferMin) * 60000).toISOString()
         const dhIns = await supabase
           .from('rides')
           .insert({
@@ -2165,14 +2205,27 @@ function RideModal({
               </button>
             )}
           {isAdd && form.block_type === 'pickup' && crewList.length > 0 && (
-            <label className="check-line" style={{ marginTop: 10 }}>
-              <input
-                type="checkbox"
-                checked={alsoDeadhead}
-                onChange={(e) => setAlsoDeadhead(e.target.checked)}
-              />
-              Also create a Deadhead ride (Airport → {crewList[0].stop_name || crewList[0].name})
-            </label>
+            <>
+              <label className="check-line" style={{ marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={alsoDeadhead}
+                  onChange={(e) => setAlsoDeadhead(e.target.checked)}
+                />
+                Also create a Deadhead ride (Airport → {crewList[0].stop_name || crewList[0].name})
+              </label>
+              {alsoDeadhead && (
+                <span className="field-hint">
+                  {!startAt
+                    ? 'Set the Pickup Time first — the deadhead is timed off it.'
+                    : dhDriveMin == null
+                      ? 'Working out the Airport → crew drive…'
+                      : `Deadhead Ride Time ${fmtTimeOnly12(dhStartAt)} — leave the airport by then, ` +
+                        `${dhDriveMin} min drive, reach ${crewList[0].stop_name || crewList[0].name} ` +
+                        `${fmtTimeOnly12(dhArriveAt)} (${deadheadBufferMin} min before the ${fmtTimeOnly12(startAt)} pickup).`}
+                </span>
+              )}
+            </>
           )}
         </div>
 

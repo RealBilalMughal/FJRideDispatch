@@ -592,13 +592,7 @@ export default function Rides() {
         items={[
           { key: 'total', label: 'Total', value: stats.total, icon: RouteIcon },
           { key: 'today', label: 'Today', value: stats.today, icon: RouteIcon },
-          {
-            key: 'duty',
-            label: 'Duty Sheet',
-            value: stats.dutySheet,
-            hint: 'by duty sheet date',
-            icon: RouteIcon,
-          },
+          { key: 'duty', label: 'Duty Sheet', value: stats.dutySheet, icon: RouteIcon },
         ]}
       />
 

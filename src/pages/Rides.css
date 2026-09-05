@@ -1,3 +1,16 @@
+/* Live Tracking card in the Ride view (see Rides.jsx's LiveTrackingCard) */
+.live-track {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.live-track-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .radio-row {
   display: flex;
   gap: 20px;

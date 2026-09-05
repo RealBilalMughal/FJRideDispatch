@@ -69,7 +69,8 @@ keys, tables or deploy targets with any other project.
   `20260906200000_deadhead_buffer.sql`, `20260906210000_disable_vehicle_window_excl.sql`,
   `20260906220000_route_geometry.sql`, `20260906230000_app_settings_tracker.sql`
   (superseded by the next one - dropped, no data ever depended on it),
-  `20260906240000_tracker_per_city.sql` (all APPLIED).
+  `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`
+  (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -142,7 +143,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     shift. `driver_id` = day, `night_driver_id` = night. A driver holds at most one
     day slot and one night slot (two partial unique indexes) and day != night on a
     vehicle (`vehicles_day_night_distinct`). Both FKs `on delete set null`.
-    `drivers.vendor_id` is `on delete restrict`.
+    `drivers.vendor_id` is `on delete restrict`. Optional **Tracker link**
+    (`vehicles.tracker_url`) - that vehicle's own AI Track sharing link,
+    distinct from `cities.tracker_url` (the fleet map on the Tracker page,
+    Pages -> Tracker) - powers the Ride view's Live Tracking card (see the
+    Ride section below).
   - **Day/Night is a manual pick, no time-window auto-detection.** There used to
     be a global shift window (`public.dispatch_settings`, a "Shift times" button
     on the Vehicles header) that auto-computed Day vs Night from the ride's
@@ -189,6 +194,39 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   stop points were ever saved. This also means opening/reopening either view
   makes **no ORS call** - the geometry was fetched once, at creation/edit
   time, never on read.
+- **Live Tracking card** (Ride view -> read-only detail, `Rides.jsx`'s
+  `LiveTrackingCard`) - shown instead of the plain `RouteMap` whenever the
+  ride's own vehicle has a Tracker link (`vehicles.tracker_url`, see the
+  Vehicle bullet above). Polls `fetchLiveTracker()` (`src/lib/tracker.js`)
+  every 8s while the modal is open (stops on close) - this hits the AI Track
+  sharing link's own `/items` endpoint directly from the browser (confirmed
+  CORS-open, `Access-Control-Allow-Origin: *`; it's an internal,
+  undocumented endpoint of a third-party service, not a published API, so
+  every field is read defensively and the shape could change without
+  notice), giving `{ lat, lng, speed, course, status, address }` for that one
+  vehicle. Renders as a coloured dot on the same `RouteMap` via its new
+  `liveMarker` prop (bounds-fit includes the live point too, so an
+  off-route vehicle still stays in view), plus badges derived purely
+  client-side from that one fix (`src/lib/geo.js`'s new `distanceMeters()` /
+  `distanceToLineMeters()` - no extra ORS calls):
+  - **Moving / Stopped / Offline / Engine on** + live speed, from the
+    tracker's own `icon_color`.
+  - **Arrived** - within 300m of `dest_lat`/`dest_lng`.
+  - **Running late** - past the ride's own ETA (`start_at + duration_min`)
+    and not yet Arrived.
+  - **Off route** - the live fix is more than 500m from `route_geometry`.
+  - **Over speed** - live speed over a flat 100 kph (`SPEED_LIMIT_KPH` in
+    `Rides.jsx` - the tracker's sharing link doesn't expose a per-vehicle
+    speed-limit/geofence config, only the live fix, so this is our own
+    threshold, not theirs).
+  **Not implemented**: a full "actual route driven vs planned route"
+  historical comparison - the sharing link's `/items` response only carries
+  a short recent `tail` (a handful of breadcrumb points), not the vehicle's
+  whole trip history, so there's nothing to diff against after the fact.
+  Building that would mean our own backend polling and logging positions
+  continuously while a ride is active (a scheduled Edge Function, not
+  something the browser can do reliably) - a bigger follow-up, not attempted
+  here.
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).

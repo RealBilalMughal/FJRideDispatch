@@ -17,15 +17,32 @@ const ICON = new L.Icon.Default()
 
 const FALLBACK = [30.3753, 69.3451]
 
+// live tracker's icon_color -> a dot colour (moving/stopped/offline/engine-on)
+const LIVE_COLOR = { green: '#1e874b', red: '#c0392b', blue: '#0e7490', yellow: '#b7791f' }
+const liveIcon = (status) => {
+  const color = LIVE_COLOR[status] || '#727272'
+  return L.divIcon({
+    className: '',
+    html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4)"></span>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  })
+}
+
 /**
  * Read-only route preview. `points` is the ordered stop list
  * [{ seq, label, lat, lng }]. `line` is the road geometry [[lat,lng], ...] from
  * ORS - when absent it draws straight segments between the points.
+ * `liveMarker` (optional) is a vehicle's current tracker fix -
+ * `{ lat, lng, speed, status }` (see `src/lib/tracker.js`) - drawn as a
+ * coloured dot, included when fitting bounds so the map still shows both the
+ * route AND the vehicle even if it has wandered off it.
  */
-export default function RouteMap({ points = [], line, height = 220 }) {
+export default function RouteMap({ points = [], line, liveMarker, height = 220 }) {
   const pts = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
   const path = line && line.length > 1 ? line : pts.map((p) => [p.lat, p.lng])
   const center = pts[0] ? [pts[0].lat, pts[0].lng] : FALLBACK
+  const fitPath = liveMarker ? [...path, [liveMarker.lat, liveMarker.lng]] : path
 
   return (
     <div className="stop-map" style={{ height }}>
@@ -34,7 +51,7 @@ export default function RouteMap({ points = [], line, height = 220 }) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
-        <Fit path={path} />
+        <Fit path={fitPath} />
         {path.length > 1 && <Polyline positions={path} pathOptions={{ color: '#3471b8', weight: 4 }} />}
         {pts.map((p, i) => (
           <Marker key={`${p.seq ?? i}-${p.lat}-${p.lng}`} position={[p.lat, p.lng]} icon={ICON}>
@@ -44,6 +61,13 @@ export default function RouteMap({ points = [], line, height = 220 }) {
             </Tooltip>
           </Marker>
         ))}
+        {liveMarker && (
+          <Marker position={[liveMarker.lat, liveMarker.lng]} icon={liveIcon(liveMarker.status)}>
+            <Tooltip>
+              {Math.round(liveMarker.speed)} kph{liveMarker.address ? ` · ${liveMarker.address}` : ''}
+            </Tooltip>
+          </Marker>
+        )}
       </MapContainer>
       {pts.length < 2 && (
         <span className="stop-map-hint">Pick a block + crew to see the route</span>

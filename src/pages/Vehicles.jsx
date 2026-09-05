@@ -20,7 +20,7 @@ import StatCards from '../components/data/StatCards'
 
 const PAGE_SIZE = 15
 const SELECT =
-  'id, ref_no, vehicle_no, company, model, year, color, city_id, driver_id, night_driver_id, is_active, created_at, city:cities(name)'
+  'id, ref_no, vehicle_no, company, model, year, color, city_id, driver_id, night_driver_id, tracker_url, is_active, created_at, city:cities(name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -426,6 +426,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
     driver_id: row?.driver_id ?? '', // day driver
     night_driver_id: row?.night_driver_id ?? '',
+    tracker_url: row?.tracker_url ?? '',
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -463,6 +464,8 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     if (form.year && !/^\d{4}$/.test(form.year.trim())) return setErr('Year must be a 4-digit number')
     if (form.driver_id && form.driver_id === form.night_driver_id)
       return setErr('Day and night driver must be different people')
+    if (form.tracker_url.trim() && !/^https:\/\//i.test(form.tracker_url.trim()))
+      return setErr('Tracker link must be a full https:// link')
 
     // a driver can hold one day slot and one night slot only
     const checkSlot = async (id, col, label) => {
@@ -490,6 +493,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
       city_id: Number(form.city_id),
       driver_id: form.driver_id || null,
       night_driver_id: form.night_driver_id || null,
+      tracker_url: form.tracker_url.trim() || null,
     }
     const res = isAdd
       ? await supabase.from('vehicles').insert({ ...payload, created_by: createdBy ?? null })
@@ -524,6 +528,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
             ['City', cityName],
             ['Day driver', row.day_driver_name || '—'],
             ['Night driver', row.night_driver_name || '—'],
+            ['Tracker link', row.tracker_url || '—'],
             ['Status', row.is_active ? 'Active' : 'Inactive'],
           ].map(([k, v]) => (
             <div className="view-row" key={k}>
@@ -618,6 +623,20 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
           />
           <span className="field-hint">
             Ride Dispatch picks the driver by the ride&rsquo;s time (day / night shift).
+          </span>
+        </div>
+        <div className="field">
+          <label htmlFor="ve-tracker">Tracker link</label>
+          <input
+            id="ve-tracker"
+            className="input"
+            value={form.tracker_url}
+            onChange={(e) => set('tracker_url', e.target.value)}
+            placeholder="https://login.aitrack.pk/sharing/..."
+            autoComplete="off"
+          />
+          <span className="field-hint">
+            This vehicle&rsquo;s own GPS tracker sharing link - shown live on its rides.
           </span>
         </div>
         <div className="modal-actions">

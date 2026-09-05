@@ -49,6 +49,8 @@ import {
 import { gmapsRoute, optimizeCrewOrder, routeInfo } from '../lib/ors'
 import { shiftLabel } from '../lib/shift'
 import { downloadCsv, toCsv } from '../lib/csv'
+import { distanceMeters, distanceToLineMeters } from '../lib/geo'
+import { fetchLiveTracker } from '../lib/tracker'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import SearchSelect from '../components/SearchSelect'
@@ -70,7 +72,7 @@ const SELECT = `
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
   waypoints, route_geometry, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
   city:cities(name),
-  vehicle:vehicles(ref_no, vehicle_no),
+  vehicle:vehicles(ref_no, vehicle_no, tracker_url),
   driver:drivers!rides_driver_id_fkey(ref_no, name),
   ride_crew(seq, crew:crew(id, ref_no, name, stop_name, stop_lat, stop_lng))
 `
@@ -1340,6 +1342,87 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
   )
 }
 
+// ── Live Tracking (Ride view) ─────────────────────────────────────────────
+// Overlays a ride's own vehicle's live position (vehicles.tracker_url, that
+// vehicle's own AI Track sharing link - distinct from cities.tracker_url,
+// the fleet map on the Tracker page) on its route map, plus a few signals
+// derived purely client-side from that one poll (no ORS calls involved):
+//   - On time / Running late: now vs the ride's own ETA, unless the vehicle
+//     is already within ARRIVED_M of the destination
+//   - Off route: perpendicular distance from the live fix to route_geometry
+//   - Over speed: live speed vs a flat SPEED_LIMIT_KPH (not read from the
+//     tracker service - it doesn't expose a speed-limit/geofence config
+//     through the sharing link, only the live fix itself)
+// Polls fetchLiveTracker() every LIVE_POLL_MS while this card is mounted
+// (i.e. while the View modal is open) and stops on close/unmount.
+const LIVE_POLL_MS = 8000
+const ARRIVED_M = 300
+const OFF_ROUTE_M = 500
+const SPEED_LIMIT_KPH = 100
+const LIVE_STATUS_LABEL = { green: 'Moving', red: 'Stopped', blue: 'Offline', yellow: 'Engine on' }
+const LIVE_STATUS_BADGE = { green: 'badge-success', blue: 'badge-warning', yellow: 'badge-warning' }
+
+function LiveTrackingCard({ row }) {
+  const trackerUrl = row.vehicle.tracker_url
+  const [live, setLive] = useState(null)
+  const [checked, setChecked] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    const poll = async () => {
+      const p = await fetchLiveTracker(trackerUrl)
+      if (alive) {
+        setLive(p)
+        setChecked(true)
+      }
+    }
+    poll()
+    const id = setInterval(poll, LIVE_POLL_MS)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [trackerUrl])
+
+  if (!checked) return <div className="field-hint">Checking live position…</div>
+  if (!live) return <div className="field-hint">No live signal from this vehicle right now.</div>
+
+  const destLat = Number(row.dest_lat)
+  const destLng = Number(row.dest_lng)
+  const distToDestM =
+    Number.isFinite(destLat) && Number.isFinite(destLng)
+      ? distanceMeters(live.lat, live.lng, destLat, destLng)
+      : null
+  const arrived = distToDestM != null && distToDestM <= ARRIVED_M
+  const etaAt =
+    row.start_at && row.duration_min != null
+      ? new Date(new Date(row.start_at).getTime() + row.duration_min * 60000)
+      : null
+  const late = !arrived && etaAt != null && Date.now() > etaAt.getTime()
+
+  const offRouteM =
+    row.route_geometry?.length > 1 ? distanceToLineMeters(live.lat, live.lng, row.route_geometry) : null
+  const offRoute = offRouteM != null && offRouteM > OFF_ROUTE_M
+
+  const overSpeed = live.speed > SPEED_LIMIT_KPH
+
+  return (
+    <div className="live-track">
+      <div className="live-track-badges">
+        <span className={`badge ${LIVE_STATUS_BADGE[live.status] || ''}`}>
+          {LIVE_STATUS_LABEL[live.status] || 'Unknown'} · {live.speed} kph
+        </span>
+        {arrived && <span className="badge badge-success">Arrived</span>}
+        {late && <span className="badge badge-warning">Running late</span>}
+        {offRoute && <span className="badge badge-warning">Off route ({(offRouteM / 1000).toFixed(1)} km)</span>}
+        {overSpeed && <span className="badge badge-danger">Over speed</span>}
+      </div>
+      <RouteMap points={row.waypoints || []} line={row.route_geometry} liveMarker={live} height={200} />
+      {live.address && <span className="field-hint">{live.address}</span>}
+    </div>
+  )
+}
+
 // ── Ride form ─────────────────────────────────────────────────────────────
 function RideModal({
   row,
@@ -1722,7 +1805,11 @@ function RideModal({
             </div>
           ))}
 
-          <RouteMap points={row.waypoints || []} line={row.route_geometry} height={200} />
+          {row.vehicle?.tracker_url ? (
+            <LiveTrackingCard row={row} />
+          ) : (
+            <RouteMap points={row.waypoints || []} line={row.route_geometry} height={200} />
+          )}
           {gm && (
             <a className="btn btn-ghost btn-square btn-sm" href={gm} target="_blank" rel="noreferrer">
               <Navigation size={13} /> Open route in Google Maps

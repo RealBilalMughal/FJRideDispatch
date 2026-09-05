@@ -1,3 +1,34 @@
+/* Board / Map mode switch - flat underline tabs, self-contained here (was
+   borrowing RoleAccess.css's .ra-modeswitch, which this page's own lazily
+   loaded chunk never pulls in, so the buttons rendered unstyled). */
+.vb-modeswitch {
+  display: inline-flex;
+  gap: 20px;
+}
+
+.vb-modeswitch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vb-modeswitch button:hover {
+  color: var(--heading);
+}
+
+.vb-modeswitch button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .vb-wrap {
   overflow-x: auto;
 }

@@ -68,7 +68,7 @@ const SELECT = `
   ride_date, duty_sheet_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
   vehicle_id, driver_id, airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
-  waypoints, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
+  waypoints, route_geometry, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
   city:cities(name),
   vehicle:vehicles(ref_no, vehicle_no),
   driver:drivers!rides_driver_id_fkey(ref_no, name),
@@ -920,6 +920,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
           dest_lat: pts[1]?.lat,
           dest_lng: pts[1]?.lng,
           waypoints: pts,
+          route_geometry: info?.line ?? null,
           distance_km: info?.distanceKm ?? null,
           duration_min: info?.durationMin ?? null,
           start_at,
@@ -1044,6 +1045,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
           dest_lat: pts[1]?.lat,
           dest_lng: pts[1]?.lng,
           waypoints: pts,
+          route_geometry: info?.line ?? null,
           distance_km: info?.distanceKm ?? null,
           duration_min: info?.durationMin ?? null,
           start_at,
@@ -1110,6 +1112,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
             dest_lat: pPts[1]?.lat,
             dest_lng: pPts[1]?.lng,
             waypoints: pPts,
+            route_geometry: pInfo?.line ?? null,
             distance_km: pInfo?.distanceKm ?? null,
             duration_min: pInfo?.durationMin ?? null,
             start_at: pStartAt,
@@ -1637,6 +1640,7 @@ function RideModal({
       dest_lat: dest?.lat ?? null,
       dest_lng: dest?.lng ?? null,
       waypoints: routePoints,
+      route_geometry: routeData?.line ?? row?.route_geometry ?? null,
       distance_km: km,
       duration_min: durMin,
       status: row?.status ?? 'dispatched',
@@ -1718,7 +1722,7 @@ function RideModal({
             </div>
           ))}
 
-          <RouteMap points={row.waypoints || []} height={200} />
+          <RouteMap points={row.waypoints || []} line={row.route_geometry} height={200} />
           {gm && (
             <a className="btn btn-ghost btn-square btn-sm" href={gm} target="_blank" rel="noreferrer">
               <Navigation size={13} /> Open route in Google Maps
@@ -2192,6 +2196,7 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
         dest_lat: crewList.length ? dest?.lat ?? null : null,
         dest_lng: crewList.length ? dest?.lng ?? null : null,
         waypoints: crewList.length ? pts : [],
+        route_geometry: info?.line ?? null,
         distance_km: info?.distanceKm ?? null,
         duration_min: info?.durationMin ?? null,
         status: 'dispatched',

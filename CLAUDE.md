@@ -66,7 +66,8 @@ keys, tables or deploy targets with any other project.
   `20260904170000_rides.sql`, `20260904190000_vehicle_shifts.sql`,
   `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`,
   `20260906140000_return_leg_cascade.sql`, `20260906180000_duty_sheet_date.sql`,
-  `20260906200000_deadhead_buffer.sql` (all APPLIED).
+  `20260906200000_deadhead_buffer.sql`, `20260906210000_disable_vehicle_window_excl.sql`,
+  `20260906220000_route_geometry.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -168,9 +169,24 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   `src/components/StopMap.jsx` (single pin), `src/components/RouteMap.jsx`
   (multi-point + polyline, read-only). (Google Maps dropped - key/billing friction.)
 - **OpenRouteService** (`src/lib/ors.js`, `VITE_ORS_API_KEY`): `routeInfo(coords)`
-  -> road km + duration + geometry via `/v2/directions/driving-car/geojson`
-  (`radiuses: -1` so airport/stop points snap to the nearest road). `gmapsRoute()`
-  builds a keyless Google Maps directions URL for the "open route" action.
+  -> road km + duration + geometry (`{ distanceKm, durationMin, line }`, `line`
+  = `[[lat,lng], ...]`) via `/v2/directions/driving-car/geojson` (`radiuses: -1`
+  so airport/stop points snap to the nearest road). `gmapsRoute()` builds a
+  keyless Google Maps directions URL for the "open route" action.
+- **`rides.route_geometry`** (`jsonb`, nullable) persists that `line` at
+  creation/edit time (every insert/update that calls `routeInfo()` - the main
+  Ride form, `GenerateRidesModal`, and `CreateRideModal`'s Return Leg/Deadhead/
+  companion Pickup - saves `info?.line ?? null` alongside `distance_km`/
+  `duration_min`, which is all that used to be kept). `RouteMap`'s `line` prop
+  (already supported - the Ride form's own live preview always passed it) is
+  now also wired up for the **read-only View** (`row.route_geometry`) and the
+  **Vehicle Board's Map tab** (`r.route_geometry`, preferred over the straight
+  `waypoints` line, which is now only a fallback for rows saved before this
+  column existed or where ORS had no key/failed) - both used to draw straight
+  segments between stops instead of the actual road route because only the
+  stop points were ever saved. This also means opening/reopening either view
+  makes **no ORS call** - the geometry was fetched once, at creation/edit
+  time, never on read.
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).
@@ -372,7 +388,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   range + weekday picker + optional shared crew. Vehicles assigned per-ride after.
 - **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each
   vehicle's booked rides (bars by `start_at`/`end_at`, coloured by block, click ->
-  ride detail) + a Map tab drawing every routed ride for the day.
+  ride detail) + a Map tab drawing every routed ride for the day (`r.route_geometry`
+  if saved, else a straight-line fallback - see `rides.route_geometry` above; no
+  ORS call happens on this page). The Board/Map toggle is `.vb-modeswitch`, a
+  self-contained copy of the flat-underline mode-switch pattern kept in
+  `VehicleBoard.css` (it used to borrow `RoleAccess.css`'s `.ra-modeswitch`,
+  which this page's own lazily-loaded chunk never pulls in, so the buttons
+  rendered as plain unstyled `<button>`s). The Map tab's Leaflet container is
+  640px tall (`BoardMap`'s `.stop-map`).
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role

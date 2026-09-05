@@ -16,7 +16,7 @@ import './VehicleBoard.css'
 
 const RIDE_SELECT = `
   id, ref_no, block_type, ride_date, start_at, end_at, distance_km, duration_min,
-  origin_label, dest_label, waypoints, vehicle_id,
+  origin_label, dest_label, waypoints, route_geometry, vehicle_id,
   vehicle:vehicles(ref_no, vehicle_no),
   ride_crew(seq, crew:crew(name))
 `
@@ -122,7 +122,7 @@ export default function VehicleBoard() {
           <button className="icon-btn" onClick={load} title="Refresh">
             <RefreshCw size={15} />
           </button>
-          <div className="ra-modeswitch">
+          <div className="vb-modeswitch">
             <button className={tab === 'board' ? 'on' : ''} onClick={() => setTab('board')}>
               <Rows3 size={13} /> Board
             </button>
@@ -240,20 +240,27 @@ export default function VehicleBoard() {
 
 function BoardMap({ rides, onPick }) {
   const lines = rides
-    .map((r) => ({
-      r,
-      pts: [...(r.waypoints || [])]
+    .map((r) => {
+      // prefer the stored road-following geometry (saved once at ride
+      // creation/edit time, no ORS call here) - straight waypoints are only a
+      // fallback for rides saved before route_geometry existed, or where ORS
+      // had no key/failed.
+      const geom = (r.route_geometry || [])
+        .map((p) => [Number(p[0]), Number(p[1])])
+        .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b))
+      const straight = [...(r.waypoints || [])]
         .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
         .map((p) => [Number(p.lat), Number(p.lng)])
-        .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)),
-    }))
+        .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b))
+      return { r, pts: geom.length > 1 ? geom : straight }
+    })
     .filter((x) => x.pts.length > 1)
 
   const all = lines.flatMap((x) => x.pts)
   const center = all[0] || [30.3753, 69.3451]
 
   return (
-    <div className="stop-map" style={{ height: 480 }}>
+    <div className="stop-map" style={{ height: 640 }}>
       <MapContainer center={center} zoom={11} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

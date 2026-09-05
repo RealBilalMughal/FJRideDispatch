@@ -359,9 +359,9 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   for the vehicle conflict - a separate, fixed `BUFFER_MIN`) are computed,
   never typed. **"Trip time" = the stored `duration_min` = ORS road minutes +
   the multi-crew wait** (`crewWaitMinutes()`, Settings → Ride Buffer Time →
-  Crew wait buffer): a pickup / dropoff visiting >1 crew stop waits
-  `crew_wait_buffer_min` at each stop after the first, `(crewCount-1) *
-  buffer`, folded into `duration_min` at save (KM stays pure road distance). `status` still defaults to `dispatched` on every
+  Crew wait buffer): a pickup / dropoff carrying >1 crew waits
+  `crew_wait_buffer_min` at every crew stop, `crewCount * buffer`, folded into
+  `duration_min` at save (KM stays pure road distance). `status` still defaults to `dispatched` on every
   insert but is no longer shown as a table/export column (see below);
   completion waits on a future driver app.
   (Check-in/Check-out buffer minutes are edited on the **Settings** page now,
@@ -585,14 +585,14 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     Ride section above). Defaults (90 / 30 / 10 / 15 / 5) live in `rideRoute.js`
     as `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN` /
     `DEFAULT_RETURN_LEG_BUFFER_MIN` / `DEFAULT_DEADHEAD_BUFFER_MIN` /
-    `DEFAULT_CREW_WAIT_BUFFER_MIN`. **Crew wait** = a pickup / dropoff that
-    visits more than one crew stop waits at each stop after the first for crew
-    to board / alight: `crewWaitMinutes(block, crewCount, buffer)` =
-    `(crewCount - 1) * buffer` for pickup/dropoff with `crewCount > 1`, else 0.
-    It folds into the ride's stored `duration_min` (road time from ORS +
-    this wait), so every ETA / `end_at` / Pickup-Time auto-suggest / table /
-    export / Vehicle Board figure accounts for it with no separate column;
-    `distance_km` stays pure road distance.
+    `DEFAULT_CREW_WAIT_BUFFER_MIN`. **Crew wait** = a pickup / dropoff carrying
+    more than one crew waits at every crew stop for them to board / alight:
+    `crewWaitMinutes(block, crewCount, buffer)` = `crewCount * buffer` for
+    pickup/dropoff with `crewCount > 1`, else 0. It folds into the ride's
+    stored `duration_min` (road time from ORS + this wait), so every ETA /
+    `end_at` / Pickup-Time auto-suggest / table / export / Vehicle Board
+    figure accounts for it with no separate column; `distance_km` stays pure
+    road distance.
   - Both panels: **read-only view by default, "Edit" reveals the form** (same
     pattern as Profile), with an Edit button top-right of the panel head.
     Editing disables the City field (finish or Cancel first) and has

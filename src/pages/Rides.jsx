@@ -1638,10 +1638,10 @@ function RideModal({
     }
   }, [routeReady, routePoints])
 
-  // A multi-crew pickup / dropoff waits at each stop after the first for crew
-  // to board / alight - (crewCount - 1) * the city's crew-wait buffer. It folds
-  // into duration_min so ETA, end_at, the Pickup-Time auto-suggest and every
-  // downstream display (table, view, export, Vehicle Board) account for it.
+  // A multi-crew pickup / dropoff waits at every crew stop for them to board /
+  // alight - crewCount * the city's crew-wait buffer (once there's >1 crew). It
+  // folds into duration_min so ETA, end_at, the Pickup-Time auto-suggest and
+  // every downstream display (table, view, export, Vehicle Board) account for it.
   const crewWaitMin = crewWaitMinutes(form.block_type, crewList.length, crewWaitBufferMin)
   const roadMin = routeData?.durationMin ?? null
   const durMin = roadMin != null ? roadMin + crewWaitMin : (row?.duration_min ?? null)

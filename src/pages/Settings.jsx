@@ -362,7 +362,7 @@ function RideBufferTimePanel() {
           <div className="sub">
             Pickup Time = Check-in − Check-in buffer − trip time. Drop Time = Check-out +
             Check-out buffer. Return Leg / Deadhead Ride Time = drop-off arrival + that
-            buffer. Crew wait buffer adds (crew − 1) × this many minutes to a multi-crew
+            buffer. Crew wait buffer adds crew × this many minutes to a multi-crew
             pickup / dropoff. Each city keeps its own buffers.
           </div>
         </div>
@@ -469,8 +469,8 @@ function RideBufferTimePanel() {
                     onChange={(e) => setCrewWait(e.target.value)}
                   />
                   <span className="field-hint">
-                    Multi-crew pickup / dropoff: wait per stop after the first &mdash; adds
-                    (crew &minus; 1) &times; this to the ride time
+                    Multi-crew pickup / dropoff: wait at every crew stop &mdash; adds
+                    crew &times; this to the ride time
                   </span>
                 </div>
                 <div className="field" />

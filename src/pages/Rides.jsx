@@ -347,7 +347,7 @@ export default function Rides() {
     () => ({
       total: list.length,
       today: list.filter((r) => r.ride_date === today).length,
-      withVehicle: list.filter((r) => r.vehicle_id).length,
+      dutySheet: list.filter((r) => r.duty_sheet_display === today).length,
     }),
     [list, today],
   )
@@ -570,7 +570,13 @@ export default function Rides() {
         items={[
           { key: 'total', label: 'Total', value: stats.total, icon: RouteIcon },
           { key: 'today', label: 'Today', value: stats.today, icon: RouteIcon },
-          { key: 'veh', label: 'With vehicle', value: stats.withVehicle, icon: RouteIcon },
+          {
+            key: 'duty',
+            label: "Today's Duty Sheet",
+            value: stats.dutySheet,
+            hint: "rides on today's duty sheet",
+            icon: RouteIcon,
+          },
         ]}
       />
 

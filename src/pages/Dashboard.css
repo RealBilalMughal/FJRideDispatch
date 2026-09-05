@@ -8,11 +8,13 @@
   min-width: 0;
 }
 
-/* below it: Rides by block (wide) | Shift (narrow). Stacks on narrow screens. */
+/* below it: Rides by block (wide) | Shift (narrow). Stacks on narrow screens.
+   The divider is a border on the block GRID (not the whole column) so it's
+   only as tall as the cards, not the h2 above them. */
 .dash-cols {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 22px;
   align-items: flex-start;
 }
 
@@ -22,19 +24,23 @@
 }
 
 .dash-col-side {
-  flex: 1.25 1 270px;
+  flex: 1.25 1 260px;
 }
 
-/* vertical rule between the main and side columns */
-.dash-col-divider {
-  flex: 0 0 1px;
-  align-self: stretch;
-  background: var(--border);
+.dash-col-main .dash-grid,
+.dash-col-main h2 {
+  padding-right: 22px;
+  border-right: 1px solid var(--border);
+}
+.dash-col-main h2 {
+  border-right-color: transparent;
 }
 
 @media (max-width: 720px) {
-  .dash-col-divider {
-    display: none;
+  .dash-col-main .dash-grid,
+  .dash-col-main h2 {
+    padding-right: 0;
+    border-right: 0;
   }
 }
 
@@ -85,13 +91,8 @@
   display: flex;
   flex-direction: column;
   gap: 9px;
-  padding: 13px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg);
-}
-
-.dash-card-hero {
+  padding: 14px 15px;
+  border-radius: 14px;
   background: var(--surface);
 }
 

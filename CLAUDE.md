@@ -133,21 +133,21 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - `Dashboard` (`/`, always visible - the landing page) - ride totals over a
   Today/Week/Month/All date range (default Month; custom from/to inputs too -
   same `.date-tabs` + `presetRange()` pattern as the Rides filter bar) and
-  the global city filter. Small bordered metric cards (`Dashboard.css`, an
-  intentional exception to the no-cards rule - a dashboard reads better as
-  cards): a hero row (Total rides, Total distance = Σ `distance_km`, Crew
-  moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
-  the table). A full-width hero row (Total rides / Total distance / Crew
-  moved), then a two-column split (`.dash-cols`, stacks on narrow screens)
-  with a hairline `.dash-col-divider` between: the wide left column is a
-  one-row **Rides by block** grid (Pickup / Drop Off / Deadhead / Return
-  leg, 2×2 only below 560px; chip colours match the Vehicle Board block
-  bars), the narrow right column a one-row **Shift** grid (Day trips /
-  Night trips). Each card:
-  icon chip + count + KM sum. A user without `rides` view just sees a welcome
-  placeholder (RLS would return nothing anyway). Fetches `block_type,
-  distance_km, shift, ride_crew(seq)` filtered by `ride_date` in range - one
-  query, no joins beyond the crew count.
+  the global city filter. Metric cards (`Dashboard.css`, an intentional
+  exception to the no-cards rule - a dashboard reads better as cards;
+  borderless, `--surface` fill, 14px radius, an icon chip + count + KM sum
+  each). A full-width hero row (Total rides, Total distance = Σ `distance_km`,
+  Crew moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0,
+  matching the table), then a two-column split (`.dash-cols`, stacks on
+  narrow screens): the wide left column is a one-row **Rides by block** grid
+  (Pickup / Drop Off / Deadhead / Return leg, 2×2 only below 560px; chip
+  colours match the Vehicle Board block bars), the narrow right column a
+  one-row **Shift** grid (Day trips / Night trips). The divider between them
+  is a `border-right` on the block *grid* (not the whole column) so it's only
+  as tall as the cards, not the `h2` above. A user without `rides` view just
+  sees a welcome placeholder (RLS would return nothing anyway). Fetches
+  `block_type, distance_km, shift, ride_crew(seq)` filtered by `ride_date` in
+  range - one query, no joins beyond the crew count.
 - `Crew` (`crew` perm, sidebar group "Roster") - table (ID / Name / Phone /
   Designation / City / Stop / Coordinates), advanced filters, CSV export + import
   (`crew-sample.csv`: name, phone, designation, city, stop_name, coordinates -

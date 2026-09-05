@@ -175,8 +175,6 @@ export default function Dashboard() {
               </div>
             </section>
 
-            <div className="dash-col-divider" aria-hidden="true" />
-
             <section className="dash-section dash-col-side">
               <h2>Shift</h2>
               <div className="dash-stack">

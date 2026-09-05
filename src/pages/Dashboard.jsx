@@ -159,7 +159,7 @@ export default function Dashboard() {
           </div>
 
           <section className="dash-section">
-            <h2>Rides by block</h2>
+            <h2>Rides by block &amp; shift</h2>
             <div className="dash-grid">
               {BLOCKS.map(({ key, icon }) => (
                 <Metric
@@ -171,12 +171,7 @@ export default function Dashboard() {
                   sub={num(fmtKm(s.blk[key].km))}
                 />
               ))}
-            </div>
-          </section>
-
-          <section className="dash-section">
-            <h2>Day vs Night</h2>
-            <div className="dash-grid">
+              <div className="dash-divider" aria-hidden="true" />
               <Metric
                 cls="shift-day"
                 icon={Sun}

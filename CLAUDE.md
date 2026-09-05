@@ -137,10 +137,11 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   intentional exception to the no-cards rule - a dashboard reads better as
   cards): a hero row (Total rides, Total distance = Σ `distance_km`, Crew
   moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
-  the table), then **Rides by block** (Pickup / Drop Off / Deadhead / Return
-  leg - each an icon-chipped card with count + KM sum, chip colours matching
-  the Vehicle Board block bars) and **Day vs Night** (count + KM each). A
-  user without `rides` view just sees a welcome
+  the table). The hero cards stretch to fill the row. Then one **Rides by
+  block & shift** row - the 4 block cards (Pickup / Drop Off / Deadhead /
+  Return leg, chip colours matching the Vehicle Board block bars), a thin
+  `.dash-divider`, then Day trips / Night trips - each an icon-chipped card
+  with count + KM sum. A user without `rides` view just sees a welcome
   placeholder (RLS would return nothing anyway). Fetches `block_type,
   distance_km, shift, ride_crew(seq)` filtered by `ride_date` in range - one
   query, no joins beyond the crew count.

@@ -31,8 +31,28 @@
   background: var(--bg);
 }
 
+/* hero cards fill the row evenly, sized to the screen (no fixed cap) */
+.dash-hero .dash-card {
+  flex: 1 1 160px;
+  max-width: none;
+}
+
 .dash-card-hero {
   background: var(--surface);
+}
+
+/* divider between the block cards and the day/night cards */
+.dash-divider {
+  flex: 0 0 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 0 5px;
+}
+
+@media (max-width: 680px) {
+  .dash-divider {
+    display: none;
+  }
 }
 
 .dash-ico {

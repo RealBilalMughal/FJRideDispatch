@@ -9,7 +9,14 @@ keys, tables or deploy targets with any other project.
 - Folder: `E:\FJRideDispatch`
 - GitHub: https://github.com/RealBilalMughal/FJRideDispatch  (remote `origin`, branch `main`)
 - Supabase: https://dyjgrxeqdvnxwcbwzkql.supabase.co  (project ref `dyjgrxeqdvnxwcbwzkql`)
-- Vercel: _(not created yet)_
+- Vercel: https://fjride.vercel.app  (project `fjride`, git-linked to
+  `RealBilalMughal/FJRideDispatch` `main` - auto-deploys on push). **Build
+  needs all three `VITE_*` env vars set in Vercel Project Settings ->
+  Environment Variables** (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+  `VITE_ORS_API_KEY`) - Vite inlines them at build time, so a missing one
+  = a blank white page (`src/lib/supabase.js` throws on module load, no
+  error boundary). Adding/changing a var needs a fresh build (a new commit,
+  or Redeploy with build cache OFF), not just a cache-reusing redeploy.
 
 ## Stack
 - React 19 + Vite (JavaScript / JSX)
@@ -526,4 +533,5 @@ the CLI): `supabase db push`, `supabase functions deploy <name> --use-api`.
 - [x] Ride Dispatch page (`20260904170000_rides.sql`) - block-wise route, ORS km,
       vehicle time-window conflict, return-leg, old/new check-in/out
 - [x] Rides phase 2: optimise-order button, Generate (recurring), Vehicle Board
-- [ ] Create Vercel project, link repo (env: the two `VITE_SUPABASE_*` vars)
+- [x] Vercel project `fjride` created + git-linked, all three `VITE_*` env
+      vars set, deploying at https://fjride.vercel.app

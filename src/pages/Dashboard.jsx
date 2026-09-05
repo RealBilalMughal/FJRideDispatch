@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   Milestone,
   Moon,
   PlaneLanding,
@@ -13,7 +15,8 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
-import { presetRange } from '../lib/time'
+import { fmtDate } from '../lib/format'
+import { addDays, fmtTimeOnly12, pkToday, presetRange } from '../lib/time'
 import { blockLabel, displayCrewCount } from '../lib/rideRoute'
 import './Dashboard.css'
 
@@ -31,6 +34,45 @@ const BLOCKS = [
 ]
 const km = (r) => Number(r.distance_km) || 0
 const fmtKm = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} km`
+const firstCrewName = (rc) =>
+  [...(rc || [])].sort((a, b) => a.seq - b.seq).map((x) => x.crew?.name).filter(Boolean)[0] || ''
+
+// list every "YYYY-MM-DD" from `from` to `to` inclusive
+function dateList(from, to) {
+  if (!from || !to || from > to) return []
+  const out = []
+  let d = from
+  for (let i = 0; d <= to && i < 400; i++) {
+    out.push(d)
+    d = addDays(d, 1)
+  }
+  return out
+}
+
+// aggregate a ride list into the numbers the cards/sections need
+function rollup(rows) {
+  const blk = Object.fromEntries(BLOCKS.map((b) => [b.key, { count: 0, km: 0 }]))
+  const shift = { day: { count: 0, km: 0 }, night: { count: 0, km: 0 } }
+  let crew = 0
+  let totalKm = 0
+  for (const r of rows) {
+    totalKm += km(r)
+    crew += displayCrewCount(r.ride_crew, r.block_type)
+    if (blk[r.block_type]) {
+      blk[r.block_type].count += 1
+      blk[r.block_type].km += km(r)
+    }
+    if (shift[r.shift]) {
+      shift[r.shift].count += 1
+      shift[r.shift].km += km(r)
+    }
+  }
+  return { total: rows.length, totalKm, crew, blk, shift }
+}
+
+const RANGE_SELECT = 'block_type, distance_km, shift, ride_date, city_id, city:cities(name), ride_crew(seq)'
+const LIVE_SELECT =
+  'id, ref_no, block_type, start_at, end_at, vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(name))'
 
 export default function Dashboard() {
   const { profile, can } = useAuth()
@@ -38,30 +80,62 @@ export default function Dashboard() {
   const canRides = can('rides', 'view')
   const name = (profile?.full_name || '').split(' ')[0]
 
-  const initial = presetRange('month')
-  const [preset, setPreset] = useState('month')
+  const [preset, setPreset] = useState('today')
+  const initial = presetRange('today')
   const [from, setFrom] = useState(initial.from)
   const [to, setTo] = useState(initial.to)
-  const [rides, setRides] = useState([])
+
+  const [rows, setRows] = useState([])
+  const [prevRows, setPrevRows] = useState([])
+  const [live, setLive] = useState([])
   const [loading, setLoading] = useState(true)
 
+  // main range + the equivalent previous period (for the trend %)
   useEffect(() => {
     if (!ready || !canRides) return
     let alive = true
     setLoading(true)
-    let q = supabase.from('rides').select('block_type, distance_km, shift, ride_crew(seq)')
-    if (from) q = q.gte('ride_date', from)
-    if (to) q = q.lte('ride_date', to)
-    if (cityId != null) q = q.eq('city_id', cityId)
-    q.then(({ data }) => {
+    const run = async () => {
+      const scope = (q) => (cityId != null ? q.eq('city_id', cityId) : q)
+      let cur = scope(supabase.from('rides').select(RANGE_SELECT))
+      if (from) cur = cur.gte('ride_date', from)
+      if (to) cur = cur.lte('ride_date', to)
+
+      let prev = null
+      if (from && to) {
+        const span = dateList(from, to).length
+        const prevTo = addDays(from, -1)
+        const prevFrom = addDays(prevTo, -(span - 1))
+        prev = scope(supabase.from('rides').select('block_type, distance_km, ride_crew(seq)'))
+          .gte('ride_date', prevFrom)
+          .lte('ride_date', prevTo)
+      }
+
+      const [{ data: cd }, pv] = await Promise.all([cur, prev ?? Promise.resolve({ data: [] })])
       if (!alive) return
-      setRides(data ?? [])
+      setRows(cd ?? [])
+      setPrevRows(pv.data ?? [])
       setLoading(false)
-    })
+    }
+    run()
     return () => {
       alive = false
     }
   }, [ready, canRides, from, to, cityId])
+
+  // today's rides for the live strip - always today, independent of the range
+  useEffect(() => {
+    if (!ready || !canRides) return
+    let alive = true
+    let q = supabase.from('rides').select(LIVE_SELECT).eq('ride_date', pkToday())
+    if (cityId != null) q = q.eq('city_id', cityId)
+    q.then(({ data }) => {
+      if (alive) setLive(data ?? [])
+    })
+    return () => {
+      alive = false
+    }
+  }, [ready, canRides, cityId])
 
   const applyPreset = (p) => {
     const r = presetRange(p)
@@ -70,32 +144,51 @@ export default function Dashboard() {
     setTo(r.to)
   }
 
-  const s = useMemo(() => {
-    const blk = Object.fromEntries(BLOCKS.map((b) => [b.key, { count: 0, km: 0 }]))
-    const shift = { day: { count: 0, km: 0 }, night: { count: 0, km: 0 } }
-    let crew = 0
-    let totalKm = 0
-    for (const r of rides) {
-      totalKm += km(r)
-      crew += displayCrewCount(r.ride_crew, r.block_type)
-      if (blk[r.block_type]) {
-        blk[r.block_type].count += 1
-        blk[r.block_type].km += km(r)
-      }
-      if (shift[r.shift]) {
-        shift[r.shift].count += 1
-        shift[r.shift].km += km(r)
-      }
+  const s = useMemo(() => rollup(rows), [rows])
+  const p = useMemo(() => rollup(prevRows), [prevRows])
+  const hasPrev = Boolean(from && to) && prevRows.length > 0
+
+  const deadheadPct = s.totalKm > 0 ? (s.blk.deadhead.km / s.totalKm) * 100 : 0
+  const prevDeadheadPct = p.totalKm > 0 ? (p.blk.deadhead.km / p.totalKm) * 100 : 0
+
+  const perDay = useMemo(() => {
+    const days = dateList(from, to)
+    if (days.length < 2) return []
+    const byDate = new Map(days.map((d) => [d, 0]))
+    for (const r of rows) if (byDate.has(r.ride_date)) byDate.set(r.ride_date, byDate.get(r.ride_date) + 1)
+    return days.map((d) => ({ date: d, count: byDate.get(d) }))
+  }, [rows, from, to])
+
+  const byCity = useMemo(() => {
+    if (cityId != null) return []
+    const m = new Map()
+    for (const r of rows) {
+      const nm = r.city?.name || '—'
+      const cur = m.get(nm) || { count: 0, km: 0 }
+      cur.count += 1
+      cur.km += km(r)
+      m.set(nm, cur)
     }
-    return { total: rides.length, totalKm, crew, blk, shift }
-  }, [rides])
+    return [...m.entries()].sort((a, b) => b[1].count - a[1].count)
+  }, [rows, cityId])
+
+  const liveRows = useMemo(() => {
+    const now = Date.now()
+    return live
+      .filter((r) => {
+        const end = r.end_at ? new Date(r.end_at).getTime() : null
+        return end == null || end > now - 90 * 60000
+      })
+      .sort((a, b) => new Date(a.start_at || 0) - new Date(b.start_at || 0))
+      .slice(0, 8)
+  }, [live])
 
   const num = (x) => (loading ? '…' : x)
   const rangeLabel =
     preset === 'all'
       ? 'all time'
       : preset
-        ? DATE_PRESETS.find((p) => p.value === preset)?.label.toLowerCase()
+        ? DATE_PRESETS.find((x) => x.value === preset)?.label.toLowerCase()
         : 'custom range'
 
   return (
@@ -110,14 +203,14 @@ export default function Dashboard() {
         {canRides && (
           <div className="page-actions">
             <div className="date-tabs">
-              {DATE_PRESETS.map((p) => (
+              {DATE_PRESETS.map((x) => (
                 <button
-                  key={p.value}
+                  key={x.value}
                   type="button"
-                  className={preset === p.value ? 'on' : ''}
-                  onClick={() => applyPreset(p.value)}
+                  className={preset === x.value ? 'on' : ''}
+                  onClick={() => applyPreset(x.value)}
                 >
-                  {p.label}
+                  {x.label}
                 </button>
               ))}
             </div>
@@ -153,10 +246,40 @@ export default function Dashboard() {
       ) : (
         <>
           <div className="dash-hero">
-            <Metric hero icon={RouteIcon} value={num(s.total)} label="Total rides" />
-            <Metric hero icon={Milestone} value={num(fmtKm(s.totalKm))} label="Total distance" />
-            <Metric hero icon={Users2} value={num(s.crew)} label="Crew moved" />
+            <Metric
+              cls="dash-card-accent"
+              icon={RouteIcon}
+              value={num(s.total)}
+              label="Total rides"
+              trend={hasPrev ? pctChange(s.total, p.total) : null}
+            />
+            <Metric
+              icon={Milestone}
+              value={num(fmtKm(s.totalKm))}
+              label="Total distance"
+              trend={hasPrev ? pctChange(s.totalKm, p.totalKm) : null}
+            />
+            <Metric
+              icon={Users2}
+              value={num(s.crew)}
+              label="Crew moved"
+              trend={hasPrev ? pctChange(s.crew, p.crew) : null}
+            />
+            <Metric
+              icon={Waypoints}
+              value={num(`${deadheadPct.toFixed(1)}%`)}
+              label="Deadhead ratio"
+              sub="of total km run empty"
+              trend={hasPrev ? pctChange(deadheadPct, prevDeadheadPct) : null}
+            />
           </div>
+
+          {perDay.length > 1 && (
+            <section className="dash-section">
+              <h2>Rides per day</h2>
+              <PerDayChart data={perDay} />
+            </section>
+          )}
 
           <div className="dash-cols">
             <section className="dash-section dash-col-main">
@@ -195,15 +318,75 @@ export default function Dashboard() {
               </div>
             </section>
           </div>
+
+          {cityId == null && byCity.length > 0 && (
+            <section className="dash-section">
+              <h2>By city</h2>
+              <div className="dash-table">
+                {byCity.map(([nm, v]) => (
+                  <div className="dash-table-row" key={nm}>
+                    <span>{nm}</span>
+                    <span>{v.count} rides</span>
+                    <span>{fmtKm(v.km)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="dash-section">
+            <h2>Today · live</h2>
+            {liveRows.length === 0 ? (
+              <span className="dash-hint">No rides around now.</span>
+            ) : (
+              <div className="dash-live">
+                {liveRows.map((r) => {
+                  const st = liveStatus(r)
+                  return (
+                    <div className="dash-live-row" key={r.id}>
+                      <span className="dash-live-time">
+                        {r.start_at ? fmtTimeOnly12(r.start_at) : '—'}
+                      </span>
+                      <span className="dash-live-main">
+                        <b>{r.ref_no}</b> · {blockLabel(r.block_type)} · {r.vehicle?.vehicle_no || 'no vehicle'}
+                        {firstCrewName(r.ride_crew) ? ` · ${firstCrewName(r.ride_crew)}` : ''}
+                      </span>
+                      <span className={`dash-live-chip s-${st}`}>{liveLabel(r, st)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>
   )
 }
 
-function Metric({ icon: Icon, value, label, sub, hero, cls }) {
+function pctChange(cur, prev) {
+  if (!prev) return null
+  return Math.round(((cur - prev) / prev) * 100)
+}
+
+function Trend({ value, light }) {
+  if (value == null) return null
+  const up = value > 0
+  const flat = value === 0
+  const Icon = up ? ArrowUpRight : ArrowDownRight
   return (
-    <div className={`dash-card${hero ? ' dash-card-hero' : ''}${cls ? ` ${cls}` : ''}`}>
+    <span className={`dash-trend${light ? ' light' : up ? ' up' : flat ? '' : ' down'}`}>
+      {!flat && <Icon size={12} strokeWidth={2.25} />}
+      {value > 0 ? '+' : ''}
+      {value}% vs prev
+    </span>
+  )
+}
+
+function Metric({ icon: Icon, value, label, sub, trend, cls }) {
+  const accent = cls === 'dash-card-accent'
+  return (
+    <div className={`dash-card${cls ? ` ${cls}` : ''}`}>
       <div className="dash-ico">
         <Icon size={15} strokeWidth={1.75} />
       </div>
@@ -212,6 +395,45 @@ function Metric({ icon: Icon, value, label, sub, hero, cls }) {
         <span className="dash-name">{label}</span>
       </div>
       {sub && <span className="dash-sub">{sub}</span>}
+      <Trend value={trend} light={accent} />
     </div>
   )
+}
+
+function PerDayChart({ data }) {
+  const max = Math.max(1, ...data.map((d) => d.count))
+  return (
+    <div className="dash-chart">
+      {data.map((d) => (
+        <div
+          className="dash-chart-col"
+          key={d.date}
+          title={`${fmtDate(d.date)} — ${d.count} ride(s)`}
+        >
+          <div className="dash-chart-bar" style={{ height: `${(d.count / max) * 100}%` }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// 'done' | 'now' | 'soon' (<60 min) | 'later'
+function liveStatus(r) {
+  const now = Date.now()
+  const start = r.start_at ? new Date(r.start_at).getTime() : null
+  const end = r.end_at ? new Date(r.end_at).getTime() : null
+  if (end != null && now > end) return 'done'
+  if (start != null && now >= start && (end == null || now <= end)) return 'now'
+  if (start != null && start - now <= 60 * 60000) return 'soon'
+  return 'later'
+}
+
+function liveLabel(r, st) {
+  if (st === 'done') return 'done'
+  if (st === 'now') return 'running'
+  if (st === 'soon') {
+    const mins = Math.max(1, Math.round((new Date(r.start_at).getTime() - Date.now()) / 60000))
+    return `in ${mins} min`
+  }
+  return 'later'
 }

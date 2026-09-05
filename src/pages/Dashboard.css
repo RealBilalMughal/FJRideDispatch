@@ -1,14 +1,15 @@
-/* full-width hero row (Total rides / Total distance / Crew moved) */
+/* full-width hero row */
 .dash-hero {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .dash-hero .dash-card {
-  flex: 1 1 0;
+  flex: 1 1 160px;
   min-width: 0;
 }
 
-/* below it: Rides by block (wide) | Shift (narrow). Stacks on narrow screens.
+/* Rides by block (wide) | Shift (narrow). Stacks on narrow screens.
    The divider is a border on the block GRID (not the whole column) so it's
    only as tall as the cards, not the h2 above them. */
 .dash-cols {
@@ -58,27 +59,21 @@
   color: var(--muted);
 }
 
-/* the 4 block cards fill one row (2x2 only when too narrow for four) */
+.dash-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 .dash-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 
-/* Day / Night fill one row */
 .dash-stack {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
-}
-
-@media (max-width: 620px) {
-  .dash-hero {
-    flex-wrap: wrap;
-  }
-  .dash-hero .dash-card {
-    flex: 1 1 140px;
-  }
 }
 
 @media (max-width: 560px) {
@@ -87,13 +82,28 @@
   }
 }
 
+/* ---- cards ---- */
 .dash-card {
   display: flex;
   flex-direction: column;
   gap: 9px;
   padding: 14px 15px;
   border-radius: 14px;
-  background: var(--surface);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.dash-card-accent {
+  background: #ff0041;
+  box-shadow: 0 2px 10px rgba(255, 0, 65, 0.25);
+}
+.dash-card-accent .dash-num,
+.dash-card-accent .dash-name {
+  color: #fff;
+}
+.dash-card-accent .dash-ico {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
 }
 
 .dash-ico {
@@ -114,14 +124,10 @@
 
 .dash-num {
   font-family: var(--font-heading);
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
   line-height: 1;
   color: var(--heading);
-}
-
-.dash-card-hero .dash-num {
-  font-size: 22px;
 }
 
 .dash-name {
@@ -138,7 +144,25 @@
   color: var(--body);
 }
 
-/* per-block accent (matches the Vehicle Board bar colours) */
+.dash-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.dash-trend.up {
+  color: var(--success);
+}
+.dash-trend.down {
+  color: var(--danger);
+}
+.dash-trend.light {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* per-block / shift icon-chip accents (match the Vehicle Board bar colours) */
 .dash-card.blk-pickup .dash-ico {
   background: rgba(30, 135, 75, 0.14);
   color: var(--success);
@@ -162,4 +186,112 @@
 .dash-card.shift-night .dash-ico {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* ---- rides-per-day mini bar chart ---- */
+.dash-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 90px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+.dash-chart-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  min-width: 2px;
+}
+.dash-chart-bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+
+/* ---- by-city table ---- */
+.dash-table {
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.dash-table-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.dash-table-row + .dash-table-row {
+  border-top: 1px solid var(--border);
+}
+.dash-table-row span:first-child {
+  font-weight: 600;
+  color: var(--heading);
+}
+.dash-table-row span:not(:first-child) {
+  color: var(--muted);
+}
+
+/* ---- today / live strip ---- */
+.dash-live {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.dash-live-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  font-size: 12.5px;
+}
+.dash-live-row + .dash-live-row {
+  border-top: 1px solid var(--border);
+}
+.dash-live-time {
+  flex: 0 0 68px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.dash-live-main {
+  flex: 1;
+  min-width: 0;
+  color: var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-live-main b {
+  color: var(--heading);
+}
+.dash-live-chip {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--surface);
+  color: var(--muted);
+}
+.dash-live-chip.s-now {
+  background: rgba(30, 135, 75, 0.14);
+  color: var(--success);
+}
+.dash-live-chip.s-soon {
+  background: rgba(183, 121, 31, 0.16);
+  color: var(--warning);
+}
+.dash-live-row .dash-live-chip.s-done {
+  opacity: 0.7;
 }

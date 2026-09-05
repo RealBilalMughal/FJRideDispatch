@@ -130,24 +130,36 @@ off). `roles[]` validated against `public.roles`. Client wrapper: `src/lib/admin
 Deploy: `supabase functions deploy admin-users --use-api`.
 
 ## Pages
-- `Dashboard` (`/`, always visible - the landing page) - ride totals over a
-  Today/Week/Month/All date range (default Month; custom from/to inputs too -
-  same `.date-tabs` + `presetRange()` pattern as the Rides filter bar) and
-  the global city filter. Metric cards (`Dashboard.css`, an intentional
-  exception to the no-cards rule - a dashboard reads better as cards;
-  borderless, `--surface` fill, 14px radius, an icon chip + count + KM sum
-  each). A full-width hero row (Total rides, Total distance = Σ `distance_km`,
-  Crew moved = Σ `displayCrewCount` so Deadhead/Return Leg contribute 0,
-  matching the table), then a two-column split (`.dash-cols`, stacks on
-  narrow screens): the wide left column is a one-row **Rides by block** grid
-  (Pickup / Drop Off / Deadhead / Return leg, 2×2 only below 560px; chip
-  colours match the Vehicle Board block bars), the narrow right column a
-  one-row **Shift** grid (Day trips / Night trips). The divider between them
-  is a `border-right` on the block *grid* (not the whole column) so it's only
-  as tall as the cards, not the `h2` above. A user without `rides` view just
-  sees a welcome placeholder (RLS would return nothing anyway). Fetches
-  `block_type, distance_km, shift, ride_crew(seq)` filtered by `ride_date` in
-  range - one query, no joins beyond the crew count.
+- `Dashboard` (`/`, always visible - the landing page) - ride analytics over
+  a Today/Week/Month/All date range (**default Today**; custom from/to inputs
+  too - same `.date-tabs` + `presetRange()` pattern as the Rides filter bar)
+  and the global city filter. Borderless metric cards (`Dashboard.css`, an
+  intentional exception to the no-cards rule; white with `--shadow-sm`, 14px
+  radius, an icon chip each). Sections:
+  - **Hero row**: Total rides (filled in the **Fly Jinnah brand red
+    `#ff0041`**, `.dash-card-accent`), Total distance (Σ `distance_km`), Crew
+    moved (Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
+    the table), Deadhead ratio (deadhead km ÷ total km, %). Each shows a
+    **trend** vs the equivalent previous period (`pctChange()` - a second
+    query over `[prevFrom, prevTo]`, the same span immediately before
+    `from`; skipped for the All range). Green up / red down / muted flat;
+    white on the accent card.
+  - **Rides per day** - a hand-rolled CSS bar chart (`.dash-chart`, no
+    charting lib), one bar per day in range, shown only when the range spans
+    >1 day (so it's hidden on the Today default).
+  - **Rides by block** | **Shift** - the two-column card split; divider is a
+    `border-right` on the block *grid* so it's only card-tall, not `h2`-tall.
+    2×2 blocks below 560px.
+  - **By city** - only when the topbar filter is on All: a small table of
+    each city's ride count + km (`r.city.name` from the range query's
+    `city:cities(name)` join), busiest first.
+  - **Today · live** - a strip of *today's* rides (its own always-`pkToday()`
+    query, independent of the range) filtered to "ended <90 min ago, running,
+    or upcoming", sorted by `start_at`, capped at 8: time · ref · block ·
+    vehicle · first crew, plus a `liveStatus()` chip (done / running / in
+    N min / later).
+  A user without `rides` view just sees a welcome placeholder (RLS would
+  return nothing anyway).
 - `Crew` (`crew` perm, sidebar group "Roster") - table (ID / Name / Phone /
   Designation / City / Stop / Coordinates), advanced filters, CSV export + import
   (`crew-sample.csv`: name, phone, designation, city, stop_name, coordinates -

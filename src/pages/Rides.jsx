@@ -293,25 +293,30 @@ export default function Rides() {
     [rows, byId, followOnByParent],
   )
 
-  const filtered = useMemo(() => {
+  // one ride against every filter; `dateField` says which of its dates the
+  // date range applies to ('ride_date' for the table, 'duty_sheet_display'
+  // for the Duty Sheet stat).
+  const matchRide = (r, dateField) => {
     const s = search.trim().toLowerCase()
-    return list.filter((r) => {
-      if (blockFilter !== 'all' && r.block_type !== blockFilter) return false
-      if (dateFrom && r.ride_date < dateFrom) return false
-      if (dateTo && r.ride_date > dateTo) return false
-      if (flightFilter && r.flight_id !== flightFilter) return false
-      if (vehicleFilter && r.vehicle_id !== vehicleFilter) return false
-      if (shiftFilter && r.shift !== shiftFilter) return false
-      if (driverFilter && r.driver_id !== driverFilter) return false
-      if (
-        s &&
-        !`${r.display_ref} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''}`
-          .toLowerCase()
-          .includes(s)
-      )
-        return false
-      return true
-    })
+    if (blockFilter !== 'all' && r.block_type !== blockFilter) return false
+    if (dateFrom && r[dateField] < dateFrom) return false
+    if (dateTo && r[dateField] > dateTo) return false
+    if (flightFilter && r.flight_id !== flightFilter) return false
+    if (vehicleFilter && r.vehicle_id !== vehicleFilter) return false
+    if (shiftFilter && r.shift !== shiftFilter) return false
+    if (driverFilter && r.driver_id !== driverFilter) return false
+    if (
+      s &&
+      !`${r.display_ref} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''}`
+        .toLowerCase()
+        .includes(s)
+    )
+      return false
+    return true
+  }
+
+  const filtered = useMemo(() => {
+    return list.filter((r) => matchRide(r, 'ride_date'))
   }, [list, search, blockFilter, dateFrom, dateTo, flightFilter, vehicleFilter, shiftFilter, driverFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -345,11 +350,28 @@ export default function Rides() {
 
   const stats = useMemo(
     () => ({
-      total: list.length,
+      // rides in view (date range on ride_date + every other filter)
+      total: filtered.length,
+      // rides actually happening today, regardless of the filter
       today: list.filter((r) => r.ride_date === today).length,
-      dutySheet: list.filter((r) => r.duty_sheet_display === today).length,
+      // rides whose Duty Sheet date is in the filtered range (+ other filters)
+      // - for a plain day with no night-shift back-dating this equals `total`
+      dutySheet: list.filter((r) => matchRide(r, 'duty_sheet_display')).length,
     }),
-    [list, today],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      list,
+      filtered,
+      today,
+      search,
+      blockFilter,
+      dateFrom,
+      dateTo,
+      flightFilter,
+      vehicleFilter,
+      shiftFilter,
+      driverFilter,
+    ],
   )
 
   // Summary panel: the currently-filtered rides grouped by their Duty Sheet
@@ -572,9 +594,9 @@ export default function Rides() {
           { key: 'today', label: 'Today', value: stats.today, icon: RouteIcon },
           {
             key: 'duty',
-            label: "Today's Duty Sheet",
+            label: 'Duty Sheet',
             value: stats.dutySheet,
-            hint: "rides on today's duty sheet",
+            hint: 'by duty sheet date',
             icon: RouteIcon,
           },
         ]}

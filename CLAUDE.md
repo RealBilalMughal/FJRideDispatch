@@ -502,26 +502,29 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - **Tracker** (`/tracker`, sidebar label "Tracker", group "Dispatch", gated
   on `rides` view like Vehicle Board - reuses that permission, no separate
   `PERMISSION_PAGES` entry) - a full page for live GPS tracking. Left
-  `.tk-list` (styled to match the Settings page's `.set-list` - flat, a
-  hairline `border-right`, no card box) with a "Vehicles" head, a search box,
-  and the vehicle list; the map/view fills the rest (`.tk-layout`,
-  `height: max(440px, calc(100vh - 200px))`; stacks on ≤720px). A
-  Map / AI Track view switch (`.tk-viewswitch`, self-contained flat-underline
-  tabs) in the header:
-  - **Map** (default) - our own Leaflet map with a coloured dot per live
-    vehicle. Clicking a list row **or** a marker `map.flyTo()`s to it,
-    enlarges its dot, pins a permanent tooltip and raises its `zIndexOffset`.
-  - **AI Track** - the plain `<iframe src={cities.tracker_url}>` (what the
-    page used to be), for when you want AI Track's own map/trails.
+  `.tk-list` (Settings `.set-list` look - flat, a hairline `border-right`, no
+  card box; rows hover/select like the **sidebar nav**: accent text + a 3px
+  accent left bar, no fill) with a "Vehicles" head, a search box, and the
+  list; the AI Track view fills the rest (`.tk-layout`, `min-height:
+  max(440px, calc(100vh - 200px))`; stacks on ≤720px).
+  - The map is **AI Track's own** (a plain `<iframe>`, its map/trails/UI) -
+    reverted from a short-lived custom Leaflet map. Default: the city's
+    fleet `<iframe src={cities.tracker_url}>` (single city, or one per city
+    stacked when the topbar filter is All).
+  - Clicking a vehicle whose `vehicles.tracker_url` is set swaps the iframe
+    to that **per-vehicle** sharing link - AI Track's own view focused on
+    that one vehicle - with a "← All vehicles" bar to go back. A vehicle
+    with no per-vehicle link shows a hint to add one on the Vehicles page.
   **The vehicle roster is our own `vehicles` table** (city-scoped, active
-  only) so the list never flickers - live fixes just decorate the rows,
-  matched by plate (`vehicle_no` ↔ AI Track's `name`, both normalised).
-  Rows with no fix show "No signal" and a grey dot, sorted after the live
-  ones. Live positions come from `fetchFleetTracker()` (`src/lib/tracker.js`,
-  returns *every* vehicle a link exposes, vs `fetchLiveTracker`'s first-only)
-  polling every city's `tracker_url` every 15s; AI Track's `/items?time=0`
-  only returns recently-pinged vehicles, so fixes **accumulate** by plate
-  and are dropped only after 60 min unseen (reset on a city switch).
+  only) so the list never flickers - live status/speed just decorates the
+  rows, matched by plate (`vehicle_no` ↔ AI Track's `name`, both
+  normalised). Rows with no fix show "No signal" + a grey dot, sorted after
+  the live ones. Those live dots come from `fetchFleetTracker()`
+  (`src/lib/tracker.js`, returns *every* vehicle a link exposes, vs
+  `fetchLiveTracker`'s first-only) polling every city's `tracker_url` every
+  15s; AI Track's `/items?time=0` only returns recently-pinged vehicles, so
+  fixes **accumulate** by plate and are dropped only after 60 min unseen
+  (reset on a city switch).
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role

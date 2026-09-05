@@ -1,36 +1,10 @@
-/* Map / AI Track view switch - flat underline tabs, self-contained here */
-.tk-viewswitch {
-  display: inline-flex;
-  gap: 18px;
-}
-.tk-viewswitch button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0 6px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.tk-viewswitch button:hover {
-  color: var(--heading);
-}
-.tk-viewswitch button.on {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
 /* left list (Settings-panel look: flat, a hairline divider, no card box)
-   + map, filling whatever's left below the header. */
+   + the AI Track view, filling whatever's left below the header. */
 .tk-layout {
   display: flex;
   gap: 0;
   align-items: stretch;
-  height: max(440px, calc(100vh - 200px));
+  min-height: max(440px, calc(100vh - 200px));
 }
 
 .tk-list {
@@ -75,7 +49,7 @@
 .tk-list-scroll {
   flex: 1;
   overflow-y: auto;
-  margin: 0 -4px;
+  min-height: 0;
 }
 
 .tk-empty {
@@ -85,25 +59,41 @@
   color: var(--muted);
 }
 
+/* rows: no fill, hover/selected = accent text + a 3px accent left bar,
+   exactly like the sidebar nav. */
 .tk-list-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
-  padding: 8px;
+  padding: 8px 6px;
   border: 0;
-  border-radius: var(--r-sm);
   background: none;
   text-align: left;
   cursor: pointer;
   font: inherit;
-  color: var(--muted);
+  transition: color 0.14s;
 }
-.tk-list-item:hover {
-  background: var(--surface);
+.tk-list-item:hover .tk-item-name,
+.tk-list-item:hover .tk-item-sub {
+  color: var(--accent);
 }
-.tk-list-item.on {
-  background: var(--accent-soft);
+.tk-list-item.on .tk-item-name {
+  color: var(--accent);
+}
+.tk-list-item.on .tk-item-sub {
+  color: var(--accent);
+}
+.tk-list-item.on::before {
+  content: '';
+  position: absolute;
+  left: -21px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
 
 .tk-dot {
@@ -121,27 +111,84 @@
 }
 .tk-item-name {
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--heading);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 0.14s;
 }
 .tk-item-sub {
   font-size: 10.5px;
   color: var(--muted);
+  transition: color 0.14s;
+}
+
+/* right side: the AI Track view (its own map/UI, unchanged) */
+.tk-view {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tk-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tk-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--heading);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tk-back:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tk-view-name {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--heading);
+}
+.tk-hint {
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tk-frame-wrap + .tk-frame-wrap {
+  margin-top: 8px;
+}
+.tk-frame-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 6px;
 }
 
 .tk-map {
   flex: 1;
-  min-width: 0;
-  height: 100%;
+  min-height: max(440px, calc(100vh - 220px));
+}
+.tk-map-split {
+  min-height: max(320px, calc((100vh - 260px) / 2));
 }
 
 @media (max-width: 720px) {
   .tk-layout {
     flex-direction: column;
-    height: auto;
+    min-height: 0;
   }
   .tk-list {
     flex: none;
@@ -153,7 +200,10 @@
     padding-bottom: 12px;
     max-height: 240px;
   }
+  .tk-list-item.on::before {
+    left: -2px;
+  }
   .tk-map {
-    height: max(360px, calc(100vh - 420px));
+    min-height: max(360px, calc(100vh - 420px));
   }
 }

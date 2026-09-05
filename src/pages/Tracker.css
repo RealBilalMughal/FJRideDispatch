@@ -1,23 +1,107 @@
-.tk-list {
+/* left panel (vehicle list) + map, filling whatever's left below the header
+   with a sane floor for short viewports. */
+.tk-layout {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  height: max(440px, calc(100vh - 200px));
 }
 
-.tk-label {
+.tk-panel {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.tk-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.tk-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--heading);
+}
+
+.tk-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tk-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.tk-item:hover {
+  background: var(--surface);
+}
+.tk-item.on {
+  background: var(--accent-soft);
+}
+
+.tk-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.tk-item-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tk-item-name {
   font-size: 12.5px;
   font-weight: 700;
   color: var(--heading);
-  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tk-item-sub {
+  font-size: 10.5px;
+  color: var(--muted);
 }
 
-/* "full screen" = fills whatever's left below the topbar/page header, with a
-   sane floor so it never collapses on a short viewport - not literal
-   edge-to-edge (the page keeps its normal header), just as tall as it can be. */
-.tk-frame {
-  height: max(420px, calc(100vh - 200px));
+.tk-map {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }
 
-.tk-frame-split {
-  height: max(320px, calc((100vh - 240px) / 2));
+@media (max-width: 640px) {
+  .tk-layout {
+    flex-direction: column;
+    height: auto;
+  }
+  .tk-panel {
+    flex: none;
+    max-height: 220px;
+  }
+  .tk-map {
+    height: max(360px, calc(100vh - 380px));
+  }
 }

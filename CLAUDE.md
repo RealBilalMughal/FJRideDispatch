@@ -501,21 +501,24 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   any more - it's its own page (below).
 - **Tracker** (`/tracker`, sidebar label "Tracker", group "Dispatch", gated
   on `rides` view like Vehicle Board - reuses that permission, no separate
-  `PERMISSION_PAGES` entry) - a full page (not a Vehicle Board tab, moved out
-  of there) just for live GPS tracking: each city's own Live Tracker link
-  (Settings -> Live Tracker, `cities.tracker_url`) embedded as big as the
-  viewport reasonably allows (`Tracker.css`'s `.tk-frame`,
-  `height: max(420px, calc(100vh - 200px))` - a floor so it never collapses
-  on a short viewport, not literal edge-to-edge since the page keeps its
-  normal header). `trackerCities` (off `useCity().allowedCities`, already
-  loaded, no extra query) is every allowed city with a `tracker_url` set,
-  filtered to just the active city when one is selected, or left as every
-  such city when the topbar filter is on All - a single city gets one full
-  `.tk-frame`; multiple (the All case) stack vertically at half that height
-  each (`.tk-frame-split`) with a city-name label above, so it's clear which
-  is which. Confirmed via response headers that AI Track's sharing links
-  carry no `X-Frame-Options`/`frame-ancestors` restriction, so plain
-  `<iframe>` embedding works, no proxy or scraping needed.
+  `PERMISSION_PAGES` entry) - a full page for live GPS tracking, **our own
+  Leaflet map** (not the AI Track iframe any more): a left `.tk-panel` with a
+  search box + a scrollable vehicle list (status dot + `vehicle_no` + speed),
+  and the map filling the rest (`.tk-layout`, `height: max(440px,
+  calc(100vh - 200px))`; stacks on ≤640px). Clicking a list row **or** a map
+  marker `map.flyTo()`s to that vehicle, enlarges its dot and pins a
+  permanent tooltip, and bumps its `zIndexOffset` so it sits above the
+  others. Positions come from `fetchFleetTracker()` (`src/lib/tracker.js`) -
+  it hits the same `/items` endpoint as `fetchLiveTracker` but returns
+  **every** vehicle the link exposes. The cities' `tracker_url`s (Settings ->
+  Live Tracker) are the source; when the topbar filter is All, every allowed
+  city's link is polled and the results merged by vehicle id. AI Track's
+  `/items?time=0` only returns vehicles that pinged recently (not the full
+  roster in one call), so the page **accumulates** across polls (every 15s) -
+  updates by id, drops anything unseen for 10 min, resets on a city switch.
+  (Confirmed earlier that AI Track's sharing links are CORS-open and carry no
+  `X-Frame-Options` - the old iframe embed worked too, this just replaces it
+  with something we can interact with.)
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role

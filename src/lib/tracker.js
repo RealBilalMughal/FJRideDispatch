@@ -14,7 +14,26 @@ function itemsUrl(shareUrl) {
   }
 }
 
-// -> { lat, lng, speed (kph), course (deg), status, timestamp, address } | null
+// one /items entry -> our shape, or null if it has no usable position
+function normItem(it) {
+  const lat = Number(it?.lat)
+  const lng = Number(it?.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return {
+    id: it.id ?? `${it.name}-${lat}-${lng}`,
+    name: it.name || '',
+    lat,
+    lng,
+    speed: Number(it.speed) || 0,
+    course: Number(it.course) || 0,
+    // icon_color: 'green' moving / 'red' stopped / 'blue' offline / 'yellow' engine-on
+    status: it.icon_color || 'offline',
+    timestamp: it.timestamp ?? null,
+    address: it.addr || '',
+  }
+}
+
+// a per-vehicle sharing link -> that one vehicle's live fix | null
 export async function fetchLiveTracker(shareUrl) {
   const url = itemsUrl(shareUrl)
   if (!url) return null
@@ -22,21 +41,22 @@ export async function fetchLiveTracker(shareUrl) {
     const res = await fetch(url)
     if (!res.ok) return null
     const data = await res.json()
-    const item = data?.items?.[0]
-    const lat = Number(item?.lat)
-    const lng = Number(item?.lng)
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-    return {
-      lat,
-      lng,
-      speed: Number(item.speed) || 0,
-      course: Number(item.course) || 0,
-      // icon_color: 'green' moving / 'red' stopped / 'blue' offline / 'yellow' engine-on
-      status: item.icon_color || 'offline',
-      timestamp: item.timestamp ?? null,
-      address: item.addr || '',
-    }
+    return normItem(data?.items?.[0])
   } catch {
     return null
+  }
+}
+
+// a fleet (or per-vehicle) sharing link -> every vehicle it exposes
+export async function fetchFleetTracker(shareUrl) {
+  const url = itemsUrl(shareUrl)
+  if (!url) return []
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data?.items || []).map(normItem).filter(Boolean)
+  } catch {
+    return []
   }
 }

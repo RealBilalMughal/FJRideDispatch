@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Pencil, Shield, Timer } from 'lucide-react'
+import { MapPinned, Pencil, Satellite, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -24,6 +24,7 @@ import './Settings.css'
 const SECTIONS = [
   { key: 'airports', label: 'Airport Locations', icon: MapPinned },
   { key: 'buffer', label: 'Ride Buffer Time', icon: Timer },
+  { key: 'tracker', label: 'Live Tracker', icon: Satellite },
 ]
 
 export default function Settings() {
@@ -67,7 +68,13 @@ export default function Settings() {
         </div>
 
         <div className="set-panel">
-          {section === 'airports' ? <AirportLocationsPanel /> : <RideBufferTimePanel />}
+          {section === 'airports' ? (
+            <AirportLocationsPanel />
+          ) : section === 'buffer' ? (
+            <RideBufferTimePanel />
+          ) : (
+            <LiveTrackerPanel />
+          )}
         </div>
       </div>
     </div>
@@ -482,6 +489,105 @@ function RideBufferTimePanel() {
           )}
         </div>
       )}
+    </>
+  )
+}
+
+// ── Live Tracker ─────────────────────────────────────────────────────────
+// One global (not per-city) sharing link from the fleet's GPS tracker
+// service (e.g. AI Track), stored on the app_settings singleton row
+// (id = true). Embedded read-only on the Vehicle Board's Tracker tab, which
+// only shows when this is set. Same read-only-until-Edit pattern as the
+// other panels, minus the City field - this isn't city-scoped.
+function LiveTrackerPanel() {
+  const [row, setRow] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [url, setUrl] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('app_settings').select('tracker_url').eq('id', true).single()
+    setRow(data)
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const startEdit = () => {
+    setUrl(row?.tracker_url ?? '')
+    setErr('')
+    setEditing(true)
+  }
+  const cancel = () => {
+    setErr('')
+    setEditing(false)
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    const trimmed = url.trim()
+    if (trimmed && !/^https:\/\//i.test(trimmed)) return setErr('Must be a full https:// link')
+    setErr('')
+    setBusy(true)
+    const { error } = await supabase.from('app_settings').update({ tracker_url: trimmed || null }).eq('id', true)
+    setBusy(false)
+    if (error) return setErr(error.message)
+    toast.success('Tracker link updated')
+    setEditing(false)
+    load()
+  }
+
+  return (
+    <>
+      <div className="set-panel-head">
+        <div>
+          <h3>Live Tracker</h3>
+          <div className="sub">
+            The fleet&rsquo;s GPS tracker sharing link (all vehicles, one link) — embedded
+            as a live map on the Vehicle Board&rsquo;s Tracker tab. Leave it blank to hide
+            that tab.
+          </div>
+        </div>
+        {!editing && (
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
+            <Pencil size={13} /> Edit
+          </button>
+        )}
+      </div>
+
+      <div className="set-form">
+        {editing ? (
+          <form className="modal-form" onSubmit={submit}>
+            {err && <div className="modal-error">{err}</div>}
+            <div className="field">
+              <label htmlFor="tr-url">Tracker sharing link</label>
+              <input
+                id="tr-url"
+                className="input"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://login.aitrack.pk/sharing/..."
+                autoComplete="off"
+                autoFocus
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-square" disabled={busy}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="view-row">
+            <span className="view-label">Tracker link</span>
+            <span className="view-value">{row?.tracker_url || '—'}</span>
+          </div>
+        )}
+      </div>
     </>
   )
 }

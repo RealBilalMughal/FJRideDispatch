@@ -67,7 +67,8 @@ keys, tables or deploy targets with any other project.
   `20260905120000_ride_buffers.sql`, `20260906120000_return_leg_buffer.sql`,
   `20260906140000_return_leg_cascade.sql`, `20260906180000_duty_sheet_date.sql`,
   `20260906200000_deadhead_buffer.sql`, `20260906210000_disable_vehicle_window_excl.sql`,
-  `20260906220000_route_geometry.sql` (all APPLIED).
+  `20260906220000_route_geometry.sql`, `20260906230000_app_settings_tracker.sql`
+  (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -395,7 +396,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   `VehicleBoard.css` (it used to borrow `RoleAccess.css`'s `.ra-modeswitch`,
   which this page's own lazily-loaded chunk never pulls in, so the buttons
   rendered as plain unstyled `<button>`s). The Map tab's Leaflet container is
-  640px tall (`BoardMap`'s `.stop-map`).
+  640px tall (`BoardMap`'s `.stop-map` - this page also now imports
+  `components/stop-map.css` directly for the same reason, rather than relying
+  on some other page's chunk to have pulled it in first). A third **Tracker**
+  tab appears only when Settings -> Live Tracker has a link set - `TrackerFrame`
+  just `<iframe src={trackerUrl}>`s it at the same 640px height (one link
+  covers the whole fleet, so there's no per-vehicle picker).
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role
@@ -434,6 +440,20 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     to the first city, switching shows that city's values immediately (view
     or edit mode). An effect re-syncs the selection if the topbar filter
     changes while the page stays mounted.
+  - **Live Tracker** - one **global** (not per-city, no City field) sharing
+    link from a GPS tracker service (e.g. AI Track - one link shows every
+    vehicle in the fleet already, so there's nothing to scope). Stored on
+    `public.app_settings`, a one-row singleton table (`id boolean primary
+    key default true`, `check (id)` - the standard trick for "exactly one
+    row"), RLS'd like `cities` (`app_settings_select`: any active user reads;
+    `app_settings_super`: super_admin writes). Same read-only-until-Edit
+    pattern as the other two panels; Vehicle Board's Tracker tab
+    (`VehicleBoard.jsx`) only appears once this is set, and just `<iframe>`s
+    the link directly - confirmed via response headers that AI Track's
+    sharing links carry no `X-Frame-Options`/`frame-ancestors` restriction,
+    so plain iframe embedding works, no proxy or scraping needed. The link
+    itself is deliberately never committed to a migration or the repo - it's
+    written straight into `app_settings` through this panel's own save.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

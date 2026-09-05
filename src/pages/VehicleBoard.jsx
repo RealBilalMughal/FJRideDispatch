@@ -3,7 +3,7 @@ import { MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leafle
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Map as MapIcon, RefreshCw, Rows3, Shield } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Map as MapIcon, RefreshCw, Rows3, Satellite, Shield } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -12,6 +12,7 @@ import { addDays, fmtTimeOnly12, pkToday } from '../lib/time'
 import { blockLabel } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import Modal from '../components/Modal'
+import '../components/stop-map.css'
 import './VehicleBoard.css'
 
 const RIDE_SELECT = `
@@ -32,11 +33,23 @@ export default function VehicleBoard() {
   const canView = can('rides', 'view')
 
   const [date, setDate] = useState(pkToday)
-  const [tab, setTab] = useState('board') // board | map
+  const [tab, setTab] = useState('board') // board | map | tracker
   const [rides, setRides] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
   const [openRide, setOpenRide] = useState(null)
+  // one global sharing link (all vehicles, all cities), not per-day/city -
+  // fetched once, independent of `load()` below.
+  const [trackerUrl, setTrackerUrl] = useState('')
+  useEffect(() => {
+    if (!canView) return
+    supabase
+      .from('app_settings')
+      .select('tracker_url')
+      .eq('id', true)
+      .single()
+      .then(({ data }) => setTrackerUrl(data?.tracker_url || ''))
+  }, [canView])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -129,6 +142,11 @@ export default function VehicleBoard() {
             <button className={tab === 'map' ? 'on' : ''} onClick={() => setTab('map')}>
               <MapIcon size={13} /> Map
             </button>
+            {trackerUrl && (
+              <button className={tab === 'tracker' ? 'on' : ''} onClick={() => setTab('tracker')}>
+                <Satellite size={13} /> Tracker
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -187,8 +205,10 @@ export default function VehicleBoard() {
             </div>
           )}
         </div>
-      ) : (
+      ) : tab === 'map' ? (
         <BoardMap rides={rides} onPick={setOpenRide} />
+      ) : (
+        <TrackerFrame url={trackerUrl} />
       )}
 
       {openRide && (
@@ -234,6 +254,16 @@ export default function VehicleBoard() {
           </div>
         </Modal>
       )}
+    </div>
+  )
+}
+
+// Embeds the fleet's GPS tracker sharing link (Settings -> Live Tracker) -
+// one link covers every vehicle, so there's nothing per-vehicle to pick here.
+function TrackerFrame({ url }) {
+  return (
+    <div className="stop-map" style={{ height: 640 }}>
+      <iframe src={url} title="Live Tracker" style={{ width: '100%', height: '100%', border: 0 }} />
     </div>
   )
 }

@@ -7,7 +7,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0 6px;
+  padding: 2px 0 3px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
@@ -24,13 +24,19 @@
   border-bottom-color: var(--accent);
 }
 
+/* tighten the gap under the page header - the tracker wants the map as tall
+   as it can get */
+.tk-page {
+  gap: 6px;
+}
+
 /* left list (Settings-panel look: flat, a hairline divider, no card box)
    + the AI Track / Map view, filling whatever's left below the header. */
 .tk-layout {
   display: flex;
   gap: 0;
   align-items: stretch;
-  min-height: max(440px, calc(100vh - 200px));
+  min-height: max(440px, calc(100vh - 184px));
 }
 
 .tk-list {
@@ -42,7 +48,7 @@
   margin-right: 24px;
   /* drop past the .tk-bar row so the divider starts level with the map top
      and runs exactly the map's height */
-  margin-top: 38px;
+  margin-top: 32px;
 }
 
 .tk-list-head {
@@ -159,7 +165,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 /* row above the map, outside it: selected-vehicle bar on the left, the
@@ -168,7 +174,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 28px;
+  min-height: 26px;
 }
 .tk-bar .tk-viewswitch {
   margin-left: auto;
@@ -222,10 +228,12 @@
    inside can size off it - a flex `flex:1` alone leaves them 0-tall here */
 .tk-map {
   flex: 1 1 auto;
-  height: max(420px, calc(100vh - 270px));
+  /* = the layout height (100vh - 184px) minus the .tk-bar row (26) + gap (6),
+     so the map bottom lands exactly on the list divider's bottom */
+  height: max(408px, calc(100vh - 216px));
 }
 .tk-map-split {
-  height: max(320px, calc((100vh - 320px) / 2));
+  height: max(300px, calc((100vh - 272px) / 2));
 }
 
 @media (max-width: 720px) {

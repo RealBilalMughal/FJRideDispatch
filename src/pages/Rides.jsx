@@ -281,7 +281,10 @@ export default function Rides() {
           ...r,
           city_name: r.city?.name ?? '',
           crew_text: crewNamesText(r.ride_crew),
-          crew_count: crewCount(r.ride_crew),
+          // a Return Leg carries no passenger (empty repositioning) - its
+          // ride_crew row is only there so the origin crew's name still
+          // shows in the Crew column; Count always displays 0 for it.
+          crew_count: r.block_type === 'return_leg' ? 0 : crewCount(r.ride_crew),
           vehicle_text: vehicleText(r.vehicle),
           display_ref: suffix ? `${parent.ref_no}-${suffix}` : String(r.ref_no),
           return_leg: returnLegByParent.get(r.id) ?? null,
@@ -864,38 +867,46 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
       const { driverId } = sameVehicleShiftDriver(shift)
       const legRideDate = start_at ? isoToLocalDate(start_at) : row.ride_date
 
-      // no ride_crew row on purpose - the return leg carries no passenger,
-      // it's the vehicle running empty back to the airport; crew count is 0.
-      const { error } = await supabase.from('rides').insert({
-        city_id: row.city_id,
-        flight_id: row.flight_id,
-        flight_no: row.flight_no,
-        flight_code: row.flight_code,
-        block_type: 'return_leg',
-        ride_date: legRideDate,
-        duty_sheet_date: legRideDate,
-        vehicle_id: row.vehicle_id,
-        shift: row.vehicle_id ? shift : null,
-        driver_id: driverId || null,
-        airport_name: airport.name,
-        airport_lat: airport.lat,
-        airport_lng: airport.lng,
-        origin_label: pts[0]?.label,
-        origin_lat: pts[0]?.lat,
-        origin_lng: pts[0]?.lng,
-        dest_label: pts[1]?.label,
-        dest_lat: pts[1]?.lat,
-        dest_lng: pts[1]?.lng,
-        waypoints: pts,
-        distance_km: info?.distanceKm ?? null,
-        duration_min: info?.durationMin ?? null,
-        start_at,
-        end_at,
-        status: 'dispatched',
-        return_of_ride_id: row.id,
-        created_by: createdBy ?? null,
-      })
+      // the return leg carries no passenger - it's the vehicle running empty
+      // back to the airport - so its Count always displays 0 (see the `list`
+      // memo and the view modal above), regardless of ride_crew. It still
+      // gets a single ride_crew row below, purely so the Crew column/export/
+      // view can show WHOSE stop it originated from.
+      const { data: created, error } = await supabase
+        .from('rides')
+        .insert({
+          city_id: row.city_id,
+          flight_id: row.flight_id,
+          flight_no: row.flight_no,
+          flight_code: row.flight_code,
+          block_type: 'return_leg',
+          ride_date: legRideDate,
+          duty_sheet_date: legRideDate,
+          vehicle_id: row.vehicle_id,
+          shift: row.vehicle_id ? shift : null,
+          driver_id: driverId || null,
+          airport_name: airport.name,
+          airport_lat: airport.lat,
+          airport_lng: airport.lng,
+          origin_label: pts[0]?.label,
+          origin_lat: pts[0]?.lat,
+          origin_lng: pts[0]?.lng,
+          dest_label: pts[1]?.label,
+          dest_lat: pts[1]?.lat,
+          dest_lng: pts[1]?.lng,
+          waypoints: pts,
+          distance_km: info?.distanceKm ?? null,
+          duration_min: info?.durationMin ?? null,
+          start_at,
+          end_at,
+          status: 'dispatched',
+          return_of_ride_id: row.id,
+          created_by: createdBy ?? null,
+        })
+        .select('id')
+        .single()
       if (error) throw new Error(mapRideError(error, row.vehicle_id, vehicles))
+      await supabase.from('ride_crew').insert({ ride_id: created.id, crew_id: lastCrew.id, seq: 0 })
       toast.success('Return leg ride created')
       onDone()
     } catch (e) {
@@ -1701,7 +1712,7 @@ function RideModal({
             ['Check-out', fmtTime12(row.checkout_old) || '—'],
             ['Actual', fmtTime12(row.checkout_new) || '—'],
             ['Crew', crewNamesText(row.ride_crew)],
-            ['Count', crewCount(row.ride_crew)],
+            ['Count', row.block_type === 'return_leg' ? 0 : crewCount(row.ride_crew)],
             ['Origin', row.origin_label || '—'],
             ['Destination', row.dest_label || '—'],
             ['Vehicle', row.vehicle?.vehicle_no || '—'],

@@ -259,9 +259,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   opens `CreateRideModal` - a mode switch (flat underline tabs, `.date-tabs`)
   between two ways to auto-create a follow-on ride from the last crew this
   dropoff ride dropped off at:
-  - **Return Leg** - unchanged: last crew's stop -> Airport, same vehicle, no
-    `ride_crew` row (empty repositioning, so crew count is 0 - the stop is
-    just the physical route origin). At most one per dropoff ride - if it
+  - **Return Leg** - last crew's stop -> Airport, same vehicle. It's an empty
+    repositioning (no passenger), so its **Count always displays 0** - forced
+    in the `list` memo/view modal by `block_type === 'return_leg'`, not
+    derived from `ride_crew.length`. It still gets a single `ride_crew` row
+    (that same last crew, `seq: 0`) purely so the **Crew** column/export/view
+    can still show whose stop it originated from. At most one per dropoff ride - if it
     already exists, this tab shows "already created" + the return leg's ref,
     date, Ride Time, vehicle, and a "View return leg" shortcut instead of the
     create form (the tab defaults to Deadhead when this is the case).

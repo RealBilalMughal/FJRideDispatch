@@ -1,0 +1,15 @@
+-- The vehicle-busy check is temporarily disabled end-to-end per explicit
+-- request (client pre-check already commented out in Rides.jsx's RideModal).
+-- This was the remaining DB-level guard - without it, an overlapping save no
+-- longer fails with "already booked for an overlapping time - pick another
+-- vehicle or change the window". Re-add with the same definition as in
+-- 20260904170000_rides.sql when the busy logic is reworked and re-enabled:
+--
+--   alter table public.rides
+--     add constraint rides_vehicle_window_excl
+--     exclude using gist (
+--       vehicle_id with =,
+--       tstzrange(start_at, end_at, '[)') with &&
+--     )
+--     where (vehicle_id is not null and start_at is not null and end_at is not null);
+alter table public.rides drop constraint if exists rides_vehicle_window_excl;

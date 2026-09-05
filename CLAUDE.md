@@ -78,8 +78,8 @@ keys, tables or deploy targets with any other project.
   `20260906200000_deadhead_buffer.sql`, `20260906210000_disable_vehicle_window_excl.sql`,
   `20260906220000_route_geometry.sql`, `20260906230000_app_settings_tracker.sql`
   (superseded by the next one - dropped, no data ever depended on it),
-  `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`
-  (all APPLIED).
+  `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`,
+  `20260907120000_crew_wait_buffer.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -95,7 +95,7 @@ keys, tables or deploy targets with any other project.
   `.eq('city_id', cityId)`; add-forms default to it. Role Access has a "City access"
   panel (By Role + By User) that writes `role_cities` / `user_cities`.
   `useCity().reloadCities()` re-fetches the raw `cities` rows (id, name, sort,
-  airport_*, checkin/checkout_buffer_min) on demand - used after a save on the
+  airport_*, the *_buffer_min columns, tracker_url) on demand - used after a save on the
   Settings page so `allCities`/`allowedCities` refresh without a full page reload.
 
 ## Shared display-ID series
@@ -353,11 +353,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   Auto-suggested from the anchor time (Actual if set, else scheduled) and
   **this ride's city's own buffer** (`cities.checkin_buffer_min` /
   `checkout_buffer_min`, defaults 90 / 30): pickup = check-in − checkin buffer
-  − drive time, so the vehicle is AT the airport that long before check-in;
-  dropoff = check-out **+** checkout buffer. Editable. **ETA** (= start + ORS
-  drive time) and the internal `end_at` (= start + drive + 30-min turnaround
-  buffer, for the vehicle conflict - a separate, fixed `BUFFER_MIN`) are
-  computed, never typed. `status` still defaults to `dispatched` on every
+  − trip time, so the vehicle is AT the airport that long before check-in;
+  dropoff = check-out **+** checkout buffer. Editable. **ETA** (= start + trip
+  time) and the internal `end_at` (= start + trip + 30-min turnaround buffer,
+  for the vehicle conflict - a separate, fixed `BUFFER_MIN`) are computed,
+  never typed. **"Trip time" = the stored `duration_min` = ORS road minutes +
+  the multi-crew wait** (`crewWaitMinutes()`, Settings → Ride Buffer Time →
+  Crew wait buffer): a pickup / dropoff visiting >1 crew stop waits
+  `crew_wait_buffer_min` at each stop after the first, `(crewCount-1) *
+  buffer`, folded into `duration_min` at save (KM stays pure road distance). `status` still defaults to `dispatched` on every
   insert but is no longer shown as a table/export column (see below);
   completion waits on a future driver app.
   (Check-in/Check-out buffer minutes are edited on the **Settings** page now,
@@ -574,13 +578,21 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     (`StopMap` pin, same UI as a Crew stop) -> writes `cities.airport_name/
     airport_lat/airport_lng`, the columns Ride Dispatch routing already reads.
     No routing logic lives here.
-  - **Ride Buffer Time** - edit a city's `checkin_buffer_min` / `checkout_buffer_min`
-    / `return_leg_buffer_min` / `deadhead_buffer_min` (minutes) -> the four
-    ride-time buffers Rides' auto-suggest, Generate and Create Ride
-    (Return Leg / Deadhead) use (see the Ride section above). Defaults
-    (90 / 30 / 10 / 15) live in `rideRoute.js` as `DEFAULT_CHECKIN_BUFFER_MIN`
-    / `DEFAULT_CHECKOUT_BUFFER_MIN` / `DEFAULT_RETURN_LEG_BUFFER_MIN` /
-    `DEFAULT_DEADHEAD_BUFFER_MIN`.
+  - **Ride Buffer Time** - edit a city's `checkin_buffer_min` /
+    `checkout_buffer_min` / `return_leg_buffer_min` / `deadhead_buffer_min` /
+    `crew_wait_buffer_min` (minutes) -> the five ride-time buffers Rides'
+    auto-suggest, Generate and Create Ride (Return Leg / Deadhead) use (see the
+    Ride section above). Defaults (90 / 30 / 10 / 15 / 5) live in `rideRoute.js`
+    as `DEFAULT_CHECKIN_BUFFER_MIN` / `DEFAULT_CHECKOUT_BUFFER_MIN` /
+    `DEFAULT_RETURN_LEG_BUFFER_MIN` / `DEFAULT_DEADHEAD_BUFFER_MIN` /
+    `DEFAULT_CREW_WAIT_BUFFER_MIN`. **Crew wait** = a pickup / dropoff that
+    visits more than one crew stop waits at each stop after the first for crew
+    to board / alight: `crewWaitMinutes(block, crewCount, buffer)` =
+    `(crewCount - 1) * buffer` for pickup/dropoff with `crewCount > 1`, else 0.
+    It folds into the ride's stored `duration_min` (road time from ORS +
+    this wait), so every ETA / `end_at` / Pickup-Time auto-suggest / table /
+    export / Vehicle Board figure accounts for it with no separate column;
+    `distance_km` stays pure road distance.
   - Both panels: **read-only view by default, "Edit" reveals the form** (same
     pattern as Profile), with an Edit button top-right of the panel head.
     Editing disables the City field (finish or Cancel first) and has

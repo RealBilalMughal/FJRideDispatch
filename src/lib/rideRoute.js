@@ -93,6 +93,18 @@ export const DEFAULT_RETURN_LEG_BUFFER_MIN = 10
 // on cities.deadhead_buffer_min.
 export const DEFAULT_DEADHEAD_BUFFER_MIN = 15
 
+// Per-crew wait: a pickup / dropoff that visits more than one crew stop waits
+// at each stop AFTER the first for crew to board / alight. Total extra minutes
+// = (crewCount - 1) * buffer - folded into the ride's duration_min so ETA,
+// end_at and the Pickup-Time auto-suggest all account for it. Per-city
+// override on cities.crew_wait_buffer_min.
+export const DEFAULT_CREW_WAIT_BUFFER_MIN = 5
+export const crewWaitMinutes = (block, crewCount, buffer = DEFAULT_CREW_WAIT_BUFFER_MIN) => {
+  const n = Number(crewCount) || 0
+  const b = Number.isFinite(Number(buffer)) ? Number(buffer) : DEFAULT_CREW_WAIT_BUFFER_MIN
+  return (block === 'pickup' || block === 'dropoff') && n > 1 ? (n - 1) * b : 0
+}
+
 export const RIDE_STATUS = ['scheduled', 'dispatched', 'enroute', 'completed', 'cancelled']
 export const statusLabel = (s) =>
   ({ scheduled: 'Scheduled', dispatched: 'Dispatched', enroute: 'En route', completed: 'Completed', cancelled: 'Cancelled' })[s] || s

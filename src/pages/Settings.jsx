@@ -7,6 +7,7 @@ import { useCity } from '../context/useCity'
 import {
   DEFAULT_CHECKIN_BUFFER_MIN,
   DEFAULT_CHECKOUT_BUFFER_MIN,
+  DEFAULT_CREW_WAIT_BUFFER_MIN,
   DEFAULT_DEADHEAD_BUFFER_MIN,
   DEFAULT_RETURN_LEG_BUFFER_MIN,
 } from '../lib/rideRoute'
@@ -287,6 +288,7 @@ function RideBufferTimePanel() {
   const [checkout, setCheckout] = useState('')
   const [returnLeg, setReturnLeg] = useState('')
   const [deadhead, setDeadhead] = useState('')
+  const [crewWait, setCrewWait] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -310,6 +312,7 @@ function RideBufferTimePanel() {
     setCheckout(city?.checkout_buffer_min ?? DEFAULT_CHECKOUT_BUFFER_MIN)
     setReturnLeg(city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN)
     setDeadhead(city?.deadhead_buffer_min ?? DEFAULT_DEADHEAD_BUFFER_MIN)
+    setCrewWait(city?.crew_wait_buffer_min ?? DEFAULT_CREW_WAIT_BUFFER_MIN)
     setErr('')
     setEditing(true)
   }
@@ -327,10 +330,12 @@ function RideBufferTimePanel() {
     const co = Number(checkout)
     const rl = Number(returnLeg)
     const dh = Number(deadhead)
+    const cw = Number(crewWait)
     if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
     if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
     if (!Number.isFinite(rl) || rl < 0) return setErr('Return Leg buffer must be a number of minutes')
     if (!Number.isFinite(dh) || dh < 0) return setErr('Deadhead buffer must be a number of minutes')
+    if (!Number.isFinite(cw) || cw < 0) return setErr('Crew wait buffer must be a number of minutes')
     setBusy(true)
     const { error } = await supabase
       .from('cities')
@@ -339,6 +344,7 @@ function RideBufferTimePanel() {
         checkout_buffer_min: Math.round(co),
         return_leg_buffer_min: Math.round(rl),
         deadhead_buffer_min: Math.round(dh),
+        crew_wait_buffer_min: Math.round(cw),
       })
       .eq('id', Number(cityId))
     setBusy(false)
@@ -354,9 +360,10 @@ function RideBufferTimePanel() {
         <div>
           <h3>Ride Buffer Time</h3>
           <div className="sub">
-            Pickup Time = Check-in − Check-in buffer − drive time. Drop Time = Check-out +
+            Pickup Time = Check-in − Check-in buffer − trip time. Drop Time = Check-out +
             Check-out buffer. Return Leg / Deadhead Ride Time = drop-off arrival + that
-            buffer. Each city keeps its own buffers.
+            buffer. Crew wait buffer adds (crew − 1) × this many minutes to a multi-crew
+            pickup / dropoff. Each city keeps its own buffers.
           </div>
         </div>
         {!editing && cities.length > 0 && (
@@ -450,6 +457,25 @@ function RideBufferTimePanel() {
                 </div>
               </div>
 
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="bf-cw">Crew wait buffer (min)</label>
+                  <input
+                    id="bf-cw"
+                    type="number"
+                    min="0"
+                    className="input"
+                    value={crewWait}
+                    onChange={(e) => setCrewWait(e.target.value)}
+                  />
+                  <span className="field-hint">
+                    Multi-crew pickup / dropoff: wait per stop after the first &mdash; adds
+                    (crew &minus; 1) &times; this to the ride time
+                  </span>
+                </div>
+                <div className="field" />
+              </div>
+
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
                   Cancel
@@ -483,6 +509,12 @@ function RideBufferTimePanel() {
                 <span className="view-label">Deadhead buffer</span>
                 <span className="view-value">
                   {city?.deadhead_buffer_min ?? DEFAULT_DEADHEAD_BUFFER_MIN} min
+                </span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Crew wait buffer</span>
+                <span className="view-value">
+                  {city?.crew_wait_buffer_min ?? DEFAULT_CREW_WAIT_BUFFER_MIN} min
                 </span>
               </div>
             </div>

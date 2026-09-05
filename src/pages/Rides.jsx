@@ -39,8 +39,10 @@ import {
   blockLabel,
   buildRoutePoints,
   crewRule,
+  crewWaitMinutes,
   DEFAULT_CHECKIN_BUFFER_MIN,
   DEFAULT_CHECKOUT_BUFFER_MIN,
+  DEFAULT_CREW_WAIT_BUFFER_MIN,
   DEFAULT_DEADHEAD_BUFFER_MIN,
   DEFAULT_RETURN_LEG_BUFFER_MIN,
   displayCrewCount,
@@ -1564,6 +1566,10 @@ function RideModal({
     const d = Number(allowedCities.find((x) => x.id === cityId)?.deadhead_buffer_min)
     return Number.isFinite(d) ? d : DEFAULT_DEADHEAD_BUFFER_MIN
   }, [allowedCities, cityId])
+  const crewWaitBufferMin = useMemo(() => {
+    const w = Number(allowedCities.find((x) => x.id === cityId)?.crew_wait_buffer_min)
+    return Number.isFinite(w) ? w : DEFAULT_CREW_WAIT_BUFFER_MIN
+  }, [allowedCities, cityId])
 
   const rule = crewRule(form.block_type, form.deadhead_mode)
   const routePoints = useMemo(
@@ -1632,9 +1638,15 @@ function RideModal({
     }
   }, [routeReady, routePoints])
 
-  const durMin = routeData?.durationMin ?? row?.duration_min ?? null
+  // A multi-crew pickup / dropoff waits at each stop after the first for crew
+  // to board / alight - (crewCount - 1) * the city's crew-wait buffer. It folds
+  // into duration_min so ETA, end_at, the Pickup-Time auto-suggest and every
+  // downstream display (table, view, export, Vehicle Board) account for it.
+  const crewWaitMin = crewWaitMinutes(form.block_type, crewList.length, crewWaitBufferMin)
+  const roadMin = routeData?.durationMin ?? null
+  const durMin = roadMin != null ? roadMin + crewWaitMin : (row?.duration_min ?? null)
 
-  // auto-suggest "Pickup Time" / "Drop Time" from the block + its flight time + road duration,
+  // auto-suggest "Pickup Time" / "Drop Time" from the block + its flight time + trip duration,
   // using THIS ride's city's own Check-in/Check-out buffer (cities.checkin/checkout_buffer_min).
   // Anchor = the Actual time if set, else the scheduled one (checkin_new || checkin_old).
   // Pickup:  crew must be AT the airport [checkin buffer] before check-in -> start = check-in - buffer - drive.
@@ -1673,7 +1685,7 @@ function RideModal({
   ])
 
   const startAt = toPkIso(form.ride_date, form.start_time)
-  // ETA (arrival) = start + road minutes ; vehicle-busy end = start + road + buffer.
+  // ETA (arrival) = start + trip minutes (road + crew waits) ; vehicle-busy end = + buffer.
   const etaAt = startAt && durMin != null ? new Date(new Date(startAt).getTime() + durMin * 60000).toISOString() : null
   const endAt = startAt
     ? new Date(new Date(startAt).getTime() + ((durMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
@@ -2171,6 +2183,7 @@ function RideModal({
             {km != null && (
               <span className="ride-km-badge">
                 {Number(km).toFixed(2)} km{durMin != null ? ` · ${durMin} min` : ''}
+                {crewWaitMin > 0 ? ` — ${roadMin ?? '—'} min drive + ${crewWaitMin} min crew wait` : ''}
               </span>
             )}
           </label>
@@ -2268,7 +2281,11 @@ function RideModal({
               value={etaAt ? fmtTimeOnly12(etaAt) : durMin == null ? 'needs route + start' : '—'}
               disabled
             />
-            <span className="field-hint">Ride start + {durMin != null ? `${durMin} min drive` : 'drive time'}</span>
+            <span className="field-hint">
+              {durMin != null
+                ? `Ride start + ${durMin} min${crewWaitMin > 0 ? ` (incl. ${crewWaitMin} min crew wait)` : ' drive'}`
+                : 'Ride start + trip time'}
+            </span>
           </div>
         </div>
 
@@ -2375,7 +2392,10 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
     const ft = toTime24(flight.flight_time)
     const origin = pts[0]
     const dest = pts[pts.length - 1]
-    const durMs = (info?.durationMin ?? 0) * 60000
+    // multi-crew wait folds into the stored duration_min, same as the Ride form
+    const crewWait = crewWaitMinutes(block, crewList.length, cityObj?.crew_wait_buffer_min)
+    const tripMin = info ? info.durationMin + crewWait : null
+    const durMs = (tripMin ?? 0) * 60000
 
     const rows = dates.map((date) => {
       let start_at = null
@@ -2387,7 +2407,7 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
             ? anchorMs - cityBuffers.checkin * 60000 - durMs
             : anchorMs + cityBuffers.checkout * 60000,
         ).toISOString()
-        end_at = new Date(new Date(start_at).getTime() + ((info?.durationMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
+        end_at = new Date(new Date(start_at).getTime() + ((tripMin ?? 0) + BUFFER_MIN) * 60000).toISOString()
       }
       return {
         city_id: cityId,
@@ -2415,7 +2435,7 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
         waypoints: crewList.length ? pts : [],
         route_geometry: info?.line ?? null,
         distance_km: info?.distanceKm ?? null,
-        duration_min: info?.durationMin ?? null,
+        duration_min: tripMin,
         status: 'dispatched',
         created_by: createdBy ?? null,
       }

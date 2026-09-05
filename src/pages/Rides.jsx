@@ -264,13 +264,16 @@ export default function Rides() {
   //   dropoff 1000 -> Deadhead    "1000-D"  (parent = the dropoff)
   //   deadhead 1001 -> Pickup     "1001-P"  (parent = the deadhead, its own
   //                                          real ref_no, not "1000-D")
-  // A dropoff ride that already has a return leg needs to know that + which
-  // ride it is, to block creating a second one (Deadhead has no such limit).
+  // A dropoff ride can have AT MOST ONE follow-on ride, Return Leg OR
+  // Deadhead (not both, not two of either) - once either exists, "Create
+  // Ride" shows its details instead of the create form for both modes.
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
-  const returnLegByParent = useMemo(() => {
+  const followOnByParent = useMemo(() => {
     const m = new Map()
     rows.forEach((r) => {
-      if (r.block_type === 'return_leg' && r.return_of_ride_id) m.set(r.return_of_ride_id, r)
+      if ((r.block_type === 'return_leg' || r.block_type === 'deadhead') && r.return_of_ride_id) {
+        m.set(r.return_of_ride_id, r)
+      }
     })
     return m
   }, [rows])
@@ -305,12 +308,12 @@ export default function Rides() {
           crew_count: displayCrewCount(r.ride_crew, r.block_type),
           vehicle_text: vehicleText(r.vehicle),
           display_ref: suffix ? `${rootRefNo(r)}-${suffix}` : String(r.ref_no),
-          return_leg: returnLegByParent.get(r.id) ?? null,
+          follow_on: followOnByParent.get(r.id) ?? null,
           // pre-duty_sheet_date rows (existing data) fall back to their own ride_date
           duty_sheet_display: r.duty_sheet_date || r.ride_date,
         }
       }),
-    [rows, byId, returnLegByParent],
+    [rows, byId, followOnByParent],
   )
 
   const filtered = useMemo(() => {
@@ -478,8 +481,12 @@ export default function Rides() {
           <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
             {r.block_type === 'dropoff' && canAdd && (
               <button
-                title={r.return_leg ? 'Create Ride (return leg already created)' : 'Create Ride'}
-                className={r.return_leg ? 'row-actions-note' : undefined}
+                title={
+                  r.follow_on
+                    ? `Create Ride (${r.follow_on.block_type === 'deadhead' ? 'deadhead' : 'return leg'} already created)`
+                    : 'Create Ride'
+                }
+                className={r.follow_on ? 'row-actions-note' : undefined}
                 onClick={() => setCreateRideFor(r)}
               >
                 <RotateCcw size={13} />
@@ -515,8 +522,8 @@ export default function Rides() {
                 onClick={() =>
                   setPending({
                     ids: [r.id],
-                    label: r.return_leg
-                      ? `ride ${r.display_ref} and its return leg ${r.ref_no}-R`
+                    label: r.follow_on
+                      ? `ride ${r.display_ref} and its ${r.follow_on.block_type === 'deadhead' ? 'deadhead' : 'return leg'} ${r.ref_no}-${r.follow_on.block_type === 'deadhead' ? 'D' : 'R'}`
                       : `ride ${r.display_ref}`,
                   })
                 }
@@ -841,7 +848,7 @@ function NotePopup({ row, onClose }) {
 // crew stop) + that city's Return Leg / Deadhead buffer (Settings -> Ride
 // Buffer Time) - no manual time entry, same pattern for both.
 function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdBy, onClose, onView, onDone }) {
-  const [mode, setMode] = useState(row.return_leg ? 'deadhead' : 'return')
+  const [mode, setMode] = useState('return')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
@@ -1130,148 +1137,114 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
   return (
     <Modal open onClose={onClose} title={`Create Ride from ${row.display_ref}`} width={620}>
       <div className="modal-form">
-        <div className="date-tabs">
-          <button
-            type="button"
-            className={mode === 'return' ? 'on' : ''}
-            onClick={() => {
-              setMode('return')
-              setErr('')
-            }}
-          >
-            Return Leg
-          </button>
-          <button
-            type="button"
-            className={mode === 'deadhead' ? 'on' : ''}
-            onClick={() => {
-              setMode('deadhead')
-              setErr('')
-            }}
-          >
-            Deadhead
-          </button>
-        </div>
-
-        {err && <div className="modal-error">{err}</div>}
-
-        {mode === 'return' ? (
-          row.return_leg ? (
-            <>
-              <p className="confirm-msg">A return leg has already been created for this ride.</p>
-              <div className="view-row">
-                <span className="view-label">Return Leg</span>
-                <span className="view-value">{row.ref_no}-R</span>
-              </div>
-              <div className="view-row">
-                <span className="view-label">Date</span>
-                <span className="view-value">{fmtDate(row.return_leg.ride_date)}</span>
-              </div>
-              <div className="view-row">
-                <span className="view-label">Ride Time</span>
-                <span className="view-value">
-                  {row.return_leg.start_at ? fmtTimeOnly12(row.return_leg.start_at) : '—'}
-                </span>
-              </div>
-              <div className="view-row">
-                <span className="view-label">Vehicle</span>
-                <span className="view-value">{row.return_leg.vehicle?.vehicle_no || '—'}</span>
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-                  Close
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-square"
-                  onClick={() => onView(row.return_leg, `${row.ref_no}-R`)}
-                >
-                  View return leg
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="confirm-msg">
-                Create a return-leg ride: {row.dest_label || 'last stop'} → {row.airport_name || 'Airport'}, on
-                the same vehicle ({row.vehicle?.vehicle_no || '—'}).
-              </p>
-              <div className="modal-actions">
-                <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-                  Cancel
-                </button>
-                <button type="button" className="btn btn-square" disabled={busy} onClick={doReturnLeg}>
-                  {busy ? 'Creating…' : 'Create return ride'}
-                </button>
-              </div>
-            </>
-          )
-        ) : (
-          <form onSubmit={doDeadhead}>
+        {row.follow_on ? (
+          <>
             <p className="confirm-msg">
-              Deadhead: {lastCrew ? lastCrew.stop_name || lastCrew.name : 'last stop'} (where{' '}
-              {row.display_ref} dropped off) → a new crew, on the same vehicle (
-              {row.vehicle?.vehicle_no || '—'}).
+              {row.follow_on.block_type === 'deadhead' ? 'A deadhead' : 'A return leg'} has already been created
+              for this ride - only one follow-on ride (Return Leg or Deadhead) is allowed per dropoff.
             </p>
-
-            <div className="field">
-              <label>Destination crew</label>
-              <SearchSelect
-                value={destCrewId}
-                onChange={setDestCrewId}
-                options={cityCrew
-                  .filter((c) => c.id !== lastCrew?.id)
-                  .map((c) => ({ value: c.id, label: `(${c.ref_no}) ${c.name}`, sub: c.stop_name || undefined }))}
-                placeholder="Search a crew member…"
-              />
-            </div>
-
-            <div className="field">
-              <label>Flight</label>
-              <SearchSelect
-                value={flightId}
-                onChange={pickFlight}
-                options={cityFlights.map((f) => ({
-                  value: f.id,
-                  label: `${f.flight_no}${f.flight_code ? ' · ' + f.flight_code : ''}`,
-                  sub: f.route || undefined,
-                }))}
-                placeholder="Search a flight…"
-              />
-              <span className="field-hint">
-                Snapshotted onto the deadhead so it&rsquo;s clear which flight it was for.
+            <div className="view-row">
+              <span className="view-label">{row.follow_on.block_type === 'deadhead' ? 'Deadhead' : 'Return Leg'}</span>
+              <span className="view-value">
+                {row.ref_no}-{row.follow_on.block_type === 'deadhead' ? 'D' : 'R'}
               </span>
             </div>
-
-            <div className="field">
-              <label>
-                Route{' '}
-                {dhInfo?.distanceKm != null && (
-                  <span className="ride-km-badge">
-                    {Number(dhInfo.distanceKm).toFixed(2)} km
-                    {dhInfo.durationMin != null ? ` · ${dhInfo.durationMin} min` : ''}
-                  </span>
-                )}
-              </label>
-              <span className="field-hint">
-                Ride Time {fmtTimeOnly12(dhStartAt) || '—'} (dropoff arrival + {deadheadBufferMin} min Deadhead
-                buffer) · {destCrew?.name || 'Destination crew'}&rsquo;s ETA{' '}
-                {dhEta ? fmtTimeOnly12(dhEta) : 'needs a route'}
+            <div className="view-row">
+              <span className="view-label">Date</span>
+              <span className="view-value">{fmtDate(row.follow_on.ride_date)}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Ride Time</span>
+              <span className="view-value">
+                {row.follow_on.start_at ? fmtTimeOnly12(row.follow_on.start_at) : '—'}
               </span>
             </div>
+            <div className="view-row">
+              <span className="view-label">Vehicle</span>
+              <span className="view-value">{row.follow_on.vehicle?.vehicle_no || '—'}</span>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-square"
+                onClick={() =>
+                  onView(row.follow_on, `${row.ref_no}-${row.follow_on.block_type === 'deadhead' ? 'D' : 'R'}`)
+                }
+              >
+                View {row.follow_on.block_type === 'deadhead' ? 'deadhead' : 'return leg'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="date-tabs">
+              <button
+                type="button"
+                className={mode === 'return' ? 'on' : ''}
+                onClick={() => {
+                  setMode('return')
+                  setErr('')
+                }}
+              >
+                Return Leg
+              </button>
+              <button
+                type="button"
+                className={mode === 'deadhead' ? 'on' : ''}
+                onClick={() => {
+                  setMode('deadhead')
+                  setErr('')
+                }}
+              >
+                Deadhead
+              </button>
+            </div>
 
-            <label className="check-line">
-              <input type="checkbox" checked={addPickup} onChange={(e) => setAddPickup(e.target.checked)} />
-              Also create a Pickup ride for this crew ({destCrew?.name || 'destination crew'} → Airport)
-            </label>
+            {err && <div className="modal-error">{err}</div>}
 
-            {addPickup && (
+            {mode === 'return' ? (
               <>
+                <p className="confirm-msg">
+                  Create a return-leg ride: {row.dest_label || 'last stop'} → {row.airport_name || 'Airport'}, on
+                  the same vehicle ({row.vehicle?.vehicle_no || '—'}).
+                </p>
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn btn-square" disabled={busy} onClick={doReturnLeg}>
+                    {busy ? 'Creating…' : 'Create return ride'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <form onSubmit={doDeadhead}>
+                <p className="confirm-msg">
+                  Deadhead: {lastCrew ? lastCrew.stop_name || lastCrew.name : 'last stop'} (where{' '}
+                  {row.display_ref} dropped off) → a new crew, on the same vehicle (
+                  {row.vehicle?.vehicle_no || '—'}).
+                </p>
+
                 <div className="field">
-                  <label>Pickup flight</label>
+                  <label>Destination crew</label>
                   <SearchSelect
-                    value={pickupFlightId}
-                    onChange={setPickupFlightId}
+                    value={destCrewId}
+                    onChange={setDestCrewId}
+                    options={cityCrew
+                      .filter((c) => c.id !== lastCrew?.id)
+                      .map((c) => ({ value: c.id, label: `(${c.ref_no}) ${c.name}`, sub: c.stop_name || undefined }))}
+                    placeholder="Search a crew member…"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Flight</label>
+                  <SearchSelect
+                    value={flightId}
+                    onChange={pickFlight}
                     options={cityFlights.map((f) => ({
                       value: f.id,
                       label: `${f.flight_no}${f.flight_code ? ' · ' + f.flight_code : ''}`,
@@ -1279,42 +1252,85 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
                     }))}
                     placeholder="Search a flight…"
                   />
+                  <span className="field-hint">
+                    Snapshotted onto the deadhead so it&rsquo;s clear which flight it was for.
+                  </span>
                 </div>
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="pk-cio">Check-in</label>
-                    <input
-                      id="pk-cio"
-                      type="time"
-                      className="input"
-                      value={toTime24(pickupFlight?.flight_time)}
-                      disabled
-                    />
-                    <span className="field-hint">Scheduled, from the flight</span>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="pk-cin">Actual</label>
-                    <input
-                      id="pk-cin"
-                      type="time"
-                      className="input"
-                      value={pickupCheckinNew}
-                      onChange={(e) => setPickupCheckinNew(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
 
-            <div className="modal-actions">
-              <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-                Cancel
-              </button>
-              <button type="submit" className="btn btn-square" disabled={busy}>
-                {busy ? 'Creating…' : 'Create Deadhead'}
-              </button>
-            </div>
-          </form>
+                <div className="field">
+                  <label>
+                    Route{' '}
+                    {dhInfo?.distanceKm != null && (
+                      <span className="ride-km-badge">
+                        {Number(dhInfo.distanceKm).toFixed(2)} km
+                        {dhInfo.durationMin != null ? ` · ${dhInfo.durationMin} min` : ''}
+                      </span>
+                    )}
+                  </label>
+                  <span className="field-hint">
+                    Ride Time {fmtTimeOnly12(dhStartAt) || '—'} (dropoff arrival + {deadheadBufferMin} min Deadhead
+                    buffer) · {destCrew?.name || 'Destination crew'}&rsquo;s ETA{' '}
+                    {dhEta ? fmtTimeOnly12(dhEta) : 'needs a route'}
+                  </span>
+                </div>
+
+                <label className="check-line">
+                  <input type="checkbox" checked={addPickup} onChange={(e) => setAddPickup(e.target.checked)} />
+                  Also create a Pickup ride for this crew ({destCrew?.name || 'destination crew'} → Airport)
+                </label>
+
+                {addPickup && (
+                  <>
+                    <div className="field">
+                      <label>Pickup flight</label>
+                      <SearchSelect
+                        value={pickupFlightId}
+                        onChange={setPickupFlightId}
+                        options={cityFlights.map((f) => ({
+                          value: f.id,
+                          label: `${f.flight_no}${f.flight_code ? ' · ' + f.flight_code : ''}`,
+                          sub: f.route || undefined,
+                        }))}
+                        placeholder="Search a flight…"
+                      />
+                    </div>
+                    <div className="field-row">
+                      <div className="field">
+                        <label htmlFor="pk-cio">Check-in</label>
+                        <input
+                          id="pk-cio"
+                          type="time"
+                          className="input"
+                          value={toTime24(pickupFlight?.flight_time)}
+                          disabled
+                        />
+                        <span className="field-hint">Scheduled, from the flight</span>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="pk-cin">Actual</label>
+                        <input
+                          id="pk-cin"
+                          type="time"
+                          className="input"
+                          value={pickupCheckinNew}
+                          onChange={(e) => setPickupCheckinNew(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-square" disabled={busy}>
+                    {busy ? 'Creating…' : 'Create Deadhead'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
         )}
       </div>
     </Modal>

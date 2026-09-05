@@ -258,16 +258,24 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - Table: **"Create Ride"** action on dropoff rides (was "Create Return Leg")
   opens `CreateRideModal` - a mode switch (flat underline tabs, `.date-tabs`)
   between two ways to auto-create a follow-on ride from the last crew this
-  dropoff ride dropped off at:
+  dropoff ride dropped off at. **A dropoff ride may have AT MOST ONE
+  follow-on ride, Return Leg OR Deadhead - not both, and not a second of
+  either.** Once either exists (`Rides.jsx`'s `followOnByParent` map, built
+  off `rows` the same way `byId`/`rootRefNo` are - any direct child with
+  `block_type` `return_leg` or `deadhead` and a matching `return_of_ride_id`),
+  the whole modal replaces its tab switcher with a single details panel for
+  whichever one exists - its ref (`<dropoff ref>-R`/`-D`), date, Ride Time,
+  vehicle, and a "View return leg"/"View deadhead" shortcut - neither create
+  form is reachable any more from that dropoff. The row action's icon title
+  and the delete-confirm label (`ride 1211 and its return leg 1211-R` /
+  `...and its deadhead 1211-D`) reflect whichever type exists too. Before
+  that limit exists (no follow-on yet), the two tabs work as follows:
   - **Return Leg** - last crew's stop -> Airport, same vehicle. It's an empty
     repositioning (no passenger), so its **Count always displays 0** - forced
     in the `list` memo/view modal by `block_type === 'return_leg'`, not
     derived from `ride_crew.length`. It still gets a single `ride_crew` row
     (that same last crew, `seq: 0`) purely so the **Crew** column/export/view
-    can still show whose stop it originated from. At most one per dropoff ride - if it
-    already exists, this tab shows "already created" + the return leg's ref,
-    date, Ride Time, vehicle, and a "View return leg" shortcut instead of the
-    create form (the tab defaults to Deadhead when this is the case).
+    can still show whose stop it originated from.
   - **Deadhead** (`block_type: 'deadhead'`, `deadhead_mode: 'crew'`) - last
     crew's stop -> a newly picked crew's stop (`SearchSelect`, both ends as
     `ride_crew` this time - a real repositioning move, not empty like Return

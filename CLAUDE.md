@@ -501,24 +501,27 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   any more - it's its own page (below).
 - **Tracker** (`/tracker`, sidebar label "Tracker", group "Dispatch", gated
   on `rides` view like Vehicle Board - reuses that permission, no separate
-  `PERMISSION_PAGES` entry) - a full page for live GPS tracking, **our own
-  Leaflet map** (not the AI Track iframe any more): a left `.tk-panel` with a
-  search box + a scrollable vehicle list (status dot + `vehicle_no` + speed),
-  and the map filling the rest (`.tk-layout`, `height: max(440px,
-  calc(100vh - 200px))`; stacks on ≤640px). Clicking a list row **or** a map
-  marker `map.flyTo()`s to that vehicle, enlarges its dot and pins a
-  permanent tooltip, and bumps its `zIndexOffset` so it sits above the
-  others. Positions come from `fetchFleetTracker()` (`src/lib/tracker.js`) -
-  it hits the same `/items` endpoint as `fetchLiveTracker` but returns
-  **every** vehicle the link exposes. The cities' `tracker_url`s (Settings ->
-  Live Tracker) are the source; when the topbar filter is All, every allowed
-  city's link is polled and the results merged by vehicle id. AI Track's
-  `/items?time=0` only returns vehicles that pinged recently (not the full
-  roster in one call), so the page **accumulates** across polls (every 15s) -
-  updates by id, drops anything unseen for 10 min, resets on a city switch.
-  (Confirmed earlier that AI Track's sharing links are CORS-open and carry no
-  `X-Frame-Options` - the old iframe embed worked too, this just replaces it
-  with something we can interact with.)
+  `PERMISSION_PAGES` entry) - a full page for live GPS tracking. Left
+  `.tk-list` (styled to match the Settings page's `.set-list` - flat, a
+  hairline `border-right`, no card box) with a "Vehicles" head, a search box,
+  and the vehicle list; the map/view fills the rest (`.tk-layout`,
+  `height: max(440px, calc(100vh - 200px))`; stacks on ≤720px). A
+  Map / AI Track view switch (`.tk-viewswitch`, self-contained flat-underline
+  tabs) in the header:
+  - **Map** (default) - our own Leaflet map with a coloured dot per live
+    vehicle. Clicking a list row **or** a marker `map.flyTo()`s to it,
+    enlarges its dot, pins a permanent tooltip and raises its `zIndexOffset`.
+  - **AI Track** - the plain `<iframe src={cities.tracker_url}>` (what the
+    page used to be), for when you want AI Track's own map/trails.
+  **The vehicle roster is our own `vehicles` table** (city-scoped, active
+  only) so the list never flickers - live fixes just decorate the rows,
+  matched by plate (`vehicle_no` ↔ AI Track's `name`, both normalised).
+  Rows with no fix show "No signal" and a grey dot, sorted after the live
+  ones. Live positions come from `fetchFleetTracker()` (`src/lib/tracker.js`,
+  returns *every* vehicle a link exposes, vs `fetchLiveTracker`'s first-only)
+  polling every city's `tracker_url` every 15s; AI Track's `/items?time=0`
+  only returns recently-pinged vehicles, so fixes **accumulate** by plate
+  and are dropped only after 60 min unseen (reset on a city switch).
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role

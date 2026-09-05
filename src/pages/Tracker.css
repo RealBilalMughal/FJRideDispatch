@@ -156,21 +156,22 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
-.tk-view-bar {
-  display: flex;
+/* header: the selected-vehicle bar sits left of the AI Track / Map switch */
+.tk-actions {
+  gap: 16px;
+}
+.tk-selbar {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  min-height: 26px;
+  gap: 9px;
 }
 .tk-back {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: 4px 9px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
@@ -187,10 +188,11 @@
 .tk-view-name {
   font-family: var(--font-heading);
   font-weight: 700;
+  font-size: 13px;
   color: var(--heading);
 }
-.tk-hint {
-  font-size: 12px;
+.tk-view-sub {
+  font-size: 11.5px;
   color: var(--muted);
 }
 

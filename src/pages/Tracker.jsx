@@ -137,7 +137,12 @@ export default function Tracker() {
 
   const pick = (row) => {
     setSelId(row.v.id)
-    if (row.fix) setFlyTarget({ lat: row.fix.lat, lng: row.fix.lng, t: Date.now() })
+    if (row.fix) {
+      setFlyTarget({ lat: row.fix.lat, lng: row.fix.lng, t: Date.now() })
+      // no per-vehicle AI Track link to focus -> the interactive Map is where
+      // a click can actually zoom, so hop to it
+      if (view === 'embed' && !row.v.tracker_url) setView('map')
+    }
   }
 
   if (!canView) {
@@ -167,7 +172,20 @@ export default function Tracker() {
           </p>
         </div>
         {links.length > 0 && (
-          <div className="page-actions">
+          <div className="page-actions tk-actions">
+            {selRow && (
+              <div className="tk-selbar">
+                <button type="button" className="tk-back" onClick={() => setSelId(null)}>
+                  <ArrowLeft size={13} /> All vehicles
+                </button>
+                <span className="tk-view-name">{selRow.v.vehicle_no}</span>
+                {selRow.fix && (
+                  <span className="tk-view-sub">
+                    {STATUS_LABEL[selRow.fix.status] || '—'} · {Math.round(selRow.fix.speed)} kph
+                  </span>
+                )}
+              </div>
+            )}
             <div className="tk-viewswitch">
               <button className={view === 'embed' ? 'on' : ''} onClick={() => setView('embed')}>
                 <Radio size={13} /> AI Track
@@ -226,23 +244,6 @@ export default function Tracker() {
           </aside>
 
           <div className="tk-view">
-            {selRow && (
-              <div className="tk-view-bar">
-                <button type="button" className="tk-back" onClick={() => setSelId(null)}>
-                  <ArrowLeft size={13} /> All vehicles
-                </button>
-                <span className="tk-view-name">{selRow.v.vehicle_no}</span>
-                {selRow.fix && (
-                  <span className="tk-view-sub">
-                    {STATUS_LABEL[selRow.fix.status] || '—'} · {Math.round(selRow.fix.speed)} kph
-                  </span>
-                )}
-                {view === 'embed' && !selRow.v.tracker_url && (
-                  <span className="tk-hint">no per-vehicle link — showing the fleet</span>
-                )}
-              </div>
-            )}
-
             {view === 'embed' ? (
               focusEmbed ? (
                 <div className="stop-map tk-map">

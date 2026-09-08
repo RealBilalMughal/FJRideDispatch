@@ -142,7 +142,9 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   - **Hero row**: Total rides (filled in the **Fly Jinnah brand red
     `#ff0041`**, `.dash-card-accent`), Total distance (Σ `distance_km`), Crew
     moved (Σ `displayCrewCount` so Deadhead/Return Leg contribute 0, matching
-    the table), Deadhead ratio (deadhead km ÷ total km, %). Each shows a
+    the table), Deadhead ratio ((deadhead km + Σ `rides.extra_km`, i.e. the
+    Pickup/Drop Off Block KM Buffer counted as empty running) ÷ total km, %;
+    the card sub notes "incl. buffer" when any extra_km is present). Each shows a
     **trend** vs the equivalent previous period (`pctChange()` - a second
     query over `[prevFrom, prevTo]`, the same span immediately before
     `from`; skipped for the All range). Green up / red down / muted flat;

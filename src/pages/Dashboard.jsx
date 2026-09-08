@@ -35,6 +35,7 @@ const BLOCKS = [
   { key: 'return_leg', icon: RotateCcw },
 ]
 const km = (r) => Number(r.distance_km) || 0
+const extraKmOf = (r) => Number(r.extra_km) || 0
 const fmtKm = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} km`
 const firstCrewName = (rc) =>
   [...(rc || [])].sort((a, b) => a.seq - b.seq).map((x) => x.crew?.name).filter(Boolean)[0] || ''
@@ -57,8 +58,10 @@ function rollup(rows) {
   const shift = { day: { count: 0, km: 0 }, night: { count: 0, km: 0 } }
   let crew = 0
   let totalKm = 0
+  let extraKm = 0 // Block KM Buffer (Pickup / Drop Off) - counted as empty running
   for (const r of rows) {
     totalKm += km(r)
+    extraKm += extraKmOf(r)
     crew += displayCrewCount(r.ride_crew, r.block_type)
     if (blk[r.block_type]) {
       blk[r.block_type].count += 1
@@ -69,11 +72,11 @@ function rollup(rows) {
       shift[r.shift].km += km(r)
     }
   }
-  return { total: rows.length, totalKm, crew, blk, shift }
+  return { total: rows.length, totalKm, extraKm, crew, blk, shift }
 }
 
 const RANGE_SELECT =
-  'block_type, distance_km, shift, ride_date, start_at, city_id, city:cities(name), ride_crew(seq)'
+  'block_type, distance_km, extra_km, shift, ride_date, start_at, city_id, city:cities(name), ride_crew(seq)'
 const LIVE_SELECT =
   'id, ref_no, block_type, start_at, end_at, vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(name))'
 
@@ -109,7 +112,7 @@ export default function Dashboard() {
         const span = dateList(from, to).length
         const prevTo = addDays(from, -1)
         const prevFrom = addDays(prevTo, -(span - 1))
-        prev = scope(supabase.from('rides').select('block_type, distance_km, ride_crew(seq)'))
+        prev = scope(supabase.from('rides').select('block_type, distance_km, extra_km, ride_crew(seq)'))
           .gte('ride_date', prevFrom)
           .lte('ride_date', prevTo)
       }
@@ -151,8 +154,11 @@ export default function Dashboard() {
   const p = useMemo(() => rollup(prevRows), [prevRows])
   const hasPrev = Boolean(from && to) && prevRows.length > 0
 
-  const deadheadPct = s.totalKm > 0 ? (s.blk.deadhead.km / s.totalKm) * 100 : 0
-  const prevDeadheadPct = p.totalKm > 0 ? (p.blk.deadhead.km / p.totalKm) * 100 : 0
+  // "empty" running = deadhead rides + the Pickup/Drop Off Block KM Buffer
+  const emptyKm = s.blk.deadhead.km + s.extraKm
+  const prevEmptyKm = p.blk.deadhead.km + p.extraKm
+  const deadheadPct = s.totalKm > 0 ? (emptyKm / s.totalKm) * 100 : 0
+  const prevDeadheadPct = p.totalKm > 0 ? (prevEmptyKm / p.totalKm) * 100 : 0
 
   const perDay = useMemo(() => {
     const days = dateList(from, to)
@@ -287,7 +293,7 @@ export default function Dashboard() {
               icon={Waypoints}
               value={num(`${deadheadPct.toFixed(1)}%`)}
               label="Deadhead ratio"
-              sub="of total km run empty"
+              sub={`${fmtKm(emptyKm)} run empty${s.extraKm > 0 ? ' (incl. buffer)' : ''}`}
               trend={hasPrev ? pctChange(deadheadPct, prevDeadheadPct) : null}
             />
           </div>

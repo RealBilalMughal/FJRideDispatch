@@ -245,6 +245,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   = `[[lat,lng], ...]`) via `/v2/directions/driving-car/geojson` (`radiuses: -1`
   so airport/stop points snap to the nearest road). `gmapsRoute()` builds a
   keyless Google Maps directions URL for the "open route" action.
+  **Credit protection** (the ORS free tier is small): `routeInfo()` keeps a
+  **session cache** keyed on the coords rounded to ~1 m - the same ordered
+  route only ever hits the API once per page load (in-flight requests are
+  shared, failures aren't cached). On top of that the **Ride form's route
+  effect never calls ORS in view mode**, and on **edit** it skips the call
+  when the ordered points still match `row.waypoints` (a `routeSig()` compare)
+  - so opening / re-opening a ride, or editing without touching the route,
+  costs nothing. Only a genuinely new/changed route, or the Generate / Create
+  Ride / "also create a deadhead" flows, spend a credit.
 - **`rides.route_geometry`** (`jsonb`, nullable) persists that `line` at
   creation/edit time (every insert/update that calls `routeInfo()` - the main
   Ride form, `GenerateRidesModal`, and `CreateRideModal`'s Return Leg/Deadhead/

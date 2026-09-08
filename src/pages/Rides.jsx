@@ -1583,6 +1583,13 @@ function RideModal({
     [form.block_type, form.deadhead_mode, crewList, airport],
   )
   const routeReady = routeComplete(routePoints)
+  // signature of an ordered point list (~1 m) - used to skip an ORS call when
+  // the route still matches what was saved (see the route effect below)
+  const routeSig = (pts) =>
+    (pts || [])
+      .map((p) => `${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}`)
+      .join('|')
+  const savedRouteSig = useMemo(() => (row?.waypoints ? routeSig(row.waypoints) : null), [row])
 
   // pick a flight -> snapshot + auto block + city + times
   const pickFlight = (fid) => {
@@ -1627,9 +1634,18 @@ function RideModal({
     if (r.max != null) setCrewList((cl) => cl.slice(0, r.max))
   }
 
-  // fetch the ORS route whenever the ordered points are complete
+  // fetch the ORS route ONLY when it can change something and actually changed:
+  //  - view mode never calls ORS (the row already carries distance_km /
+  //    duration_min / route_geometry, all read below as fallbacks)
+  //  - on edit, if the ordered points still match the saved waypoints, keep the
+  //    stored figures and skip the call
+  // `routeInfo()` itself also caches by coords, so a genuine repeat is free.
   useEffect(() => {
-    if (!routeReady) {
+    if (!editing || !routeReady) {
+      setRouteData(null)
+      return
+    }
+    if (savedRouteSig && routeSig(routePoints) === savedRouteSig) {
       setRouteData(null)
       return
     }
@@ -1642,7 +1658,8 @@ function RideModal({
       alive = false
       clearTimeout(id)
     }
-  }, [routeReady, routePoints])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, routeReady, routePoints, savedRouteSig])
 
   // "Also create a Deadhead" (Pickup, add-mode): preview the Airport -> first
   // crew leg so the form can show that deadhead's own Ride Time up front.

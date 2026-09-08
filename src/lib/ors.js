@@ -5,13 +5,16 @@
 const KEY = import.meta.env.VITE_ORS_API_KEY
 const ENDPOINT = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
 
-// coords: [[lng, lat], ...] in visiting order (>= 2 points, all finite).
-// -> { distanceKm, durationMin, line: [[lat, lng], ...] } | null
-export async function routeInfo(coords) {
-  const clean = (coords || []).filter(
-    (c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]),
-  )
-  if (!KEY || clean.length < 2) return null
+// Session cache: the same ordered coordinate list only ever hits ORS once per
+// page load (keyed on the coords rounded to ~1 m). Value is the in-flight
+// Promise first - so concurrent callers share one request - then the resolved
+// result. Failures are NOT cached (so a later retry can succeed). This is what
+// keeps re-opening / re-editing a ride, or a Generate run over one flight, from
+// burning API credits: the rounded key matches even across component remounts.
+const routeCache = new Map()
+const coordKey = (coords) => coords.map((c) => `${c[0].toFixed(5)},${c[1].toFixed(5)}`).join(';')
+
+async function fetchRoute(clean) {
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
@@ -34,6 +37,23 @@ export async function routeInfo(coords) {
   } catch {
     return null
   }
+}
+
+// coords: [[lng, lat], ...] in visiting order (>= 2 points, all finite).
+// -> { distanceKm, durationMin, line: [[lat, lng], ...] } | null
+export async function routeInfo(coords) {
+  const clean = (coords || []).filter(
+    (c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]),
+  )
+  if (!KEY || clean.length < 2) return null
+  const key = coordKey(clean)
+  if (routeCache.has(key)) return routeCache.get(key)
+  const p = fetchRoute(clean)
+  routeCache.set(key, p)
+  const result = await p
+  if (result == null) routeCache.delete(key)
+  else routeCache.set(key, result)
+  return result
 }
 
 // Reorder the crew stops for the shortest total drive (ORS optimization / Vroom).

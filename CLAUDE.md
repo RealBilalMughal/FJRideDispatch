@@ -80,7 +80,8 @@ keys, tables or deploy targets with any other project.
   (superseded by the next one - dropped, no data ever depended on it),
   `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`,
   `20260907120000_crew_wait_buffer.sql`, `20260908120000_vehicle_vendor.sql`,
-  `20260908130000_ride_extra_km.sql` (all APPLIED).
+  `20260908130000_ride_extra_km.sql`, `20260908140000_ride_track_points.sql`,
+  `20260908140100_ride_track_cron.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -123,12 +124,17 @@ keys, tables or deploy targets with any other project.
   `useSelection()` holds the row Set. Single + bulk share one `pending`
   `{ ids, label }` state -> one `ConfirmDelete`.
 
-## Edge Function `admin-users` - DEPLOYED (dyjgrxeqdvnxwcbwzkql)
-`supabase/functions/admin-users/index.ts`. The ONLY place the service_role key is
-used (Supabase injects it). `verify_jwt` on. Actions: `create` (users.add),
-`update` / `set_password` (users.edit), `set_active` (users.edit on / users.delete
-off). `roles[]` validated against `public.roles`. Client wrapper: `src/lib/adminUsers.js`.
-Deploy: `supabase functions deploy admin-users --use-api`.
+## Edge Functions - DEPLOYED (dyjgrxeqdvnxwcbwzkql)
+- **`admin-users`** (`supabase/functions/admin-users/index.ts`) - profile
+  mutations for OTHER users. Service_role key (Supabase injects it). `verify_jwt`
+  on. Actions: `create` (users.add), `update` / `set_password` (users.edit),
+  `set_active` (users.edit on / users.delete off). `roles[]` validated against
+  `public.roles`. Client wrapper: `src/lib/adminUsers.js`.
+  Deploy: `supabase functions deploy admin-users --use-api`.
+- **`track-rides`** (`supabase/functions/track-rides/index.ts`) - the AI Tracker
+  poll (see the Ride section's "AI Tracker" bullet). `verify_jwt = false`,
+  `x-track-cron-key` guarded. Called by pg_cron every minute.
+  Deploy: `supabase functions deploy track-rides --no-verify-jwt --use-api`.
 
 ## Pages
 - `Dashboard` (`/`, always visible - the landing page) - ride analytics over
@@ -313,12 +319,31 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     live fix comes within 300m of a waypoint it records the time (the tracker
     fix's own `timestamp` via `parseTrackerTs()`, else the client clock).
     Session-only - not persisted.
-  **Not implemented**: a *persisted* per-ride "actual route driven vs planned"
-  history - the sharing link's `/items` response only carries the current fix
-  plus a short recent `tail`, not the whole trip. The "Seen at stops" list
-  only fills while someone is watching the modal. A durable version needs our
-  own backend polling + logging while a ride is active (a scheduled Edge
-  Function) - the deferred "AI Tracker system" (see memory).
+- **AI Tracker** (the persisted "actual route driven vs planned" playback) -
+  `public.ride_track_points` (`ride_id` -> rides `on delete cascade`, `city_id`,
+  `at`, `lat`, `lng`, `speed`, `status`; migration
+  `20260908140000_ride_track_points.sql`; RLS select mirrors `rides` -
+  `has_perm('rides','view')` + `has_city`; only service_role writes; 45-day
+  retention via `private.purge_old_track_points()`). Filled by the
+  **`track-rides` Edge Function** (`supabase/functions/track-rides/index.ts`,
+  `verify_jwt = false`, guarded by `x-track-cron-key` == the `TRACK_CRON_KEY`
+  secret): finds active rides (status dispatched/enroute, vehicle assigned,
+  window straddles now), polls each ride's **city** fleet link
+  (`cities.tracker_url` - one call = every vehicle), matches by plate, appends
+  a point; loops 6× with a 10s gap per invocation. **pg_cron**
+  (`20260908140100_ride_track_cron.sql`): `track-rides-poll` every minute
+  (key from vault secret `track_cron_key`), `track-rides-purge` at 03:30
+  daily. Setup once: `supabase functions deploy track-rides --no-verify-jwt
+  --use-api`, then `supabase secrets set TRACK_CRON_KEY=<x>` and
+  `select vault.create_secret('<x>','track_cron_key')` with the same value
+  (both done 2026-09-08). **UI**: a "Trip playback" toggle in the Ride View's
+  map column (`TripPlayback` in `Rides.jsx`) - draws the recorded path (dashed
+  purple, `RouteMap`'s `actualPath` prop) over the planned `route_geometry`,
+  with a play/scrub control (`playMarker` prop) and Actual km / Planned km /
+  minutes / point-count badges.
+  **Still session-only**: per-stop arrival timestamps (the live card's "Seen
+  at stops" list) - a possible follow-up is persisting those + an "on-time %"
+  report.
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).

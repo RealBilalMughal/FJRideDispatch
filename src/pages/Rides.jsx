@@ -1572,6 +1572,106 @@ function LiveTrackingCard({ row, mapHeight = 200 }) {
   )
 }
 
+// ── Trip playback (AI Tracker) ───────────────────────────────────────────
+// The recorded GPS path for this ride (public.ride_track_points, written by
+// the `track-rides` Edge Function while the ride was active), played back over
+// the planned route_geometry. Shows only when there are points.
+function TripPlayback({ row, mapHeight = 200 }) {
+  const [pts, setPts] = useState(null) // [{ at, lat, lng, speed }]
+  const [idx, setIdx] = useState(0)
+  const [playing, setPlaying] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    supabase
+      .from('ride_track_points')
+      .select('at, lat, lng, speed')
+      .eq('ride_id', row.id)
+      .order('at', { ascending: true })
+      .then(({ data }) => {
+        if (!alive) return
+        const clean = (data ?? [])
+          .map((p) => ({ at: p.at, lat: Number(p.lat), lng: Number(p.lng), speed: Number(p.speed) || 0 }))
+          .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+        setPts(clean)
+        setIdx(clean.length ? clean.length - 1 : 0)
+      })
+    return () => {
+      alive = false
+    }
+  }, [row.id])
+
+  useEffect(() => {
+    if (!playing || !pts?.length) return
+    if (idx >= pts.length - 1) {
+      setPlaying(false)
+      return
+    }
+    const t = setTimeout(() => setIdx((i) => Math.min(i + 1, pts.length - 1)), 220)
+    return () => clearTimeout(t)
+  }, [playing, idx, pts])
+
+  if (pts == null) return <div className="field-hint">Loading recorded trip…</div>
+  if (!pts.length) {
+    return (
+      <div className="field-hint">
+        No recorded GPS yet — the AI Tracker logs a point every ~10s while the ride is active.
+      </div>
+    )
+  }
+
+  const actualPath = pts.map((p) => [p.lat, p.lng])
+  let actualKm = 0
+  for (let i = 1; i < pts.length; i++) {
+    actualKm += distanceMeters(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng) / 1000
+  }
+  const started = new Date(pts[0].at)
+  const ended = new Date(pts[pts.length - 1].at)
+  const mins = Math.round((ended - started) / 60000)
+  const cur = pts[Math.min(idx, pts.length - 1)]
+  const plannedKm = row.distance_km != null ? Number(row.distance_km) : null
+
+  return (
+    <div className="live-track">
+      <div className="live-track-badges">
+        <span className="badge badge-accent">Actual {actualKm.toFixed(1)} km</span>
+        {plannedKm != null && <span className="badge">Planned {plannedKm.toFixed(1)} km</span>}
+        <span className="badge">{mins} min on the road</span>
+        <span className="badge">{pts.length} points</span>
+      </div>
+      <RouteMap
+        points={row.waypoints || []}
+        line={row.route_geometry}
+        totalKm={plannedKm ?? undefined}
+        actualPath={actualPath}
+        playMarker={cur}
+        height={mapHeight}
+      />
+      <div className="trip-play">
+        <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => setPlaying((p) => !p)}>
+          {playing ? 'Pause' : idx >= pts.length - 1 ? 'Replay' : 'Play'}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={pts.length - 1}
+          value={idx}
+          onChange={(e) => {
+            setPlaying(false)
+            setIdx(Number(e.target.value))
+          }}
+        />
+        <span className="field-hint">
+          {fmtTimeOnly12(new Date(cur.at).toISOString())} · {Math.round(cur.speed)} kph
+        </span>
+      </div>
+      <span className="field-hint">
+        {fmtDate(row.ride_date)} · {fmtTimeOnly12(started.toISOString())} → {fmtTimeOnly12(ended.toISOString())}
+      </span>
+    </div>
+  )
+}
+
 // ── Ride form ─────────────────────────────────────────────────────────────
 function RideModal({
   row,
@@ -1594,6 +1694,7 @@ function RideModal({
   const [busy, setBusy] = useState(false)
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
   const [dhRoute, setDhRoute] = useState(null) // "Also create a Deadhead" preview: { distanceKm, durationMin, line }
+  const [playback, setPlayback] = useState(false) // Ride View: show the recorded trip instead of the route/live map
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
   const [startTouched, setStartTouched] = useState(false)
   const [shift, setShift] = useState(row?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
@@ -2161,16 +2262,30 @@ function RideModal({
           </div>
 
           <div className="ride-view-map">
-            {hasLive ? (
+            {playback ? (
+              <TripPlayback row={row} mapHeight="calc(100vh - 240px)" />
+            ) : hasLive ? (
               <LiveTrackingCard row={row} mapHeight="calc(100vh - 250px)" />
             ) : (
               <RouteMap
                 points={row.waypoints || []}
                 line={row.route_geometry}
                 totalKm={row.distance_km != null ? Number(row.distance_km) : undefined}
-                height="calc(100vh - 200px)"
+                height="calc(100vh - 240px)"
               />
             )}
+            <div className="ride-view-mapswitch">
+              <button
+                type="button"
+                className={playback ? '' : 'on'}
+                onClick={() => setPlayback(false)}
+              >
+                {hasLive ? 'Live' : 'Route'}
+              </button>
+              <button type="button" className={playback ? 'on' : ''} onClick={() => setPlayback(true)}>
+                Trip playback
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

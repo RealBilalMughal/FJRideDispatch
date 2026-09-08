@@ -52,13 +52,26 @@ function cumulativeKm(pts, totalKm) {
  * `totalKm` (optional) labels each stop with the running distance from the
  * origin, scaled to this total. `liveMarker` (optional) is a vehicle's current
  * tracker fix - `{ lat, lng, speed, status }` (see `src/lib/tracker.js`) -
- * drawn as a pulsing dot, included when fitting bounds.
+ * drawn as a pulsing dot. `actualPath` (optional, [[lat,lng],...]) is the
+ * recorded GPS trip (AI Tracker), drawn dashed purple; `playMarker` is a
+ * `{ lat, lng }` position for the playback scrubber.
  */
-export default function RouteMap({ points = [], line, totalKm, liveMarker, height = 220 }) {
+export default function RouteMap({
+  points = [],
+  line,
+  totalKm,
+  liveMarker,
+  actualPath,
+  playMarker,
+  height = 220,
+}) {
   const pts = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
   const path = line && line.length > 1 ? line : pts.map((p) => [p.lat, p.lng])
   const center = pts[0] ? [pts[0].lat, pts[0].lng] : FALLBACK
-  const fitPath = liveMarker ? [...path, [liveMarker.lat, liveMarker.lng]] : path
+  const extra = []
+  if (liveMarker) extra.push([liveMarker.lat, liveMarker.lng])
+  if (actualPath && actualPath.length) extra.push(...actualPath)
+  const fitPath = extra.length ? [...path, ...extra] : path
   const cum = cumulativeKm(pts, totalKm)
 
   return (
@@ -70,6 +83,19 @@ export default function RouteMap({ points = [], line, totalKm, liveMarker, heigh
         />
         <Fit path={fitPath} />
         {path.length > 1 && <Polyline positions={path} pathOptions={{ color: '#3471b8', weight: 4 }} />}
+        {actualPath && actualPath.length > 1 && (
+          <Polyline
+            positions={actualPath}
+            pathOptions={{ color: '#8b5cf6', weight: 3, dashArray: '6 6', opacity: 0.9 }}
+          />
+        )}
+        {playMarker && Number.isFinite(playMarker.lat) && (
+          <Marker
+            position={[playMarker.lat, playMarker.lng]}
+            icon={liveIcon('yellow')}
+            zIndexOffset={1100}
+          />
+        )}
         {pts.map((p, i) => {
           const role = i === 0 ? 'origin' : i === pts.length - 1 ? 'dest' : 'mid'
           const badge = i === 0 ? 'A' : i === pts.length - 1 ? 'B' : String(i)

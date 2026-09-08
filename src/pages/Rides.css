@@ -124,6 +124,40 @@
   gap: 6px;
 }
 
+/* Trip playback scrubber */
+.trip-play {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.trip-play input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+/* Live / Route <-> Trip playback toggle under the Ride View map */
+.ride-view-mapswitch {
+  display: inline-flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.ride-view-mapswitch button {
+  padding: 3px 0 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ride-view-mapswitch button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .live-track-foot {
   display: flex;
   flex-wrap: wrap;

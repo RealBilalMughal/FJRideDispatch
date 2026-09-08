@@ -19,9 +19,9 @@ export default function Modal({ open, onClose, title, children, width = 480, siz
   if (!open) return null
 
   return (
-    <div className={`modal-backdrop${size === 'lg' ? ' modal-backdrop--lg' : ''}`}>
+    <div className={`modal-backdrop${size ? ` modal-backdrop--${size}` : ''}`}>
       <div
-        className={`modal-card${size === 'lg' ? ' modal-card--lg' : ''}`}
+        className={`modal-card${size ? ` modal-card--${size}` : ''}`}
         style={{ maxWidth: width }}
         role="dialog"
         aria-modal="true"

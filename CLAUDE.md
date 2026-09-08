@@ -278,11 +278,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   undocumented endpoint of a third-party service, not a published API, so
   every field is read defensively and the shape could change without
   notice), giving `{ lat, lng, speed, course, status, address }` for that one
-  vehicle. **When it's showing, the Ride View modal goes near-full-screen**
-  (`Modal` `size="lg"`, `width: min(1100px, 95vw)`) with a two-column
-  `.ride-view--live` layout - detail rows scroll on the left (`flex: 0 0
-  340px`), a big live map (`min(62vh, 560px)`) sticks on the right; stacks
-  under 860px. Renders a pulsing coloured dot on the same `RouteMap` via its
+  vehicle. **The Ride View modal is always full-screen** (`Modal`
+  `size="full"` - fills the viewport minus a 14px margin, own scrolling body,
+  `width: min(1600px, 97vw)`) with a two-column `.ride-view--split` layout -
+  detail rows scroll on the left (`flex: 0 0 360px`), the route / live map
+  fills the right (~`calc(100vh - 200px)`, its own scroll for the live card's
+  extras); stacks under 860px. Renders a pulsing coloured dot on the same
+  `RouteMap` via its
   `liveMarker` prop (bounds-fit includes the live point). `RouteMap` also now
   colours the stop pins by role - **origin green / mid amber / destination
   red** - and labels each with the running distance from the origin (rough

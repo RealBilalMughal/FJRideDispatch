@@ -2058,14 +2058,8 @@ function RideModal({
     const gm = gmapsRoute(row.waypoints)
     const hasLive = Boolean(row.vehicle?.tracker_url)
     return (
-      <Modal
-        open
-        onClose={onClose}
-        title={title}
-        width={hasLive ? 'min(1100px, 95vw)' : 560}
-        size={hasLive ? 'lg' : undefined}
-      >
-        <div className={`ride-view${hasLive ? ' ride-view--live' : ''}`}>
+      <Modal open onClose={onClose} title={title} width="min(1600px, 97vw)" size="full">
+        <div className="ride-view ride-view--split">
         <div className="ride-view-info modal-form">
           {[
             ['Flight', `${row.flight_no || '—'}${row.flight_code ? ' · ' + row.flight_code : ''}`],
@@ -2111,13 +2105,13 @@ function RideModal({
 
         <div className="ride-view-map">
           {hasLive ? (
-            <LiveTrackingCard row={row} mapHeight="min(62vh, 560px)" />
+            <LiveTrackingCard row={row} mapHeight="calc(100vh - 250px)" />
           ) : (
             <RouteMap
               points={row.waypoints || []}
               line={row.route_geometry}
               totalKm={row.distance_km != null ? Number(row.distance_km) : undefined}
-              height={220}
+              height="calc(100vh - 200px)"
             />
           )}
         </div>

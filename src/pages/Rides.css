@@ -34,40 +34,39 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* Ride view: two columns (details | live map) when the vehicle has a tracker */
+/* Ride view: a full-screen popup, two columns (details | route / live map) */
 .ride-view {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
-.ride-view--live {
+.ride-view--split {
   flex-direction: row;
-  align-items: flex-start;
-  min-height: 100%;
+  align-items: stretch;
+  gap: 22px;
+  height: 100%;
 }
-.ride-view--live .ride-view-info {
-  flex: 0 0 340px;
-  max-height: calc(100vh - 130px);
+.ride-view--split .ride-view-info {
+  flex: 0 0 360px;
   overflow-y: auto;
+  padding-right: 4px;
 }
-.ride-view--live .ride-view-map {
+.ride-view--split .ride-view-map {
   flex: 1;
   min-width: 0;
-  position: sticky;
-  top: 0;
+  overflow-y: auto;
 }
 @media (max-width: 860px) {
-  .ride-view--live {
+  .ride-view--split {
     flex-direction: column;
+    height: auto;
   }
-  .ride-view--live .ride-view-info {
+  .ride-view--split .ride-view-info {
     flex: none;
-    max-height: none;
     overflow: visible;
   }
-  .ride-view--live .ride-view-map {
-    position: static;
-    width: 100%;
+  .ride-view--split .ride-view-map .stop-map {
+    height: 62vh !important;
   }
 }
 

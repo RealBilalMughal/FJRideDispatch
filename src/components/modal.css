@@ -58,6 +58,35 @@
   padding: 18px 20px;
 }
 
+/* size="full" - fills the viewport with a thin margin, like an app window */
+.modal-backdrop--full {
+  padding: 14px;
+  overflow: hidden;
+}
+.modal-card--full {
+  min-height: calc(100vh - 28px);
+  max-height: calc(100vh - 28px);
+  display: flex;
+  flex-direction: column;
+}
+.modal-card--full .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 22px;
+}
+@media (max-width: 520px) {
+  .modal-backdrop--full {
+    padding: 0;
+  }
+  .modal-card--full {
+    min-height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
 /* shared form layout inside modals */
 .modal-form {
   display: flex;

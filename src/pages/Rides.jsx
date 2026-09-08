@@ -55,7 +55,7 @@ import {
 import { gmapsRoute, optimizeCrewOrder, routeInfo } from '../lib/ors'
 import { shiftLabel } from '../lib/shift'
 import { downloadCsv, toCsv } from '../lib/csv'
-import { distanceMeters, distanceToLineMeters } from '../lib/geo'
+import { distanceMeters, distanceToLineMeters, routeProgress } from '../lib/geo'
 import { fetchLiveTracker } from '../lib/tracker'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -1420,18 +1420,54 @@ const SPEED_LIMIT_KPH = 100
 const LIVE_STATUS_LABEL = { green: 'Moving', red: 'Stopped', blue: 'Offline', yellow: 'Engine on' }
 const LIVE_STATUS_BADGE = { green: 'badge-success', blue: 'badge-warning', yellow: 'badge-warning' }
 
-function LiveTrackingCard({ row }) {
+// AI Track timestamps come through as a number (unix s or ms) or a string
+// ("2026-09-08 14:32:05" / ISO) - be tolerant, fall back to null.
+const parseTrackerTs = (ts) => {
+  if (ts == null || ts === '') return null
+  if (typeof ts === 'number') return new Date(ts < 1e12 ? ts * 1000 : ts)
+  let d = new Date(ts)
+  if (!Number.isNaN(d.getTime())) return d
+  d = new Date(String(ts).replace(' ', 'T'))
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function LiveTrackingCard({ row, mapHeight = 200 }) {
   const trackerUrl = row.vehicle.tracker_url
   const [live, setLive] = useState(null)
   const [checked, setChecked] = useState(false)
+  // stops the vehicle has been seen at WHILE this card is open: seq -> Date.
+  // Session-only - a persisted per-ride history is the future "AI Tracker
+  // system" (see memory). Uses the tracker fix's own timestamp when it parses.
+  const [passedAt, setPassedAt] = useState({})
+
+  const waypoints = useMemo(
+    () =>
+      [...(row.waypoints || [])]
+        .filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)))
+        .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)),
+    [row.waypoints],
+  )
 
   useEffect(() => {
     let alive = true
     const poll = async () => {
       const p = await fetchLiveTracker(trackerUrl)
-      if (alive) {
-        setLive(p)
-        setChecked(true)
+      if (!alive) return
+      setLive(p)
+      setChecked(true)
+      if (p) {
+        const at = parseTrackerTs(p.timestamp) || new Date()
+        setPassedAt((prev) => {
+          let next = prev
+          waypoints.forEach((w, i) => {
+            if (next[i] != null) return
+            if (distanceMeters(p.lat, p.lng, Number(w.lat), Number(w.lng)) <= ARRIVED_M) {
+              if (next === prev) next = { ...prev }
+              next[i] = at
+            }
+          })
+          return next
+        })
       }
     }
     poll()
@@ -1440,7 +1476,7 @@ function LiveTrackingCard({ row }) {
       alive = false
       clearInterval(id)
     }
-  }, [trackerUrl])
+  }, [trackerUrl, waypoints])
 
   if (!checked) return <div className="field-hint">Checking live position…</div>
   if (!live) return <div className="field-hint">No live signal from this vehicle right now.</div>
@@ -1452,17 +1488,31 @@ function LiveTrackingCard({ row }) {
       ? distanceMeters(live.lat, live.lng, destLat, destLng)
       : null
   const arrived = distToDestM != null && distToDestM <= ARRIVED_M
-  const etaAt =
+
+  const prog = row.route_geometry?.length > 1 ? routeProgress(live.lat, live.lng, row.route_geometry) : null
+  const remainKm = prog ? prog.aheadM / 1000 : distToDestM != null ? distToDestM / 1000 : null
+  const plannedKph =
+    row.distance_km && row.duration_min ? Number(row.distance_km) / (Number(row.duration_min) / 60) : null
+  // use the live speed while genuinely moving, else the planned average
+  const speedKph = live.speed > 4 ? live.speed : plannedKph || 25
+  const etaMin = remainKm != null ? Math.round((remainKm / speedKph) * 60) : null
+  const liveEtaAt = etaMin != null ? new Date(Date.now() + etaMin * 60000) : null
+
+  const plannedEtaAt =
     row.start_at && row.duration_min != null
       ? new Date(new Date(row.start_at).getTime() + row.duration_min * 60000)
       : null
-  const late = !arrived && etaAt != null && Date.now() > etaAt.getTime()
+  const late = !arrived && plannedEtaAt != null && Date.now() > plannedEtaAt.getTime()
 
   const offRouteM =
     row.route_geometry?.length > 1 ? distanceToLineMeters(live.lat, live.lng, row.route_geometry) : null
   const offRoute = offRouteM != null && offRouteM > OFF_ROUTE_M
-
   const overSpeed = live.speed > SPEED_LIMIT_KPH
+
+  const fixAt = parseTrackerTs(live.timestamp)
+  const passedRows = Object.entries(passedAt)
+    .map(([i, at]) => ({ i: Number(i), at, w: waypoints[Number(i)] }))
+    .sort((a, b) => a.at - b.at)
 
   return (
     <div className="live-track">
@@ -1470,13 +1520,46 @@ function LiveTrackingCard({ row }) {
         <span className={`badge ${LIVE_STATUS_BADGE[live.status] || ''}`}>
           {LIVE_STATUS_LABEL[live.status] || 'Unknown'} · {live.speed} kph
         </span>
-        {arrived && <span className="badge badge-success">Arrived</span>}
-        {late && <span className="badge badge-warning">Running late</span>}
+        {arrived ? (
+          <span className="badge badge-success">Arrived</span>
+        ) : (
+          liveEtaAt && (
+            <span className="badge badge-accent">
+              Arrives ~{fmtTimeOnly12(liveEtaAt.toISOString())}
+              {etaMin != null ? ` · in ${etaMin} min` : ''}
+              {remainKm != null ? ` · ${remainKm.toFixed(1)} km left` : ''}
+            </span>
+          )
+        )}
+        {late && <span className="badge badge-warning">Behind planned ETA</span>}
         {offRoute && <span className="badge badge-warning">Off route ({(offRouteM / 1000).toFixed(1)} km)</span>}
         {overSpeed && <span className="badge badge-danger">Over speed</span>}
       </div>
-      <RouteMap points={row.waypoints || []} line={row.route_geometry} liveMarker={live} height={200} />
-      {live.address && <span className="field-hint">{live.address}</span>}
+      <RouteMap
+        points={row.waypoints || []}
+        line={row.route_geometry}
+        totalKm={row.distance_km != null ? Number(row.distance_km) : undefined}
+        liveMarker={live}
+        height={mapHeight}
+      />
+      <div className="live-track-foot">
+        {live.address && <span className="field-hint">{live.address}</span>}
+        {fixAt && <span className="field-hint">Last fix {fmtTimeOnly12(fixAt.toISOString())}</span>}
+      </div>
+      {passedRows.length > 0 && (
+        <div className="live-track-passed">
+          <span className="live-track-passed-head">Seen at stops (this session)</span>
+          {passedRows.map(({ i, at, w }) => (
+            <div className="live-track-passed-row" key={i}>
+              <span>
+                {i === 0 ? 'A' : i === waypoints.length - 1 ? 'B' : i}
+                {w?.label ? ` · ${w.label}` : ''}
+              </span>
+              <span>{fmtTimeOnly12(at.toISOString())}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1973,9 +2056,17 @@ function RideModal({
   // ---- read-only view ----
   if (!editing) {
     const gm = gmapsRoute(row.waypoints)
+    const hasLive = Boolean(row.vehicle?.tracker_url)
     return (
-      <Modal open onClose={onClose} title={title} width={560}>
-        <div className="modal-form">
+      <Modal
+        open
+        onClose={onClose}
+        title={title}
+        width={hasLive ? 'min(1100px, 95vw)' : 560}
+        size={hasLive ? 'lg' : undefined}
+      >
+        <div className={`ride-view${hasLive ? ' ride-view--live' : ''}`}>
+        <div className="ride-view-info modal-form">
           {[
             ['Flight', `${row.flight_no || '—'}${row.flight_code ? ' · ' + row.flight_code : ''}`],
             ['Block', blockLabel(row.block_type)],
@@ -2011,27 +2102,36 @@ function RideModal({
             </div>
           ))}
 
-          {row.vehicle?.tracker_url ? (
-            <LiveTrackingCard row={row} />
-          ) : (
-            <RouteMap points={row.waypoints || []} line={row.route_geometry} height={200} />
-          )}
           {gm && (
             <a className="btn btn-ghost btn-square btn-sm" href={gm} target="_blank" rel="noreferrer">
               <Navigation size={13} /> Open route in Google Maps
             </a>
           )}
+        </div>
 
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-              Close
+        <div className="ride-view-map">
+          {hasLive ? (
+            <LiveTrackingCard row={row} mapHeight="min(62vh, 560px)" />
+          ) : (
+            <RouteMap
+              points={row.waypoints || []}
+              line={row.route_geometry}
+              totalKm={row.distance_km != null ? Number(row.distance_km) : undefined}
+              height={220}
+            />
+          )}
+        </div>
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Close
+          </button>
+          {canEdit && (
+            <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
+              <Pencil size={13} /> Edit
             </button>
-            {canEdit && (
-              <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
-                <Pencil size={13} /> Edit
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </Modal>
     )

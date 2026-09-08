@@ -34,6 +34,43 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Ride view: two columns (details | live map) when the vehicle has a tracker */
+.ride-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ride-view--live {
+  flex-direction: row;
+  align-items: flex-start;
+  min-height: 100%;
+}
+.ride-view--live .ride-view-info {
+  flex: 0 0 340px;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+.ride-view--live .ride-view-map {
+  flex: 1;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+}
+@media (max-width: 860px) {
+  .ride-view--live {
+    flex-direction: column;
+  }
+  .ride-view--live .ride-view-info {
+    flex: none;
+    max-height: none;
+    overflow: visible;
+  }
+  .ride-view--live .ride-view-map {
+    position: static;
+    width: 100%;
+  }
+}
+
 /* Live Tracking card in the Ride view (see Rides.jsx's LiveTrackingCard) */
 .live-track {
   display: flex;
@@ -45,6 +82,41 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.live-track-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.live-track-passed {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+}
+.live-track-passed-head {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.live-track-passed-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.live-track-passed-row + .live-track-passed-row {
+  border-top: 1px solid var(--border);
+}
+.live-track-passed-row span:last-child {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .radio-row {

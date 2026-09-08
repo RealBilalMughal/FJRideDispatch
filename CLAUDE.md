@@ -278,29 +278,41 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   undocumented endpoint of a third-party service, not a published API, so
   every field is read defensively and the shape could change without
   notice), giving `{ lat, lng, speed, course, status, address }` for that one
-  vehicle. Renders as a coloured dot on the same `RouteMap` via its new
-  `liveMarker` prop (bounds-fit includes the live point too, so an
-  off-route vehicle still stays in view), plus badges derived purely
-  client-side from that one fix (`src/lib/geo.js`'s new `distanceMeters()` /
-  `distanceToLineMeters()` - no extra ORS calls):
+  vehicle. **When it's showing, the Ride View modal goes near-full-screen**
+  (`Modal` `size="lg"`, `width: min(1100px, 95vw)`) with a two-column
+  `.ride-view--live` layout - detail rows scroll on the left (`flex: 0 0
+  340px`), a big live map (`min(62vh, 560px)`) sticks on the right; stacks
+  under 860px. Renders a pulsing coloured dot on the same `RouteMap` via its
+  `liveMarker` prop (bounds-fit includes the live point). `RouteMap` also now
+  colours the stop pins by role - **origin green / mid amber / destination
+  red** - and labels each with the running distance from the origin (rough
+  crow-flies legs scaled so the last equals the ride's real `distance_km`,
+  passed as `totalKm`). Signals derived client-side from the one fix
+  (`src/lib/geo.js` - `distanceMeters()` / `distanceToLineMeters()` /
+  `routeProgress()`, no ORS calls):
   - **Moving / Stopped / Offline / Engine on** + live speed, from the
     tracker's own `icon_color`.
-  - **Arrived** - within 300m of `dest_lat`/`dest_lng`.
-  - **Running late** - past the ride's own ETA (`start_at + duration_min`)
-    and not yet Arrived.
+  - **Arrives ~HH:MM · in N min · X km left** - a live ETA: `routeProgress()`
+    gives the distance still ahead along `route_geometry`, divided by the live
+    speed while genuinely moving (else the ride's planned average). Replaced by
+    **Arrived** within 300m of `dest_lat`/`dest_lng`.
+  - **Behind planned ETA** - past the ride's own ETA (`start_at +
+    duration_min`) and not yet Arrived.
   - **Off route** - the live fix is more than 500m from `route_geometry`.
   - **Over speed** - live speed over a flat 100 kph (`SPEED_LIMIT_KPH` in
     `Rides.jsx` - the tracker's sharing link doesn't expose a per-vehicle
     speed-limit/geofence config, only the live fix, so this is our own
     threshold, not theirs).
-  **Not implemented**: a full "actual route driven vs planned route"
-  historical comparison - the sharing link's `/items` response only carries
-  a short recent `tail` (a handful of breadcrumb points), not the vehicle's
-  whole trip history, so there's nothing to diff against after the fact.
-  Building that would mean our own backend polling and logging positions
-  continuously while a ride is active (a scheduled Edge Function, not
-  something the browser can do reliably) - a bigger follow-up, not attempted
-  here.
+  - **Seen at stops (this session)** - while the card is open, each time the
+    live fix comes within 300m of a waypoint it records the time (the tracker
+    fix's own `timestamp` via `parseTrackerTs()`, else the client clock).
+    Session-only - not persisted.
+  **Not implemented**: a *persisted* per-ride "actual route driven vs planned"
+  history - the sharing link's `/items` response only carries the current fix
+  plus a short recent `tail`, not the whole trip. The "Seen at stops" list
+  only fills while someone is watching the modal. A durable version needs our
+  own backend polling + logging while a ride is active (a scheduled Edge
+  Function) - the deferred "AI Tracker system" (see memory).
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).

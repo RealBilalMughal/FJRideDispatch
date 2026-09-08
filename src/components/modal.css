@@ -44,6 +44,20 @@
   padding: 20px;
 }
 
+/* size="lg" - a near-full-screen popup (e.g. the live Ride view) */
+.modal-backdrop--lg {
+  padding: 20px 16px;
+}
+.modal-card--lg {
+  min-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+.modal-card--lg .modal-body {
+  flex: 1;
+  padding: 18px 20px;
+}
+
 /* shared form layout inside modals */
 .modal-form {
   display: flex;

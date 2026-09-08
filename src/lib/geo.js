@@ -34,10 +34,10 @@ export function distanceMeters(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a))
 }
 
-// Point-to-segment distance in meters, via a local equirectangular
-// projection around the segment's midpoint - accurate enough for
-// ride-length (city-scale) segments, much cheaper than true geodesic math.
-function distanceToSegmentMeters(lat, lng, lat1, lng1, lat2, lng2) {
+// Project a point onto a segment (local equirectangular around the segment
+// midpoint). Returns [t, perpMeters] where t in [0,1] is how far along the
+// segment the foot of the perpendicular sits.
+function projectOnSegment(lat, lng, lat1, lng1, lat2, lng2) {
   const R = 6371000
   const toRad = (d) => (d * Math.PI) / 180
   const latRef = toRad((lat1 + lat2) / 2)
@@ -47,7 +47,7 @@ function distanceToSegmentMeters(lat, lng, lat1, lng1, lat2, lng2) {
   const y2 = (lat2 - lat1) * toRad(1) * R
   const lenSq = x2 * x2 + y2 * y2
   const t = lenSq ? Math.max(0, Math.min(1, (x * x2 + y * y2) / lenSq)) : 0
-  return Math.hypot(x - x2 * t, y - y2 * t)
+  return [t, Math.hypot(x - x2 * t, y - y2 * t)]
 }
 
 // Shortest distance (meters) from a point to a polyline [[lat,lng], ...].
@@ -55,8 +55,32 @@ export function distanceToLineMeters(lat, lng, line) {
   if (!line || line.length < 2) return Infinity
   let min = Infinity
   for (let i = 0; i < line.length - 1; i++) {
-    const d = distanceToSegmentMeters(lat, lng, line[i][0], line[i][1], line[i + 1][0], line[i + 1][1])
+    const [, d] = projectOnSegment(lat, lng, line[i][0], line[i][1], line[i + 1][0], line[i + 1][1])
     if (d < min) min = d
   }
   return min
+}
+
+// Where a point sits along a polyline: distance already covered from the start
+// (behindM), distance still to go to the end (aheadM), the polyline's total
+// length (totalM) and how far off the line the point is (offM). Snaps to the
+// nearest segment. Returns null for a degenerate line.
+export function routeProgress(lat, lng, line) {
+  if (!line || line.length < 2) return null
+  const segLen = []
+  let totalM = 0
+  for (let i = 0; i < line.length - 1; i++) {
+    const d = distanceMeters(line[i][0], line[i][1], line[i + 1][0], line[i + 1][1])
+    segLen.push(d)
+    totalM += d
+  }
+  let best = { i: 0, t: 0, off: Infinity }
+  for (let i = 0; i < line.length - 1; i++) {
+    const [t, off] = projectOnSegment(lat, lng, line[i][0], line[i][1], line[i + 1][0], line[i + 1][1])
+    if (off < best.off) best = { i, t, off }
+  }
+  let behindM = 0
+  for (let i = 0; i < best.i; i++) behindM += segLen[i]
+  behindM += segLen[best.i] * best.t
+  return { behindM, aheadM: Math.max(0, totalM - behindM), totalM, offM: best.off }
 }

@@ -59,3 +59,50 @@
 .stop-map.placeholder small {
   font-size: 11px;
 }
+
+/* route stop pin - colour set inline by role (origin / mid / dest) */
+.rm-pin-wrap {
+  background: none;
+  border: 0;
+}
+.rm-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* live vehicle dot - pulsing */
+.rm-live-wrap {
+  background: none;
+  border: 0;
+}
+.rm-live {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--rm-live, #727272);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 0 var(--rm-live, #727272);
+  animation: rm-pulse 1.8s ease-out infinite;
+}
+@keyframes rm-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--rm-live, #727272) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--rm-live, #727272) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}

@@ -512,7 +512,7 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   column and CSV export - the column header already says KM. It's positioned
   **after ETA** (table + export column order: … Ride Time, ETA, KM, Status).
   This KM is the **total** = ORS road distance + the per-block extra
-  (see Settings → Ride Buffer Time → Pickup / Drop Off extra KM); CSV export
+  (see Settings → Block KM Buffer); CSV export
   also carries an **Extra KM** column, and the "Distance" view row spells out
   `road + extra = total` when `extra_km > 0`. The in-form route badge shows the
   same split. Both the view row and badge keep the "km" unit since their label
@@ -587,7 +587,7 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   RLS (`cities_super`) is hard-coded to `current_user_role() = 'super_admin'`
   regardless of any page-permission row - granting a role "view" here would be
   misleading). Same left-list-plus-panel shell as Role Access (`.set-layout` in
-  `Settings.css`, sized down from `.ra-layout`), two sections, no nested
+  `Settings.css`, sized down from `.ra-layout`), four sections, no nested
   routes - a local `section` state swaps the panel, like Role Access's mode
   switch:
   - **Airport Locations** - pick a city -> edit its `airport_name` + coordinates
@@ -608,15 +608,16 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     stored `duration_min` (road time from ORS + this wait), so every ETA /
     `end_at` / Pickup-Time auto-suggest / table / export / Vehicle Board
     figure accounts for it with no separate column.
-    The same panel also has **Pickup extra KM** / **Drop Off extra KM**
+  - **Block KM Buffer** - edit a city's **Pickup KM** / **Drop Off KM**
     (`cities.pickup_extra_km` / `dropoff_extra_km`, default 0, migration
     `20260908130000_ride_extra_km.sql`) - a flat distance added to those
-    blocks' rides: `blockExtraKm(block, city)` folds into the stored
-    `distance_km` at save (so the KM column, CSV export, Rides Summary and
-    Dashboard KM sums show the total), and `rides.extra_km` keeps the amount
-    so the Ride View's Distance row can show `road km + N km Pickup extra =
-    total km`.
-  - Both panels: **read-only view by default, "Edit" reveals the form** (same
+    blocks' rides: `blockExtraKm(block, city)` in `rideRoute.js` folds into
+    the stored `distance_km` at save (Ride form, Generate, companion Pickup),
+    so the KM column, CSV export, Rides Summary and Dashboard KM sums show the
+    total; `rides.extra_km` keeps the amount so the Ride View's Distance row
+    shows `road km + N km <block> extra = total km` and the CSV export gains
+    an **Extra KM** column.
+  - All panels: **read-only view by default, "Edit" reveals the form** (same
     pattern as Profile), with an Edit button top-right of the panel head.
     Editing disables the City field (finish or Cancel first) and has
     Cancel/**Save** buttons - Save is plain text, no icon. Saving calls

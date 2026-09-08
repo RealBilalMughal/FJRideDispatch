@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Pencil, Satellite, Shield, Timer } from 'lucide-react'
+import { MapPinned, Pencil, Ruler, Satellite, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -25,6 +25,7 @@ import './Settings.css'
 const SECTIONS = [
   { key: 'airports', label: 'Airport Locations', icon: MapPinned },
   { key: 'buffer', label: 'Ride Buffer Time', icon: Timer },
+  { key: 'blockkm', label: 'Block KM Buffer', icon: Ruler },
   { key: 'tracker', label: 'Live Tracker', icon: Satellite },
 ]
 
@@ -73,6 +74,8 @@ export default function Settings() {
             <AirportLocationsPanel />
           ) : section === 'buffer' ? (
             <RideBufferTimePanel />
+          ) : section === 'blockkm' ? (
+            <BlockKmBufferPanel />
           ) : (
             <LiveTrackerPanel />
           )}
@@ -289,8 +292,6 @@ function RideBufferTimePanel() {
   const [returnLeg, setReturnLeg] = useState('')
   const [deadhead, setDeadhead] = useState('')
   const [crewWait, setCrewWait] = useState('')
-  const [pickupKm, setPickupKm] = useState('')
-  const [dropoffKm, setDropoffKm] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -315,8 +316,6 @@ function RideBufferTimePanel() {
     setReturnLeg(city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN)
     setDeadhead(city?.deadhead_buffer_min ?? DEFAULT_DEADHEAD_BUFFER_MIN)
     setCrewWait(city?.crew_wait_buffer_min ?? DEFAULT_CREW_WAIT_BUFFER_MIN)
-    setPickupKm(city?.pickup_extra_km ?? 0)
-    setDropoffKm(city?.dropoff_extra_km ?? 0)
     setErr('')
     setEditing(true)
   }
@@ -335,15 +334,11 @@ function RideBufferTimePanel() {
     const rl = Number(returnLeg)
     const dh = Number(deadhead)
     const cw = Number(crewWait)
-    const pk = Number(pickupKm)
-    const dk = Number(dropoffKm)
     if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
     if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
     if (!Number.isFinite(rl) || rl < 0) return setErr('Return Leg buffer must be a number of minutes')
     if (!Number.isFinite(dh) || dh < 0) return setErr('Deadhead buffer must be a number of minutes')
     if (!Number.isFinite(cw) || cw < 0) return setErr('Crew wait buffer must be a number of minutes')
-    if (!Number.isFinite(pk) || pk < 0) return setErr('Pickup extra KM must be a number')
-    if (!Number.isFinite(dk) || dk < 0) return setErr('Drop Off extra KM must be a number')
     setBusy(true)
     const { error } = await supabase
       .from('cities')
@@ -353,8 +348,6 @@ function RideBufferTimePanel() {
         return_leg_buffer_min: Math.round(rl),
         deadhead_buffer_min: Math.round(dh),
         crew_wait_buffer_min: Math.round(cw),
-        pickup_extra_km: Math.round(pk * 100) / 100,
-        dropoff_extra_km: Math.round(dk * 100) / 100,
       })
       .eq('id', Number(cityId))
     setBusy(false)
@@ -373,8 +366,7 @@ function RideBufferTimePanel() {
             Pickup Time = Check-in − Check-in buffer − trip time. Drop Time = Check-out +
             Check-out buffer. Return Leg / Deadhead Ride Time = drop-off arrival + that
             buffer. Crew wait buffer adds crew × this many minutes to a multi-crew
-            pickup / dropoff. Pickup / Drop Off extra KM is added to those blocks&rsquo;
-            ride distance. Each city keeps its own values.
+            pickup / dropoff. Each city keeps its own buffers.
           </div>
         </div>
         {!editing && cities.length > 0 && (
@@ -487,35 +479,6 @@ function RideBufferTimePanel() {
                 <div className="field" />
               </div>
 
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="bf-pk">Pickup extra KM</label>
-                  <input
-                    id="bf-pk"
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    className="input"
-                    value={pickupKm}
-                    onChange={(e) => setPickupKm(e.target.value)}
-                  />
-                  <span className="field-hint">Added to every Pickup ride&rsquo;s distance</span>
-                </div>
-                <div className="field">
-                  <label htmlFor="bf-dk">Drop Off extra KM</label>
-                  <input
-                    id="bf-dk"
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    className="input"
-                    value={dropoffKm}
-                    onChange={(e) => setDropoffKm(e.target.value)}
-                  />
-                  <span className="field-hint">Added to every Drop Off ride&rsquo;s distance</span>
-                </div>
-              </div>
-
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
                   Cancel
@@ -557,12 +520,176 @@ function RideBufferTimePanel() {
                   {city?.crew_wait_buffer_min ?? DEFAULT_CREW_WAIT_BUFFER_MIN} min
                 </span>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Block KM Buffer ──────────────────────────────────────────────────────
+// A flat extra distance added to Pickup / Drop Off block rides
+// (cities.pickup_extra_km / dropoff_extra_km) - folds into rides.distance_km
+// at save (see blockExtraKm() in rideRoute.js). Same
+// City-field-mirrors-the-global-filter + read-only-until-Edit shell as the
+// panels above.
+function BlockKmBufferPanel() {
+  const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
+  const locked = activeCityId != null
+  const [cityId, setCityId] = useState(
+    () => (locked && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
+  )
+  const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+  const cityName = city?.name || ''
+
+  const [editing, setEditing] = useState(false)
+  const [pickupKm, setPickupKm] = useState('')
+  const [dropoffKm, setDropoffKm] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (locked && cities.some((c) => c.id === activeCityId)) {
+      setCityId(activeCityId)
+      setEditing(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, activeCityId])
+
+  const pickCity = (id) => {
+    setCityId(id)
+    setEditing(false)
+    setErr('')
+  }
+
+  const startEdit = () => {
+    setPickupKm(city?.pickup_extra_km ?? 0)
+    setDropoffKm(city?.dropoff_extra_km ?? 0)
+    setErr('')
+    setEditing(true)
+  }
+
+  const cancel = () => {
+    setErr('')
+    setEditing(false)
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setErr('')
+    if (!cityId) return setErr('Pick a city')
+    const pk = Number(pickupKm)
+    const dk = Number(dropoffKm)
+    if (!Number.isFinite(pk) || pk < 0) return setErr('Pickup KM must be a positive number')
+    if (!Number.isFinite(dk) || dk < 0) return setErr('Drop Off KM must be a positive number')
+    setBusy(true)
+    const { error } = await supabase
+      .from('cities')
+      .update({
+        pickup_extra_km: Math.round(pk * 100) / 100,
+        dropoff_extra_km: Math.round(dk * 100) / 100,
+      })
+      .eq('id', Number(cityId))
+    setBusy(false)
+    if (error) return setErr(error.message)
+    toast.success('Block KM buffer updated')
+    setEditing(false)
+    reloadCities?.()
+  }
+
+  return (
+    <>
+      <div className="set-panel-head">
+        <div>
+          <h3>Block KM Buffer</h3>
+          <div className="sub">
+            A flat distance added to every <b>Pickup</b> / <b>Drop Off</b> ride&rsquo;s KM
+            (on top of the road route). Shows in the KM column, CSV export and the ride
+            View&rsquo;s Distance breakdown. Each city keeps its own values.
+          </div>
+        </div>
+        {!editing && cities.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
+            <Pencil size={13} /> Edit
+          </button>
+        )}
+      </div>
+
+      {cities.length === 0 ? (
+        <p className="field-hint">No cities found.</p>
+      ) : (
+        <div className="set-form">
+          <div className="field">
+            <label htmlFor="bk-city">City</label>
+            {locked ? (
+              <input className="input" value={cityName} disabled />
+            ) : (
+              <select
+                id="bk-city"
+                className="select"
+                value={cityId}
+                onChange={(e) => pickCity(e.target.value)}
+                disabled={editing}
+              >
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {editing ? (
+            <form className="modal-form" onSubmit={submit}>
+              {err && <div className="modal-error">{err}</div>}
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="bk-pk">Pickup KM</label>
+                  <input
+                    id="bk-pk"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    className="input"
+                    value={pickupKm}
+                    onChange={(e) => setPickupKm(e.target.value)}
+                    autoFocus
+                  />
+                  <span className="field-hint">Added to every Pickup ride&rsquo;s distance</span>
+                </div>
+                <div className="field">
+                  <label htmlFor="bk-dk">Drop Off KM</label>
+                  <input
+                    id="bk-dk"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    className="input"
+                    value={dropoffKm}
+                    onChange={(e) => setDropoffKm(e.target.value)}
+                  />
+                  <span className="field-hint">Added to every Drop Off ride&rsquo;s distance</span>
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-square" disabled={busy}>
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
               <div className="view-row">
-                <span className="view-label">Pickup extra KM</span>
+                <span className="view-label">Pickup KM</span>
                 <span className="view-value">{Number(city?.pickup_extra_km ?? 0)} km</span>
               </div>
               <div className="view-row">
-                <span className="view-label">Drop Off extra KM</span>
+                <span className="view-label">Drop Off KM</span>
                 <span className="view-value">{Number(city?.dropoff_extra_km ?? 0)} km</span>
               </div>
             </div>

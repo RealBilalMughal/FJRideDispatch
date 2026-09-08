@@ -20,7 +20,7 @@ import StatCards from '../components/data/StatCards'
 
 const PAGE_SIZE = 15
 const SELECT =
-  'id, ref_no, vehicle_no, company, model, year, color, city_id, driver_id, night_driver_id, tracker_url, is_active, created_at, city:cities(name)'
+  'id, ref_no, vehicle_no, company, model, year, color, city_id, vendor_id, driver_id, night_driver_id, tracker_url, is_active, created_at, city:cities(name), vendor:vendors(ref_no, name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -30,6 +30,7 @@ const EXPORT_COLS = [
   { key: 'year', label: 'Year' },
   { key: 'color', label: 'Color' },
   { key: 'city', label: 'City' },
+  { key: 'vendor', label: 'Vendor' },
   { key: 'day_driver', label: 'Day Driver' },
   { key: 'night_driver', label: 'Night Driver' },
   { key: 'is_active', label: 'Active' },
@@ -42,12 +43,13 @@ const SAMPLE_COLS = [
   { key: 'year', label: 'year' },
   { key: 'color', label: 'color' },
   { key: 'city', label: 'city' },
+  { key: 'vendor', label: 'vendor' },
   { key: 'day_driver', label: 'day_driver' },
   { key: 'night_driver', label: 'night_driver' },
 ]
 const SAMPLE = [
-  { vehicle_no: 'LEA-1234', company: 'Toyota', model: 'Corolla', year: '2019', color: 'White', city: 'Lahore', day_driver: 'Kamran Ali', night_driver: 'Bilal Ahmed' },
-  { vehicle_no: 'ICT-5678', company: 'Honda', model: 'City', year: '2021', color: 'Silver', city: 'Islamabad', day_driver: '', night_driver: '' },
+  { vehicle_no: 'LEA-1234', company: 'Toyota', model: 'Corolla', year: '2019', color: 'White', city: 'Lahore', vendor: 'City Movers', day_driver: 'Kamran Ali', night_driver: 'Bilal Ahmed' },
+  { vehicle_no: 'ICT-5678', company: 'Honda', model: 'City', year: '2021', color: 'Silver', city: 'Islamabad', vendor: '', day_driver: '', night_driver: '' },
 ]
 
 const NIL = '00000000-0000-0000-0000-000000000000'
@@ -55,6 +57,7 @@ const nameOf = (drivers, id) => {
   const d = drivers.find((x) => x.id === id)
   return d ? d.name : ''
 }
+const vendorLabel = (v) => (v ? `(${v.ref_no}) ${v.name}` : '—')
 
 export default function Vehicles() {
   const { can, profile } = useAuth()
@@ -83,10 +86,22 @@ export default function Vehicles() {
       .then(({ data }) => setDrivers((data ?? []).filter((d) => d.is_active)))
   }, [canView])
 
+  // vendors for the picker (filtered by city in the form)
+  const [vendors, setVendors] = useState([])
+  useEffect(() => {
+    if (!canView) return
+    supabase
+      .from('vendors')
+      .select('id, ref_no, name, city_id, is_active')
+      .order('name')
+      .then(({ data }) => setVendors((data ?? []).filter((v) => v.is_active)))
+  }, [canView])
+
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [driverFilter, setDriverFilter] = useState('all')
+  const [vendorFilter, setVendorFilter] = useState('all')
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
@@ -99,6 +114,7 @@ export default function Vehicles() {
       rows.map((r) => ({
         ...r,
         city_name: r.city?.name ?? '',
+        vendor_text: vendorLabel(r.vendor),
         day_driver_name: nameOf(drivers, r.driver_id),
         night_driver_name: nameOf(drivers, r.night_driver_id),
       })),
@@ -125,16 +141,17 @@ export default function Vehicles() {
       const anyDriver = r.driver_id || r.night_driver_id
       if (driverFilter === 'assigned' && !anyDriver) return false
       if (driverFilter === 'unassigned' && anyDriver) return false
+      if (vendorFilter !== 'all' && r.vendor_id !== vendorFilter) return false
       if (
         s &&
-        !`${r.ref_no} ${r.vehicle_no} ${r.company ?? ''} ${r.model ?? ''} ${r.day_driver_name} ${r.night_driver_name}`
+        !`${r.ref_no} ${r.vehicle_no} ${r.company ?? ''} ${r.model ?? ''} ${r.vendor?.name ?? ''} ${r.day_driver_name} ${r.night_driver_name}`
           .toLowerCase()
           .includes(s)
       )
         return false
       return true
     })
-  }, [list, search, statusFilter, driverFilter])
+  }, [list, search, statusFilter, driverFilter, vendorFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const stats = useMemo(
@@ -174,6 +191,7 @@ export default function Vehicles() {
       year: r.year ?? '',
       color: r.color ?? '',
       city: r.city_name,
+      vendor: r.vendor?.name ?? '',
       day_driver: r.day_driver_name,
       night_driver: r.night_driver_name,
       is_active: r.is_active ? 'yes' : 'no',
@@ -204,6 +222,7 @@ export default function Vehicles() {
     { key: 'year', header: 'Year', render: (r) => r.year || '—' },
     { key: 'color', header: 'Color', render: (r) => r.color || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
+    { key: 'vendor', header: 'Vendor', render: (r) => r.vendor_text },
     { key: 'dday', header: 'Day Driver', render: (r) => r.day_driver_name || '—' },
     { key: 'dnight', header: 'Night Driver', render: (r) => r.night_driver_name || '—' },
     {
@@ -297,16 +316,36 @@ export default function Vehicles() {
           setSearch(v)
           setPage(1)
         }}
-        searchPlaceholder="Search ID, number, company, model or driver..."
-        activeCount={(statusFilter !== 'all' ? 1 : 0) + (driverFilter !== 'all' ? 1 : 0)}
+        searchPlaceholder="Search ID, number, company, model, vendor or driver..."
+        activeCount={
+          (statusFilter !== 'all' ? 1 : 0) +
+          (driverFilter !== 'all' ? 1 : 0) +
+          (vendorFilter !== 'all' ? 1 : 0)
+        }
         onClear={() => {
           setStatusFilter('all')
           setDriverFilter('all')
+          setVendorFilter('all')
           setSearch('')
           setPage(1)
         }}
         inline={
           <>
+            <select
+              className="filter-select"
+              value={vendorFilter}
+              onChange={(e) => {
+                setVendorFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="all">All vendors</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
             <select
               className="filter-select"
               value={driverFilter}
@@ -363,6 +402,7 @@ export default function Vehicles() {
       {addOpen && (
         <VehicleModal
           drivers={drivers}
+          vendors={vendors}
           takenDay={takenDay} takenNight={takenNight}
           allowedCities={allowedCities}
           defaultCityId={cityId}
@@ -380,6 +420,7 @@ export default function Vehicles() {
           startInEdit={detail.edit}
           canEdit={canEdit}
           drivers={drivers}
+          vendors={vendors}
           takenDay={takenDay} takenNight={takenNight}
           allowedCities={allowedCities}
           onClose={() => setDetail(null)}
@@ -392,6 +433,7 @@ export default function Vehicles() {
       {importOpen && (
         <ImportVehicles
           drivers={drivers}
+          vendors={vendors}
           allowedCities={allowedCities}
           createdBy={profile?.id}
           onClose={() => setImportOpen(false)}
@@ -414,7 +456,7 @@ export default function Vehicles() {
   )
 }
 
-function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, takenDay, takenNight, allowedCities, defaultCityId, createdBy, onClose, onDone }) {
+function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendors = [], takenDay, takenNight, allowedCities, defaultCityId, createdBy, onClose, onDone }) {
   const isAdd = !row
   const [editing, setEditing] = useState(isAdd || startInEdit)
   const [form, setForm] = useState({
@@ -424,6 +466,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     year: row?.year != null ? String(row.year) : '',
     color: row?.color ?? '',
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
+    vendor_id: row?.vendor_id ?? '',
     driver_id: row?.driver_id ?? '', // day driver
     night_driver_id: row?.night_driver_id ?? '',
     tracker_url: row?.tracker_url ?? '',
@@ -437,6 +480,11 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     () => drivers.filter((d) => !form.city_id || d.city_id === Number(form.city_id)),
     [drivers, form.city_id],
   )
+  const cityVendors = useMemo(
+    () => vendors.filter((v) => !form.city_id || v.city_id === Number(form.city_id)),
+    [vendors, form.city_id],
+  )
+  const vendorOptions = cityVendors.map((v) => ({ value: v.id, label: `(${v.ref_no}) ${v.name}` }))
   const optionsFor = (taken, otherId) =>
     cityDrivers
       .filter((d) => d.id !== otherId)
@@ -453,6 +501,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
     if (form.driver_id && !cityDrivers.some((d) => d.id === form.driver_id)) set('driver_id', '')
     if (form.night_driver_id && !cityDrivers.some((d) => d.id === form.night_driver_id))
       set('night_driver_id', '')
+    if (form.vendor_id && !cityVendors.some((v) => v.id === form.vendor_id)) set('vendor_id', '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.city_id])
 
@@ -491,6 +540,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
       year: form.year.trim() ? Number(form.year.trim()) : null,
       color: form.color.trim() || null,
       city_id: Number(form.city_id),
+      vendor_id: form.vendor_id || null,
       driver_id: form.driver_id || null,
       night_driver_id: form.night_driver_id || null,
       tracker_url: form.tracker_url.trim() || null,
@@ -526,6 +576,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
             ['Year', row.year || '—'],
             ['Color', row.color || '—'],
             ['City', cityName],
+            ['Vendor', row.vendor_text || vendorLabel(row.vendor)],
             ['Day driver', row.day_driver_name || '—'],
             ['Night driver', row.night_driver_name || '—'],
             ['Tracker link', row.tracker_url || '—'],
@@ -603,6 +654,16 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
           </select>
         </div>
         <div className="field">
+          <label>Vendor</label>
+          <SearchSelect
+            value={form.vendor_id}
+            onChange={(v) => set('vendor_id', v)}
+            options={[{ value: '', label: 'No vendor' }, ...vendorOptions]}
+            placeholder={form.city_id ? 'Search a vendor…' : 'Pick a city first'}
+            disabled={!form.city_id}
+          />
+        </div>
+        <div className="field">
           <label>Day driver</label>
           <SearchSelect
             value={form.driver_id}
@@ -652,7 +713,7 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, taken
   )
 }
 
-function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) {
+function ImportVehicles({ drivers, vendors = [], allowedCities, createdBy, onClose, onDone }) {
   const [parsed, setParsed] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -671,7 +732,7 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
     const hc = checkHeaders(
       headers,
       ['vehicle_no', 'city'],
-      ['vehicle_no', 'company', 'model', 'year', 'color', 'city', 'day_driver', 'night_driver', 'driver'],
+      ['vehicle_no', 'company', 'model', 'year', 'color', 'city', 'vendor', 'day_driver', 'night_driver', 'driver'],
     )
     if (!hc.ok) {
       setErr(hc.error)
@@ -708,6 +769,15 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
       if (day.id && day.id === night.id)
         return skipped.push({ line, reason: 'day and night driver are the same person' })
 
+      let vendorId = null
+      const vnm = (r.vendor || '').trim().toLowerCase()
+      if (vnm) {
+        const vm = vendors.filter((v) => v.city_id === cityId && v.name.toLowerCase() === vnm)
+        if (vm.length === 0) return skipped.push({ line, reason: `vendor "${r.vendor}" not found in ${r.city}` })
+        if (vm.length > 1) return skipped.push({ line, reason: `vendor "${r.vendor}" is ambiguous` })
+        vendorId = vm[0].id
+      }
+
       ok.push({
         vehicle_no: vno,
         company: (r.company || '').trim() || null,
@@ -715,6 +785,7 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
         year: year ? Number(year) : null,
         color: (r.color || '').trim() || null,
         city_id: cityId,
+        vendor_id: vendorId,
         driver_id: day.id,
         night_driver_id: night.id,
         created_by: createdBy ?? null,
@@ -745,9 +816,9 @@ function ImportVehicles({ drivers, allowedCities, createdBy, onClose, onDone }) 
         {err && <div className="modal-error">{err}</div>}
         <p className="confirm-msg">
           CSV columns:{' '}
-          <b>vehicle_no, company, model, year, color, city, day_driver, night_driver</b>. Drivers
-          are optional, matched by name within the city; each driver can hold one day and one
-          night slot only.
+          <b>vehicle_no, company, model, year, color, city, vendor, day_driver, night_driver</b>.
+          Vendor and drivers are optional, matched by name within the city; each driver can hold
+          one day and one night slot only.
         </p>
         <button
           type="button"

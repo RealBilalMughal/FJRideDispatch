@@ -193,11 +193,16 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   - **Driver**: name, contact, city, **vendor (required)** - `SearchSelect`
     filtered to the driver's city; shown as `(refNo) Vendor Name`.
   - **Vehicle**: vehicle_no (unique), company, model, year (4 digits), color, city,
+    optional **Vendor** (`vehicles.vendor_id`, nullable, `on delete set null`,
+    migration `20260908120000_vehicle_vendor.sql` - same vendor pool as drivers,
+    `SearchSelect` filtered to the vehicle's city; column / view / CSV
+    export+import (`vendor` col, matched by name in the city) / filter),
     **Day driver + Night driver** (both optional) - a 24h vehicle with a 2-driver
     shift. `driver_id` = day, `night_driver_id` = night. A driver holds at most one
     day slot and one night slot (two partial unique indexes) and day != night on a
-    vehicle (`vehicles_day_night_distinct`). Both FKs `on delete set null`.
-    `drivers.vendor_id` is `on delete restrict`. Optional **Tracker link**
+    vehicle (`vehicles_day_night_distinct`). Both driver FKs `on delete set null`.
+    `drivers.vendor_id` (distinct from the vehicle's) is required / `on delete
+    restrict`. Optional **Tracker link**
     (`vehicles.tracker_url`) - that vehicle's own AI Track sharing link,
     distinct from `cities.tracker_url` (the fleet map on the Tracker page,
     Pages -> Tracker) - powers the Ride view's Live Tracking card (see the

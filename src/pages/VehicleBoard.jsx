@@ -3,7 +3,7 @@ import { MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leafle
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Map as MapIcon, RefreshCw, Rows3, Shield } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Map as MapIcon, RefreshCw, Rows3, Shield, Wand2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -17,7 +17,7 @@ import './VehicleBoard.css'
 
 const RIDE_SELECT = `
   id, ref_no, block_type, ride_date, start_at, end_at, distance_km, duration_min,
-  origin_label, dest_label, waypoints, route_geometry, vehicle_id,
+  origin_label, dest_label, waypoints, route_geometry, vehicle_id, city_id, shift, driver_id,
   vehicle:vehicles(ref_no, vehicle_no),
   ride_crew(seq, crew:crew(name))
 `
@@ -26,11 +26,15 @@ const minsOf = (iso) => {
   const d = new Date(iso)
   return d.getHours() * 60 + d.getMinutes()
 }
+const ms = (iso) => new Date(iso).getTime()
+const overlaps = (aS, aE, list) => list.some((b) => aS < b.e && aE > b.s)
 
 export default function VehicleBoard() {
   const { can } = useAuth()
   const { cityId, cityName } = useCity()
   const canView = can('rides', 'view')
+
+  const canEdit = can('rides', 'edit')
 
   const [date, setDate] = useState(pkToday)
   const [tab, setTab] = useState('board') // board | map
@@ -38,14 +42,17 @@ export default function VehicleBoard() {
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
   const [openRide, setOpenRide] = useState(null)
+  const [autoOn, setAutoOn] = useState(false)
+  const [assigning, setAssigning] = useState(false)
+  const [dragOverV, setDragOverV] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    let rq = supabase.from('rides').select(RIDE_SELECT).eq('ride_date', date).not('vehicle_id', 'is', null)
+    let rq = supabase.from('rides').select(RIDE_SELECT).eq('ride_date', date)
     if (cityId != null) rq = rq.eq('city_id', cityId)
     let vq = supabase
       .from('vehicles')
-      .select('id, ref_no, vehicle_no, is_active, driver:drivers!driver_id(name)')
+      .select('id, ref_no, vehicle_no, city_id, is_active, driver_id, night_driver_id, driver:drivers!driver_id(name)')
     if (cityId != null) vq = vq.eq('city_id', cityId)
     const [{ data: rd, error: re }, { data: vd, error: ve }] = await Promise.all([rq, vq])
     if (re || ve) toast.error('Could not load the board')
@@ -77,11 +84,82 @@ export default function VehicleBoard() {
   const byVehicle = useMemo(() => {
     const m = new Map()
     for (const r of rides) {
+      if (!r.vehicle_id) continue
       if (!m.has(r.vehicle_id)) m.set(r.vehicle_id, [])
       m.get(r.vehicle_id).push(r)
     }
     return m
   }, [rides])
+
+  const unassigned = useMemo(
+    () => rides.filter((r) => !r.vehicle_id).sort((a, b) => (a.start_at || '').localeCompare(b.start_at || '')),
+    [rides],
+  )
+
+  // move a ride onto a vehicle (or off it, vId = null). Warns on a time clash
+  // but still applies it - the dispatcher's call.
+  const assignRide = useCallback(
+    async (rideId, vId) => {
+      const ride = rides.find((r) => r.id === rideId)
+      if (!ride || ride.vehicle_id === vId) return
+      const veh = vId ? vehicles.find((v) => v.id === vId) : null
+      if (vId && ride.start_at && ride.end_at) {
+        const clash = (byVehicle.get(vId) || []).filter(
+          (o) => o.id !== rideId && o.start_at && o.end_at,
+        ).map((o) => ({ s: ms(o.start_at), e: ms(o.end_at) }))
+        if (overlaps(ms(ride.start_at), ms(ride.end_at), clash)) {
+          toast(`Heads up — ${veh?.vehicle_no} already has a ride in that window`, { icon: '⚠️' })
+        }
+      }
+      const patch = vId
+        ? { vehicle_id: vId, shift: ride.shift || 'day', driver_id: veh?.driver_id ?? null }
+        : { vehicle_id: null, shift: null, driver_id: null }
+      const { error } = await supabase.from('rides').update(patch).eq('id', rideId)
+      if (error) return toast.error(error.message)
+      toast.success(vId ? `#${ride.ref_no} → ${veh?.vehicle_no}` : `#${ride.ref_no} unassigned`)
+      load()
+    },
+    [rides, vehicles, byVehicle, load],
+  )
+
+  const runAutoAssign = useCallback(async () => {
+    const pool = unassigned.filter((r) => r.start_at && r.end_at)
+    if (!pool.length) return
+    setAssigning(true)
+    // working busy windows per vehicle (seed from what's already booked)
+    const busy = new Map(
+      vehicles.map((v) => [
+        v.id,
+        (byVehicle.get(v.id) || [])
+          .filter((r) => r.start_at && r.end_at)
+          .map((r) => ({ s: ms(r.start_at), e: ms(r.end_at) })),
+      ]),
+    )
+    const updates = []
+    let skipped = 0
+    for (const r of pool) {
+      const s = ms(r.start_at)
+      const e = ms(r.end_at)
+      const v = vehicles.find((v) => v.city_id === r.city_id && !overlaps(s, e, busy.get(v.id) || []))
+      if (!v) {
+        skipped++
+        continue
+      }
+      busy.get(v.id).push({ s, e })
+      updates.push({ id: r.id, vehicle_id: v.id, shift: r.shift || 'day', driver_id: v.driver_id ?? null })
+    }
+    for (const u of updates) {
+      await supabase
+        .from('rides')
+        .update({ vehicle_id: u.vehicle_id, shift: u.shift, driver_id: u.driver_id })
+        .eq('id', u.id)
+    }
+    setAssigning(false)
+    toast.success(
+      `Assigned ${updates.length}${skipped ? ` · ${skipped} couldn't be placed` : ''}`,
+    )
+    load()
+  }, [unassigned, vehicles, byVehicle, load])
 
   if (!canView) {
     return (
@@ -103,7 +181,8 @@ export default function VehicleBoard() {
         <div>
           <h1 className="page-title">Vehicle Board</h1>
           <p className="page-subtitle">
-            {fmtDate(date)} · {cityName} · {rides.length} booked ride(s)
+            {fmtDate(date)} · {cityName} · {rides.length - unassigned.length} on vehicles
+            {unassigned.length ? ` · ${unassigned.length} unassigned` : ''}
           </p>
         </div>
         <div className="page-actions">
@@ -125,6 +204,25 @@ export default function VehicleBoard() {
           <button className="icon-btn" onClick={load} title="Refresh">
             <RefreshCw size={15} />
           </button>
+          {canEdit && tab === 'board' && (
+            <>
+              <label className="vb-autotoggle" title="Enable the Auto-assign button">
+                <input
+                  type="checkbox"
+                  checked={autoOn}
+                  onChange={(e) => setAutoOn(e.target.checked)}
+                />
+                Auto
+              </label>
+              <button
+                className="btn btn-ghost btn-square btn-sm"
+                disabled={!autoOn || assigning || unassigned.length === 0}
+                onClick={runAutoAssign}
+              >
+                <Wand2 size={14} /> {assigning ? 'Assigning…' : `Auto-assign ${unassigned.length || ''}`}
+              </button>
+            </>
+          )}
           <div className="vb-modeswitch">
             <button className={tab === 'board' ? 'on' : ''} onClick={() => setTab('board')}>
               <Rows3 size={13} /> Board
@@ -143,51 +241,106 @@ export default function VehicleBoard() {
           ) : rows.length === 0 ? (
             <div style={{ padding: 24, color: 'var(--muted)' }}>No vehicles in this city.</div>
           ) : (
-            <div className="vb-grid">
-              <div className="vb-axis">
-                <div className="vb-axis-label" />
-                <div className="vb-axis-track">
-                  {hours.map((h) => (
-                    <span key={h} className="vb-hour" style={{ left: pct(h * 60) }}>
-                      {h % 12 || 12}
-                      {h < 12 || h === 24 ? 'a' : 'p'}
+            <>
+              {canEdit && (
+                <div
+                  className={`vb-unassigned${unassigned.length ? '' : ' empty'}`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const id = e.dataTransfer.getData('text/ride')
+                    if (id) assignRide(id, null)
+                  }}
+                >
+                  <span className="vb-unassigned-head">
+                    Unassigned{unassigned.length ? ` · ${unassigned.length}` : ''}
+                  </span>
+                  {unassigned.length === 0 ? (
+                    <span className="vb-unassigned-hint">
+                      Every ride has a vehicle. Drag a bar here to unassign it.
                     </span>
-                  ))}
+                  ) : (
+                    unassigned.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        draggable
+                        className={`vb-chip block-${r.block_type}`}
+                        onDragStart={(e) => e.dataTransfer.setData('text/ride', r.id)}
+                        onClick={() => setOpenRide(r)}
+                        title={`#${r.ref_no} ${blockLabel(r.block_type)} · ${r.start_at ? fmtTimeOnly12(r.start_at) : 'no time'}`}
+                      >
+                        #{r.ref_no} {blockLabel(r.block_type)}
+                        {r.start_at ? ` · ${fmtTimeOnly12(r.start_at)}` : ''}
+                      </button>
+                    ))
+                  )}
                 </div>
-              </div>
-              {rows.map(({ v, rides: vr }) => (
-                <div className="vb-row" key={v.id}>
-                  <div className="vb-veh">
-                    <span className="primary">
-                      ({v.ref_no}) {v.vehicle_no}
-                    </span>
-                    <span className="secondary">{v.driver?.name || 'no driver'}</span>
-                  </div>
-                  <div className="vb-track">
+              )}
+
+              <div className="vb-grid">
+                <div className="vb-axis">
+                  <div className="vb-axis-label" />
+                  <div className="vb-axis-track">
                     {hours.map((h) => (
-                      <span key={h} className="vb-gridline" style={{ left: pct(h * 60) }} />
+                      <span key={h} className="vb-hour" style={{ left: pct(h * 60) }}>
+                        {h % 12 || 12}
+                        {h < 12 || h === 24 ? 'a' : 'p'}
+                      </span>
                     ))}
-                    {vr.map((r) => {
-                      if (!r.start_at || !r.end_at) return null
-                      const s = minsOf(r.start_at)
-                      const e = Math.max(s + 8, minsOf(r.end_at))
-                      return (
-                        <button
-                          key={r.id}
-                          type="button"
-                          className={`vb-bar block-${r.block_type}`}
-                          style={{ left: pct(s), width: `calc(${pct(e)} - ${pct(s)})` }}
-                          onClick={() => setOpenRide(r)}
-                          title={`#${r.ref_no} ${blockLabel(r.block_type)} · ${fmtTimeOnly12(r.start_at)}–${fmtTimeOnly12(r.end_at)}`}
-                        >
-                          #{r.ref_no} {blockLabel(r.block_type)}
-                        </button>
-                      )
-                    })}
                   </div>
                 </div>
-              ))}
-            </div>
+                {rows.map(({ v, rides: vr }) => (
+                  <div className="vb-row" key={v.id}>
+                    <div className="vb-veh">
+                      <span className="primary">
+                        ({v.ref_no}) {v.vehicle_no}
+                      </span>
+                      <span className="secondary">{v.driver?.name || 'no driver'}</span>
+                    </div>
+                    <div
+                      className={`vb-track${dragOverV === v.id ? ' drop-over' : ''}`}
+                      onDragOver={canEdit ? (e) => e.preventDefault() : undefined}
+                      onDragEnter={canEdit ? () => setDragOverV(v.id) : undefined}
+                      onDragLeave={canEdit ? () => setDragOverV((c) => (c === v.id ? null : c)) : undefined}
+                      onDrop={
+                        canEdit
+                          ? (e) => {
+                              e.preventDefault()
+                              setDragOverV(null)
+                              const id = e.dataTransfer.getData('text/ride')
+                              if (id) assignRide(id, v.id)
+                            }
+                          : undefined
+                      }
+                    >
+                      {hours.map((h) => (
+                        <span key={h} className="vb-gridline" style={{ left: pct(h * 60) }} />
+                      ))}
+                      {vr.map((r) => {
+                        if (!r.start_at || !r.end_at) return null
+                        const s = minsOf(r.start_at)
+                        const e = Math.max(s + 8, minsOf(r.end_at))
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            draggable={canEdit}
+                            className={`vb-bar block-${r.block_type}`}
+                            style={{ left: pct(s), width: `calc(${pct(e)} - ${pct(s)})` }}
+                            onDragStart={(ev) => ev.dataTransfer.setData('text/ride', r.id)}
+                            onClick={() => setOpenRide(r)}
+                            title={`#${r.ref_no} ${blockLabel(r.block_type)} · ${fmtTimeOnly12(r.start_at)}–${fmtTimeOnly12(r.end_at)}`}
+                          >
+                            #{r.ref_no} {blockLabel(r.block_type)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       ) : (

@@ -102,6 +102,7 @@ export default function Vehicles() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [driverFilter, setDriverFilter] = useState('all')
   const [vendorFilter, setVendorFilter] = useState('all')
+  const [trackerFilter, setTrackerFilter] = useState('all')
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
@@ -142,6 +143,8 @@ export default function Vehicles() {
       if (driverFilter === 'assigned' && !anyDriver) return false
       if (driverFilter === 'unassigned' && anyDriver) return false
       if (vendorFilter !== 'all' && r.vendor_id !== vendorFilter) return false
+      if (trackerFilter === 'has' && !r.tracker_url) return false
+      if (trackerFilter === 'none' && r.tracker_url) return false
       if (
         s &&
         !`${r.ref_no} ${r.vehicle_no} ${r.company ?? ''} ${r.model ?? ''} ${r.vendor?.name ?? ''} ${r.day_driver_name} ${r.night_driver_name}`
@@ -151,7 +154,7 @@ export default function Vehicles() {
         return false
       return true
     })
-  }, [list, search, statusFilter, driverFilter, vendorFilter])
+  }, [list, search, statusFilter, driverFilter, vendorFilter, trackerFilter])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const stats = useMemo(
@@ -320,12 +323,14 @@ export default function Vehicles() {
         activeCount={
           (statusFilter !== 'all' ? 1 : 0) +
           (driverFilter !== 'all' ? 1 : 0) +
-          (vendorFilter !== 'all' ? 1 : 0)
+          (vendorFilter !== 'all' ? 1 : 0) +
+          (trackerFilter !== 'all' ? 1 : 0)
         }
         onClear={() => {
           setStatusFilter('all')
           setDriverFilter('all')
           setVendorFilter('all')
+          setTrackerFilter('all')
           setSearch('')
           setPage(1)
         }}
@@ -357,6 +362,18 @@ export default function Vehicles() {
               <option value="all">Any driver</option>
               <option value="assigned">Has driver</option>
               <option value="unassigned">No driver</option>
+            </select>
+            <select
+              className="filter-select"
+              value={trackerFilter}
+              onChange={(e) => {
+                setTrackerFilter(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="all">Any tracker</option>
+              <option value="has">Has tracker link</option>
+              <option value="none">No tracker link</option>
             </select>
             <select
               className="filter-select"

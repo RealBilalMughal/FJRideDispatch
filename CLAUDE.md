@@ -215,7 +215,9 @@ keys, tables or deploy targets with any other project.
     export+import (`vendor` col, matched by name in the city) / filter). Once a
     Vendor is picked the **Day / Night driver** pickers narrow to that vendor's
     drivers (and a vendor / city change clears a driver that no longer fits; CSV
-    import applies the same constraint).
+    import applies the same constraint). The list filter bar also has a
+    **tracker filter** (Any / Has tracker link / No tracker link, off
+    `vehicles.tracker_url`).
     **Day driver + Night driver** (both optional) - a 24h vehicle with a 2-driver
     shift. `driver_id` = day, `night_driver_id` = night. A driver holds at most one
     day slot and one night slot (two partial unique indexes) and day != night on a
@@ -597,7 +599,18 @@ keys, tables or deploy targets with any other project.
   range + weekday picker + optional shared crew. Vehicles assigned per-ride after.
 - **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each
   vehicle's booked rides (bars by `start_at`/`end_at`, coloured by block, click ->
-  ride detail) + a Map tab drawing every routed ride for the day (`r.route_geometry`
+  ride detail). The board's ride query now loads **all** the day's rides (not
+  just vehicle-assigned ones). **Bulk vehicle assign** (needs `rides.edit`):
+  an **Unassigned** strip above the grid holds the day's rides with no
+  `vehicle_id` as draggable chips - drag a chip onto a vehicle's track to
+  assign (`vehicle_id` + `shift` (kept, else `'day'`) + that vehicle's day
+  `driver_id`), drag an assigned bar back to the strip to unassign. A clash
+  with an existing ride in that window warns (toast) but still applies -
+  dispatcher's call. An **Auto** checkbox in the header enables an
+  **Auto-assign** button: walks the unassigned rides earliest-first and drops
+  each on the first same-city vehicle with no time overlap (seeded from
+  what's already booked + what it places this run), reports placed / couldn't
+  place. + a Map tab drawing every routed ride for the day (`r.route_geometry`
   if saved, else a straight-line fallback - see `rides.route_geometry` above; no
   ORS call happens on this page). The Board/Map toggle is `.vb-modeswitch`, a
   self-contained copy of the flat-underline mode-switch pattern kept in

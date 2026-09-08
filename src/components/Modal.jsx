@@ -4,7 +4,7 @@ import './modal.css'
 
 // Closes only via the X button or Esc - NOT a backdrop click, so a stray click
 // while filling a form never loses the entered data.
-export default function Modal({ open, onClose, title, children, width = 480, size }) {
+export default function Modal({ open, onClose, title, children, footer, width = 480, size }) {
   useEffect(() => {
     if (!open) return
     const onEsc = (e) => e.key === 'Escape' && onClose()
@@ -33,6 +33,7 @@ export default function Modal({ open, onClose, title, children, width = 480, siz
           </button>
         </div>
         <div className="modal-body">{children}</div>
+        {footer != null && <div className="modal-foot">{footer}</div>}
       </div>
     </div>
   )

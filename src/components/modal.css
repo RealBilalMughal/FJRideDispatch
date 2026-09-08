@@ -58,16 +58,20 @@
   padding: 18px 20px;
 }
 
-/* size="full" - fills the viewport with a thin margin, like an app window */
+/* size="full" - fills the viewport with a thin margin, like an app window.
+   header + scrolling body + pinned footer, so action buttons always show. */
 .modal-backdrop--full {
   padding: 14px;
   overflow: hidden;
 }
 .modal-card--full {
-  min-height: calc(100vh - 28px);
+  height: calc(100vh - 28px);
   max-height: calc(100vh - 28px);
   display: flex;
   flex-direction: column;
+}
+.modal-card--full .modal-head {
+  flex: 0 0 auto;
 }
 .modal-card--full .modal-body {
   flex: 1;
@@ -80,11 +84,21 @@
     padding: 0;
   }
   .modal-card--full {
-    min-height: 100vh;
+    height: 100vh;
     max-height: 100vh;
     border-radius: 0;
     border: 0;
   }
+}
+
+/* pinned footer (Modal `footer` prop) */
+.modal-foot {
+  flex: 0 0 auto;
+  padding: 12px 22px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* shared form layout inside modals */

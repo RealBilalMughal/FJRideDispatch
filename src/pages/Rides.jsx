@@ -131,6 +131,14 @@ const crewNamesText = (rc) => crewNames(rc) || '—'
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
+// one paired field in the Ride View's left column (label stacked over value)
+const RvField = ({ label, value }) => (
+  <div className="rv-field">
+    <span className="view-label">{label}</span>
+    <span className="view-value">{value || '—'}</span>
+  </div>
+)
+
 // Crew table cell: a single crew shows inline; 2+ stack one name per line
 // (below, not extending sideways) so the row stays a sane width.
 function CrewCell({ rc }) {
@@ -2057,75 +2065,113 @@ function RideModal({
   if (!editing) {
     const gm = gmapsRoute(row.waypoints)
     const hasLive = Boolean(row.vehicle?.tracker_url)
+    const crewNames = [...(row.ride_crew || [])]
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+      .map((x) => x.crew?.name)
+      .filter(Boolean)
+    const distanceText =
+      row.distance_km == null
+        ? '—'
+        : Number(row.extra_km) > 0
+          ? `${(Number(row.distance_km) - Number(row.extra_km)).toFixed(2)} + ${Number(row.extra_km)} extra = ${Number(row.distance_km).toFixed(2)} km`
+          : `${Number(row.distance_km).toFixed(2)} km`
     return (
-      <Modal open onClose={onClose} title={title} width="min(1600px, 97vw)" size="full">
-        <div className="ride-view ride-view--split">
-        <div className="ride-view-info modal-form">
-          {[
-            ['Flight', `${row.flight_no || '—'}${row.flight_code ? ' · ' + row.flight_code : ''}`],
-            ['Block', blockLabel(row.block_type)],
-            ['Date', fmtDate(row.ride_date)],
-            ['Duty Sheet', fmtDate(row.duty_sheet_date || row.ride_date)],
-            ['Check-in', fmtTime12(row.checkin_old) || '—'],
-            ['Actual', fmtTime12(row.checkin_new) || '—'],
-            ['Check-out', fmtTime12(row.checkout_old) || '—'],
-            ['Actual', fmtTime12(row.checkout_new) || '—'],
-            ['Crew', crewNamesText(row.ride_crew)],
-            ['Count', displayCrewCount(row.ride_crew, row.block_type)],
-            ['Origin', row.origin_label || '—'],
-            ['Destination', row.dest_label || '—'],
-            ['Vehicle', row.vehicle?.vehicle_no || '—'],
-            ['Shift', shiftLabel(row.shift)],
-            ['Driver', row.driver?.name || '—'],
-            [
-              'Distance',
-              row.distance_km == null
-                ? '—'
-                : Number(row.extra_km) > 0
-                  ? `${(Number(row.distance_km) - Number(row.extra_km)).toFixed(2)} km + ${Number(row.extra_km)} km ${blockLabel(row.block_type)} extra = ${Number(row.distance_km).toFixed(2)} km`
-                  : `${Number(row.distance_km).toFixed(2)} km`,
-            ],
-            [rideTimeLabel(row.block_type), row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
-            ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
-            ['Status', statusLabel(row.status)],
-            ['Notes', row.notes || '—'],
-          ].map(([k, v], i) => (
-            <div className="view-row" key={`${k}-${i}`}>
-              <span className="view-label">{k}</span>
-              <span className="view-value">{v}</span>
-            </div>
-          ))}
-
-          {gm && (
-            <a className="btn btn-ghost btn-square btn-sm" href={gm} target="_blank" rel="noreferrer">
-              <Navigation size={13} /> Open route in Google Maps
-            </a>
-          )}
-        </div>
-
-        <div className="ride-view-map">
-          {hasLive ? (
-            <LiveTrackingCard row={row} mapHeight="calc(100vh - 250px)" />
-          ) : (
-            <RouteMap
-              points={row.waypoints || []}
-              line={row.route_geometry}
-              totalKm={row.distance_km != null ? Number(row.distance_km) : undefined}
-              height="calc(100vh - 200px)"
-            />
-          )}
-        </div>
-        </div>
-
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Close
-          </button>
-          {canEdit && (
-            <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
-              <Pencil size={13} /> Edit
+      <Modal
+        open
+        onClose={onClose}
+        title={title}
+        width="min(1600px, 97vw)"
+        size="full"
+        footer={
+          <>
+            <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+              Close
             </button>
-          )}
+            {canEdit && (
+              <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
+                <Pencil size={13} /> Edit
+              </button>
+            )}
+          </>
+        }
+      >
+        <div className="ride-view ride-view--split">
+          <div className="ride-view-info">
+            <div className="rv-grid">
+              <RvField label="Flight" value={`${row.flight_no || '—'}${row.flight_code ? ' · ' + row.flight_code : ''}`} />
+              <RvField label="Block" value={blockLabel(row.block_type)} />
+              <RvField label="Date" value={fmtDate(row.ride_date)} />
+              <RvField label="Duty Sheet" value={fmtDate(row.duty_sheet_date || row.ride_date)} />
+              <RvField label="Check-in" value={fmtTime12(row.checkin_old)} />
+              <RvField label="Actual" value={fmtTime12(row.checkin_new)} />
+              <RvField label="Check-out" value={fmtTime12(row.checkout_old)} />
+              <RvField label="Actual" value={fmtTime12(row.checkout_new)} />
+            </div>
+
+            <div className="rv-crew">
+              <span className="view-label">
+                Crew <span className="badge badge-accent">{displayCrewCount(row.ride_crew, row.block_type)}</span>
+              </span>
+              <div className="rv-crew-list">
+                {crewNames.length ? (
+                  crewNames.map((n, i) => <span key={i}>{n}</span>)
+                ) : (
+                  <span className="view-value">—</span>
+                )}
+              </div>
+            </div>
+
+            <div className="rv-grid">
+              <RvField label="Vehicle" value={row.vehicle?.vehicle_no} />
+              <RvField label="Driver" value={row.driver?.name} />
+              <RvField label={rideTimeLabel(row.block_type)} value={row.start_at ? fmtTimeOnly12(row.start_at) : '—'} />
+              <RvField label="ETA" value={fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'} />
+            </div>
+
+            <div className="view-row">
+              <span className="view-label">Origin</span>
+              <span className="view-value">{row.origin_label || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Destination</span>
+              <span className="view-value">{row.dest_label || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Distance</span>
+              <span className="view-value">{distanceText}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Shift</span>
+              <span className="view-value">{shiftLabel(row.shift)}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Status</span>
+              <span className="view-value">{statusLabel(row.status)}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Notes</span>
+              <span className="view-value">{row.notes || '—'}</span>
+            </div>
+
+            {gm && (
+              <a className="btn btn-ghost btn-square btn-sm" href={gm} target="_blank" rel="noreferrer">
+                <Navigation size={13} /> Open route in Google Maps
+              </a>
+            )}
+          </div>
+
+          <div className="ride-view-map">
+            {hasLive ? (
+              <LiveTrackingCard row={row} mapHeight="calc(100vh - 250px)" />
+            ) : (
+              <RouteMap
+                points={row.waypoints || []}
+                line={row.route_geometry}
+                totalKm={row.distance_km != null ? Number(row.distance_km) : undefined}
+                height="calc(100vh - 200px)"
+              />
+            )}
+          </div>
         </div>
       </Modal>
     )

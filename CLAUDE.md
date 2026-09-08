@@ -196,7 +196,10 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     optional **Vendor** (`vehicles.vendor_id`, nullable, `on delete set null`,
     migration `20260908120000_vehicle_vendor.sql` - same vendor pool as drivers,
     `SearchSelect` filtered to the vehicle's city; column / view / CSV
-    export+import (`vendor` col, matched by name in the city) / filter),
+    export+import (`vendor` col, matched by name in the city) / filter). Once a
+    Vendor is picked the **Day / Night driver** pickers narrow to that vendor's
+    drivers (and a vendor / city change clears a driver that no longer fits; CSV
+    import applies the same constraint).
     **Day driver + Night driver** (both optional) - a 24h vehicle with a 2-driver
     shift. `driver_id` = day, `night_driver_id` = night. A driver holds at most one
     day slot and one night slot (two partial unique indexes) and day != night on a

@@ -81,7 +81,7 @@ export default function Vehicles() {
     if (!canView) return
     supabase
       .from('drivers')
-      .select('id, ref_no, name, city_id, is_active')
+      .select('id, ref_no, name, city_id, vendor_id, is_active')
       .order('name')
       .then(({ data }) => setDrivers((data ?? []).filter((d) => d.is_active)))
   }, [canView])
@@ -476,9 +476,16 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const title = isAdd ? 'Add Vehicle' : editing ? `Edit ${row.vehicle_no}` : `${row.vehicle_no} · ID ${row.ref_no}`
 
+  // drivers offered in the day/night pickers: this city, and - once a Vendor is
+  // picked - only that vendor's drivers
   const cityDrivers = useMemo(
-    () => drivers.filter((d) => !form.city_id || d.city_id === Number(form.city_id)),
-    [drivers, form.city_id],
+    () =>
+      drivers.filter(
+        (d) =>
+          (!form.city_id || d.city_id === Number(form.city_id)) &&
+          (!form.vendor_id || d.vendor_id === form.vendor_id),
+      ),
+    [drivers, form.city_id, form.vendor_id],
   )
   const cityVendors = useMemo(
     () => vendors.filter((v) => !form.city_id || v.city_id === Number(form.city_id)),
@@ -497,13 +504,18 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
         }
       })
 
+  // city change: drop a vendor / drivers that no longer fit
+  useEffect(() => {
+    if (form.vendor_id && !cityVendors.some((v) => v.id === form.vendor_id)) set('vendor_id', '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.city_id])
+  // city or vendor change: drop drivers that no longer fit the offered list
   useEffect(() => {
     if (form.driver_id && !cityDrivers.some((d) => d.id === form.driver_id)) set('driver_id', '')
     if (form.night_driver_id && !cityDrivers.some((d) => d.id === form.night_driver_id))
       set('night_driver_id', '')
-    if (form.vendor_id && !cityVendors.some((v) => v.id === form.vendor_id)) set('vendor_id', '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.city_id])
+  }, [form.city_id, form.vendor_id])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -672,6 +684,9 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
             placeholder={form.city_id ? 'Search a driver…' : 'Pick a city first'}
             disabled={!form.city_id}
           />
+          {form.vendor_id && (
+            <span className="field-hint">Showing only this vendor&rsquo;s drivers.</span>
+          )}
         </div>
         <div className="field">
           <label>Night driver</label>
@@ -751,11 +766,25 @@ function ImportVehicles({ drivers, vendors = [], allowedCities, createdBy, onClo
       const year = (r.year || '').trim()
       if (year && !/^\d{4}$/.test(year)) return skipped.push({ line, reason: 'year must be 4 digits' })
 
+      let vendorId = null
+      const vnm = (r.vendor || '').trim().toLowerCase()
+      if (vnm) {
+        const vm = vendors.filter((v) => v.city_id === cityId && v.name.toLowerCase() === vnm)
+        if (vm.length === 0) return skipped.push({ line, reason: `vendor "${r.vendor}" not found in ${r.city}` })
+        if (vm.length > 1) return skipped.push({ line, reason: `vendor "${r.vendor}" is ambiguous` })
+        vendorId = vm[0].id
+      }
+
       const resolve = (raw, seen, shift) => {
         const nm = (raw || '').trim().toLowerCase()
         if (!nm) return { id: null }
-        const match = drivers.filter((d) => d.city_id === cityId && d.name.toLowerCase() === nm)
-        if (match.length === 0) return { err: `${shift} driver "${raw}" not found in ${r.city}` }
+        const match = drivers.filter(
+          (d) => d.city_id === cityId && d.name.toLowerCase() === nm && (!vendorId || d.vendor_id === vendorId),
+        )
+        if (match.length === 0)
+          return {
+            err: `${shift} driver "${raw}" not found in ${r.city}${vendorId ? ` for vendor "${r.vendor}"` : ''}`,
+          }
         if (match.length > 1) return { err: `${shift} driver "${raw}" is ambiguous` }
         if (seen.has(match[0].id)) return { err: `${shift} driver "${raw}" used twice in this file` }
         seen.add(match[0].id)
@@ -768,15 +797,6 @@ function ImportVehicles({ drivers, vendors = [], allowedCities, createdBy, onClo
       if (night.err) return skipped.push({ line, reason: night.err })
       if (day.id && day.id === night.id)
         return skipped.push({ line, reason: 'day and night driver are the same person' })
-
-      let vendorId = null
-      const vnm = (r.vendor || '').trim().toLowerCase()
-      if (vnm) {
-        const vm = vendors.filter((v) => v.city_id === cityId && v.name.toLowerCase() === vnm)
-        if (vm.length === 0) return skipped.push({ line, reason: `vendor "${r.vendor}" not found in ${r.city}` })
-        if (vm.length > 1) return skipped.push({ line, reason: `vendor "${r.vendor}" is ambiguous` })
-        vendorId = vm[0].id
-      }
 
       ok.push({
         vehicle_no: vno,

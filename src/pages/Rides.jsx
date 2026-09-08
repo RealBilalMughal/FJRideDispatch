@@ -36,6 +36,7 @@ import {
 } from '../lib/time'
 import {
   BLOCK_TYPES,
+  blockExtraKm,
   blockLabel,
   buildRoutePoints,
   crewRule,
@@ -75,7 +76,7 @@ const SELECT = `
   ride_date, duty_sheet_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
   vehicle_id, driver_id, airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
-  waypoints, route_geometry, distance_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
+  waypoints, route_geometry, distance_km, extra_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
   city:cities(name),
   vehicle:vehicles(ref_no, vehicle_no, tracker_url),
   driver:drivers!rides_driver_id_fkey(ref_no, name),
@@ -103,6 +104,7 @@ const EXPORT_COLS = [
   { key: 'starts', label: 'Ride Time' },
   { key: 'eta', label: 'ETA' },
   { key: 'km', label: 'KM' },
+  { key: 'extra_km', label: 'Extra KM' },
   { key: 'notes', label: 'Note' },
 ]
 
@@ -434,6 +436,7 @@ export default function Rides() {
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
+      extra_km: Number(r.extra_km) > 0 ? Number(r.extra_km).toFixed(2) : '',
       notes: r.notes ?? '',
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
@@ -1141,6 +1144,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
         const pDur = (pInfo?.durationMin ?? 30) + BUFFER_MIN
         const pEndAt = pStartAt ? new Date(new Date(pStartAt).getTime() + pDur * 60000).toISOString() : null
         const pRideDate = pStartAt ? isoToLocalDate(pStartAt) : legRideDate
+        const pExtraKm = blockExtraKm('pickup', cityObj)
 
         const { data: pr, error: pErr } = await supabase
           .from('rides')
@@ -1168,7 +1172,8 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
             dest_lng: pPts[1]?.lng,
             waypoints: pPts,
             route_geometry: pInfo?.line ?? null,
-            distance_km: pInfo?.distanceKm ?? null,
+            distance_km: pInfo ? pInfo.distanceKm + pExtraKm : null,
+            extra_km: pInfo ? pExtraKm : 0,
             duration_min: pInfo?.durationMin ?? null,
             start_at: pStartAt,
             end_at: pEndAt,
@@ -1786,7 +1791,11 @@ function RideModal({
 
   const origin = routePoints[0]
   const dest = routePoints[routePoints.length - 1]
-  const km = routeData?.distanceKm ?? row?.distance_km ?? null
+  // Pickup / Drop Off get a flat extra distance (Settings -> Ride Buffer Time),
+  // folded into distance_km; extra_km keeps the amount for the View breakdown.
+  const extraKm = blockExtraKm(form.block_type, allowedCities.find((c) => c.id === cityId))
+  const roadKm = routeData?.distanceKm ?? null
+  const km = roadKm != null ? roadKm + extraKm : (row?.distance_km ?? null)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -1835,6 +1844,7 @@ function RideModal({
       waypoints: routePoints,
       route_geometry: routeData?.line ?? row?.route_geometry ?? null,
       distance_km: km,
+      extra_km: roadKm != null ? extraKm : (row?.extra_km ?? 0),
       duration_min: durMin,
       status: row?.status ?? 'dispatched',
       notes: form.notes.trim() || null,
@@ -1965,7 +1975,14 @@ function RideModal({
             ['Vehicle', row.vehicle?.vehicle_no || '—'],
             ['Shift', shiftLabel(row.shift)],
             ['Driver', row.driver?.name || '—'],
-            ['Distance', row.distance_km != null ? `${Number(row.distance_km).toFixed(2)} km` : '—'],
+            [
+              'Distance',
+              row.distance_km == null
+                ? '—'
+                : Number(row.extra_km) > 0
+                  ? `${(Number(row.distance_km) - Number(row.extra_km)).toFixed(2)} km + ${Number(row.extra_km)} km ${blockLabel(row.block_type)} extra = ${Number(row.distance_km).toFixed(2)} km`
+                  : `${Number(row.distance_km).toFixed(2)} km`,
+            ],
             [rideTimeLabel(row.block_type), row.start_at ? fmtTimeOnly12(row.start_at) : '—'],
             ['ETA', fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'],
             ['Status', statusLabel(row.status)],
@@ -2236,7 +2253,10 @@ function RideModal({
             {km != null && (
               <span className="ride-km-badge">
                 {Number(km).toFixed(2)} km{durMin != null ? ` · ${durMin} min` : ''}
-                {crewWaitMin > 0 ? ` — ${roadMin ?? '—'} min drive + ${crewWaitMin} min crew wait` : ''}
+                {extraKm > 0 && roadKm != null
+                  ? ` — ${Number(roadKm).toFixed(2)} route + ${extraKm} extra`
+                  : ''}
+                {crewWaitMin > 0 ? ` · ${roadMin ?? '—'} min drive + ${crewWaitMin} min crew wait` : ''}
               </span>
             )}
           </label>
@@ -2449,6 +2469,9 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
     const crewWait = crewWaitMinutes(block, crewList.length, cityObj?.crew_wait_buffer_min)
     const tripMin = info ? info.durationMin + crewWait : null
     const durMs = (tripMin ?? 0) * 60000
+    // Pickup / Drop Off extra KM, same as the Ride form
+    const extraKm = blockExtraKm(block, cityObj)
+    const totalKm = info ? info.distanceKm + extraKm : null
 
     const rows = dates.map((date) => {
       let start_at = null
@@ -2487,7 +2510,8 @@ function GenerateRidesModal({ flights, crew, allowedCities, createdBy, onClose, 
         dest_lng: crewList.length ? dest?.lng ?? null : null,
         waypoints: crewList.length ? pts : [],
         route_geometry: info?.line ?? null,
-        distance_km: info?.distanceKm ?? null,
+        distance_km: totalKm,
+        extra_km: info ? extraKm : 0,
         duration_min: tripMin,
         status: 'dispatched',
         created_by: createdBy ?? null,

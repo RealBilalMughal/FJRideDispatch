@@ -289,6 +289,8 @@ function RideBufferTimePanel() {
   const [returnLeg, setReturnLeg] = useState('')
   const [deadhead, setDeadhead] = useState('')
   const [crewWait, setCrewWait] = useState('')
+  const [pickupKm, setPickupKm] = useState('')
+  const [dropoffKm, setDropoffKm] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -313,6 +315,8 @@ function RideBufferTimePanel() {
     setReturnLeg(city?.return_leg_buffer_min ?? DEFAULT_RETURN_LEG_BUFFER_MIN)
     setDeadhead(city?.deadhead_buffer_min ?? DEFAULT_DEADHEAD_BUFFER_MIN)
     setCrewWait(city?.crew_wait_buffer_min ?? DEFAULT_CREW_WAIT_BUFFER_MIN)
+    setPickupKm(city?.pickup_extra_km ?? 0)
+    setDropoffKm(city?.dropoff_extra_km ?? 0)
     setErr('')
     setEditing(true)
   }
@@ -331,11 +335,15 @@ function RideBufferTimePanel() {
     const rl = Number(returnLeg)
     const dh = Number(deadhead)
     const cw = Number(crewWait)
+    const pk = Number(pickupKm)
+    const dk = Number(dropoffKm)
     if (!Number.isFinite(ci) || ci < 0) return setErr('Check-in buffer must be a number of minutes')
     if (!Number.isFinite(co) || co < 0) return setErr('Check-out buffer must be a number of minutes')
     if (!Number.isFinite(rl) || rl < 0) return setErr('Return Leg buffer must be a number of minutes')
     if (!Number.isFinite(dh) || dh < 0) return setErr('Deadhead buffer must be a number of minutes')
     if (!Number.isFinite(cw) || cw < 0) return setErr('Crew wait buffer must be a number of minutes')
+    if (!Number.isFinite(pk) || pk < 0) return setErr('Pickup extra KM must be a number')
+    if (!Number.isFinite(dk) || dk < 0) return setErr('Drop Off extra KM must be a number')
     setBusy(true)
     const { error } = await supabase
       .from('cities')
@@ -345,6 +353,8 @@ function RideBufferTimePanel() {
         return_leg_buffer_min: Math.round(rl),
         deadhead_buffer_min: Math.round(dh),
         crew_wait_buffer_min: Math.round(cw),
+        pickup_extra_km: Math.round(pk * 100) / 100,
+        dropoff_extra_km: Math.round(dk * 100) / 100,
       })
       .eq('id', Number(cityId))
     setBusy(false)
@@ -363,7 +373,8 @@ function RideBufferTimePanel() {
             Pickup Time = Check-in − Check-in buffer − trip time. Drop Time = Check-out +
             Check-out buffer. Return Leg / Deadhead Ride Time = drop-off arrival + that
             buffer. Crew wait buffer adds crew × this many minutes to a multi-crew
-            pickup / dropoff. Each city keeps its own buffers.
+            pickup / dropoff. Pickup / Drop Off extra KM is added to those blocks&rsquo;
+            ride distance. Each city keeps its own values.
           </div>
         </div>
         {!editing && cities.length > 0 && (
@@ -476,6 +487,35 @@ function RideBufferTimePanel() {
                 <div className="field" />
               </div>
 
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="bf-pk">Pickup extra KM</label>
+                  <input
+                    id="bf-pk"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    className="input"
+                    value={pickupKm}
+                    onChange={(e) => setPickupKm(e.target.value)}
+                  />
+                  <span className="field-hint">Added to every Pickup ride&rsquo;s distance</span>
+                </div>
+                <div className="field">
+                  <label htmlFor="bf-dk">Drop Off extra KM</label>
+                  <input
+                    id="bf-dk"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    className="input"
+                    value={dropoffKm}
+                    onChange={(e) => setDropoffKm(e.target.value)}
+                  />
+                  <span className="field-hint">Added to every Drop Off ride&rsquo;s distance</span>
+                </div>
+              </div>
+
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
                   Cancel
@@ -516,6 +556,14 @@ function RideBufferTimePanel() {
                 <span className="view-value">
                   {city?.crew_wait_buffer_min ?? DEFAULT_CREW_WAIT_BUFFER_MIN} min
                 </span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Pickup extra KM</span>
+                <span className="view-value">{Number(city?.pickup_extra_km ?? 0)} km</span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Drop Off extra KM</span>
+                <span className="view-value">{Number(city?.dropoff_extra_km ?? 0)} km</span>
               </div>
             </div>
           )}

@@ -79,7 +79,8 @@ keys, tables or deploy targets with any other project.
   `20260906220000_route_geometry.sql`, `20260906230000_app_settings_tracker.sql`
   (superseded by the next one - dropped, no data ever depended on it),
   `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`,
-  `20260907120000_crew_wait_buffer.sql` (all APPLIED).
+  `20260907120000_crew_wait_buffer.sql`, `20260908120000_vehicle_vendor.sql`,
+  `20260908130000_ride_extra_km.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -510,8 +511,12 @@ Deploy: `supabase functions deploy admin-users --use-api`.
 - **KM is a plain 2-decimal number** (`12.50`, no "km" suffix) in the KM table
   column and CSV export - the column header already says KM. It's positioned
   **after ETA** (table + export column order: … Ride Time, ETA, KM, Status).
-  The "Distance" view row and the in-form route badge keep the "km" unit since
-  their label doesn't.
+  This KM is the **total** = ORS road distance + the per-block extra
+  (see Settings → Ride Buffer Time → Pickup / Drop Off extra KM); CSV export
+  also carries an **Extra KM** column, and the "Distance" view row spells out
+  `road + extra = total` when `extra_km > 0`. The in-form route badge shows the
+  same split. Both the view row and badge keep the "km" unit since their label
+  doesn't.
 - **Generate** (Rides header) - bulk-create rides from one flight over a date
   range + weekday picker + optional shared crew. Vehicles assigned per-ride after.
 - **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each
@@ -602,8 +607,15 @@ Deploy: `supabase functions deploy admin-users --use-api`.
     pickup/dropoff with `crewCount > 1`, else 0. It folds into the ride's
     stored `duration_min` (road time from ORS + this wait), so every ETA /
     `end_at` / Pickup-Time auto-suggest / table / export / Vehicle Board
-    figure accounts for it with no separate column; `distance_km` stays pure
-    road distance.
+    figure accounts for it with no separate column.
+    The same panel also has **Pickup extra KM** / **Drop Off extra KM**
+    (`cities.pickup_extra_km` / `dropoff_extra_km`, default 0, migration
+    `20260908130000_ride_extra_km.sql`) - a flat distance added to those
+    blocks' rides: `blockExtraKm(block, city)` folds into the stored
+    `distance_km` at save (so the KM column, CSV export, Rides Summary and
+    Dashboard KM sums show the total), and `rides.extra_km` keeps the amount
+    so the Ride View's Distance row can show `road km + N km Pickup extra =
+    total km`.
   - Both panels: **read-only view by default, "Edit" reveals the form** (same
     pattern as Profile), with an Edit button top-right of the panel head.
     Editing disables the City field (finish or Cancel first) and has

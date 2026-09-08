@@ -105,6 +105,15 @@ export const crewWaitMinutes = (block, crewCount, buffer = DEFAULT_CREW_WAIT_BUF
   return (block === 'pickup' || block === 'dropoff') && n > 1 ? n * b : 0
 }
 
+// Flat extra distance for a Pickup / Drop Off ride, per city
+// (cities.pickup_extra_km / dropoff_extra_km, edited at Settings -> Ride Buffer
+// Time). Folds into rides.distance_km at save; rides.extra_km keeps the amount.
+export const blockExtraKm = (block, city) => {
+  const p = Number(city?.pickup_extra_km) || 0
+  const d = Number(city?.dropoff_extra_km) || 0
+  return block === 'pickup' ? p : block === 'dropoff' ? d : 0
+}
+
 export const RIDE_STATUS = ['scheduled', 'dispatched', 'enroute', 'completed', 'cancelled']
 export const statusLabel = (s) =>
   ({ scheduled: 'Scheduled', dispatched: 'Dispatched', enroute: 'En route', completed: 'Completed', cancelled: 'Cancelled' })[s] || s

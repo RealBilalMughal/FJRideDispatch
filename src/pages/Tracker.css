@@ -98,6 +98,55 @@
   color: var(--muted);
 }
 
+/* vendor groups - collapsible section per vendor */
+.tk-group + .tk-group {
+  margin-top: 2px;
+}
+.tk-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 6px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: color 0.14s;
+}
+.tk-group-head:hover {
+  color: var(--heading);
+}
+.tk-group-caret {
+  flex: 0 0 auto;
+  transition: transform 0.14s;
+}
+.tk-group-head.open .tk-group-caret {
+  transform: rotate(90deg);
+}
+.tk-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.tk-group-count {
+  flex: 0 0 auto;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.tk-group-body {
+  padding-bottom: 4px;
+}
+
 /* rows: no fill, hover/selected = accent text + a 3px accent left bar,
    exactly like the sidebar nav. */
 .tk-list-item {

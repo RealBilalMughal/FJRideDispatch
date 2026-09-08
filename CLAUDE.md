@@ -570,10 +570,13 @@ Deploy: `supabase functions deploy admin-users --use-api`.
   - `.tk-map` needs an explicit `height` (not just `min-height`) or the
     Leaflet container / iframe inside collapses to 0.
   **The vehicle roster is our own `vehicles` table** (city-scoped, active
-  only) so the list never flickers - live status/speed just decorates the
-  rows, matched by plate (`vehicle_no` ↔ AI Track's `name`, both
-  normalised). Rows with no fix show "No signal" + a grey dot, sorted after
-  the live ones. Those live dots come from `fetchFleetTracker()`
+  only, `vendor:vendors(name)` joined) so the list never flickers - live
+  status/speed just decorates the rows, matched by plate (`vehicle_no` ↔ AI
+  Track's `name`, both normalised). Rows with no fix show "No signal" + a grey
+  dot, sorted after the live ones. **The list is grouped by vendor** -
+  collapsible `.tk-group` sections (`Vendor name` head + `live/total` count +
+  a rotating caret), "No vendor" last, all collapsed by default; a search or
+  picking a vehicle (list row or map marker) opens the relevant group. Those live dots come from `fetchFleetTracker()`
   (`src/lib/tracker.js`, returns *every* vehicle a link exposes, vs
   `fetchLiveTracker`'s first-only) polling every city's `tracker_url` every
   15s; AI Track's `/items?time=0` only returns recently-pinged vehicles, so

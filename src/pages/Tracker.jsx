@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { ArrowLeft, Map as MapIcon, Radio, Search, Shield } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Map as MapIcon, Radio, Search, Shield } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -76,7 +76,9 @@ export default function Tracker() {
   useEffect(() => {
     if (!canView) return
     let alive = true
-    let q = supabase.from('vehicles').select('id, ref_no, vehicle_no, tracker_url, is_active, city_id')
+    let q = supabase
+      .from('vehicles')
+      .select('id, ref_no, vehicle_no, tracker_url, is_active, city_id, vendor_id, vendor:vendors(name)')
     if (cityId != null) q = q.eq('city_id', cityId)
     q.then(({ data }) => {
       if (alive) setVehicles((data ?? []).filter((v) => v.is_active))
@@ -117,6 +119,7 @@ export default function Tracker() {
   const [selId, setSelId] = useState(null)
   const [flyTarget, setFlyTarget] = useState(null)
   const [view, setView] = useState('embed') // 'embed' (AI Track) | 'map' (ours)
+  const [openGroups, setOpenGroups] = useState(() => new Set()) // expanded vendor keys
 
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -129,6 +132,29 @@ export default function Tracker() {
       })
   }, [vehicles, fixes, q])
 
+  // group the list by vendor - each a collapsible section. "No vendor" last.
+  const groupKeyOf = (v) => (v.vendor_id ? String(v.vendor_id) : 'none')
+  const groups = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      const key = groupKeyOf(r.v)
+      if (!m.has(key)) m.set(key, { key, name: r.v.vendor?.name || 'No vendor', rows: [] })
+      m.get(key).rows.push(r)
+    }
+    return [...m.values()].sort((a, b) => {
+      if ((a.key === 'none') !== (b.key === 'none')) return a.key === 'none' ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
+  }, [rows])
+  const searching = q.trim() !== ''
+  const toggleGroup = (key) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
   const mapPts = useMemo(
     () => rows.filter((r) => r.fix).map((r) => ({ id: r.v.id, ...r.fix, name: r.v.vehicle_no })),
     [rows],
@@ -137,6 +163,13 @@ export default function Tracker() {
 
   const pick = (row) => {
     setSelId(row.v.id)
+    // open the vendor group that holds this vehicle (look it up - a map-marker
+    // click only passes { id })
+    const full = vehicles.find((v) => v.id === row.v.id)
+    if (full) {
+      const key = groupKeyOf(full)
+      setOpenGroups((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+    }
     if (row.fix) {
       setFlyTarget({ lat: row.fix.lat, lng: row.fix.lng, t: Date.now() })
       // no per-vehicle AI Track link to focus -> the interactive Map is where
@@ -198,22 +231,51 @@ export default function Tracker() {
                   {vehicles.length === 0 ? 'No vehicles in this city.' : 'No match.'}
                 </span>
               ) : (
-                rows.map(({ v, fix }) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    className={`tk-list-item${selId === v.id ? ' on' : ''}`}
-                    onClick={() => pick({ v, fix })}
-                  >
-                    <span className="tk-dot" style={{ background: fix ? colorOf(fix.status) : '#c9ccd1' }} />
-                    <span className="tk-item-main">
-                      <span className="tk-item-name">{v.vehicle_no}</span>
-                      <span className="tk-item-sub">
-                        {fix ? `${STATUS_LABEL[fix.status] || '—'} · ${Math.round(fix.speed)} kph` : 'No signal'}
-                      </span>
-                    </span>
-                  </button>
-                ))
+                groups.map((g) => {
+                  const open = searching || openGroups.has(g.key)
+                  const liveN = g.rows.filter((r) => r.fix).length
+                  return (
+                    <div className="tk-group" key={g.key}>
+                      <button
+                        type="button"
+                        className={`tk-group-head${open ? ' open' : ''}`}
+                        onClick={() => toggleGroup(g.key)}
+                        aria-expanded={open}
+                      >
+                        <ChevronRight size={13} className="tk-group-caret" />
+                        <span className="tk-group-name">{g.name}</span>
+                        <span className="tk-group-count">
+                          {liveN}/{g.rows.length}
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="tk-group-body">
+                          {g.rows.map(({ v, fix }) => (
+                            <button
+                              key={v.id}
+                              type="button"
+                              className={`tk-list-item${selId === v.id ? ' on' : ''}`}
+                              onClick={() => pick({ v, fix })}
+                            >
+                              <span
+                                className="tk-dot"
+                                style={{ background: fix ? colorOf(fix.status) : '#c9ccd1' }}
+                              />
+                              <span className="tk-item-main">
+                                <span className="tk-item-name">{v.vehicle_no}</span>
+                                <span className="tk-item-sub">
+                                  {fix
+                                    ? `${STATUS_LABEL[fix.status] || '—'} · ${Math.round(fix.speed)} kph`
+                                    : 'No signal'}
+                                </span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
               )}
             </div>
           </aside>

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   RotateCcw,
   Route as RouteIcon,
+  Send,
   Shield,
   Sigma,
   Sparkles,
@@ -57,8 +58,10 @@ import { shiftLabel } from '../lib/shift'
 import { downloadCsv, toCsv } from '../lib/csv'
 import { distanceMeters, distanceToLineMeters, routeProgress } from '../lib/geo'
 import { fetchLiveTracker } from '../lib/tracker'
+import { notifyRide } from '../lib/notify'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
+import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
 import RouteMap from '../components/RouteMap'
 import DataTable from '../components/data/DataTable'
@@ -234,7 +237,19 @@ export default function Rides() {
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
   const [createRideFor, setCreateRideFor] = useState(null) // a dropoff ride - "Create Ride" (Return Leg / Deadhead)
+  const [notifyFor, setNotifyFor] = useState(null) // a ride row - "Notify" confirm
+  const [notifying, setNotifying] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
+
+  const doNotify = async () => {
+    if (!notifyFor) return
+    setNotifying(true)
+    const res = await notifyRide(notifyFor.id)
+    setNotifying(false)
+    setNotifyFor(null)
+    if (res?.ok) toast.success(`Sent to ${res.recipients} recipient(s)`)
+    else toast.error(res?.error || 'Could not send the notification')
+  }
 
   // Today/Week/Month presets -> a concrete [dateFrom, dateTo]; "all" clears the range.
   // Typing a date directly (see the inputs below) sets datePreset back to '' (custom).
@@ -541,6 +556,11 @@ export default function Rides() {
             <button title="View" onClick={() => setDetail({ row: r, edit: false })}>
               <Eye size={13} />
             </button>
+            {canEdit && r.vehicle_id && (
+              <button title="Notify driver + crew" onClick={() => setNotifyFor(r)}>
+                <Send size={13} />
+              </button>
+            )}
             {r.notes && (
               <button
                 title={`Note: ${r.notes}`}
@@ -837,6 +857,20 @@ export default function Rides() {
         />
       )}
       {noteFor && <NotePopup row={noteFor} onClose={() => setNoteFor(null)} />}
+      <ConfirmDialog
+        open={Boolean(notifyFor)}
+        title="Notify driver & crew"
+        message={
+          notifyFor
+            ? `Send ride ${notifyFor.display_ref} details to its driver and crew via the ${notifyFor.city_name || 'city'} notification webhook?`
+            : ''
+        }
+        confirmLabel="Send"
+        busyLabel="Sending…"
+        busy={notifying}
+        onConfirm={doNotify}
+        onClose={() => !notifying && setNotifyFor(null)}
+      />
       {createRideFor && (
         <CreateRideModal
           row={createRideFor}
@@ -1695,6 +1729,7 @@ function RideModal({
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
   const [dhRoute, setDhRoute] = useState(null) // "Also create a Deadhead" preview: { distanceKm, durationMin, line }
   const [playback, setPlayback] = useState(false) // Ride View: show the recorded trip instead of the route/live map
+  const [notifyBusy, setNotifyBusy] = useState(false)
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
   const [startTouched, setStartTouched] = useState(false)
   const [shift, setShift] = useState(row?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
@@ -2188,6 +2223,22 @@ function RideModal({
             <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
               Close
             </button>
+            {canEdit && row.vehicle_id && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-square"
+                disabled={notifyBusy}
+                onClick={async () => {
+                  setNotifyBusy(true)
+                  const res = await notifyRide(row.id)
+                  setNotifyBusy(false)
+                  if (res?.ok) toast.success(`Sent to ${res.recipients} recipient(s)`)
+                  else toast.error(res?.error || 'Could not send')
+                }}
+              >
+                <Send size={13} /> {notifyBusy ? 'Sending…' : 'Notify'}
+              </button>
+            )}
             {canEdit && (
               <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
                 <Pencil size={13} /> Edit

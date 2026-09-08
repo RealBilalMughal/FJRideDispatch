@@ -81,7 +81,8 @@ keys, tables or deploy targets with any other project.
   `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`,
   `20260907120000_crew_wait_buffer.sql`, `20260908120000_vehicle_vendor.sql`,
   `20260908130000_ride_extra_km.sql`, `20260908140000_ride_track_points.sql`,
-  `20260908140100_ride_track_cron.sql` (all APPLIED).
+  `20260908140100_ride_track_cron.sql`, `20260908150000_ride_notifications.sql`
+  (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -135,6 +136,12 @@ keys, tables or deploy targets with any other project.
   poll (see the Ride section's "AI Tracker" bullet). `verify_jwt = false`,
   `x-track-cron-key` guarded. Called by pg_cron every minute.
   Deploy: `supabase functions deploy track-rides --no-verify-jwt --use-api`.
+- **`notify-ride`** (`supabase/functions/notify-ride/index.ts`) - ride
+  notification (see the Ride section's "Notify" bullet). `verify_jwt` on (the
+  caller's token scopes the ride read + sets `sent_by`). Renders the city's
+  `notify_template` and POSTs `{ event, ride, message, recipients }` to that
+  city's `notify_webhook_url`; logs to `ride_notifications`.
+  Deploy: `supabase functions deploy notify-ride --use-api`.
 
 ## Pages
 - `Dashboard` (`/`, always visible - the landing page) - ride analytics over
@@ -344,6 +351,21 @@ keys, tables or deploy targets with any other project.
   **Still session-only**: per-stop arrival timestamps (the live card's "Seen
   at stops" list) - a possible follow-up is persisting those + an "on-time %"
   report.
+- **Notify** (WhatsApp / SMS, provider-agnostic) - a `Send` row action (and a
+  footer button in the Ride View), shown when the ride has a vehicle and the
+  caller has `rides.edit`. Calls the **`notify-ride` Edge Function** with
+  `{ ride_id }`; it renders the city's message template
+  (`cities.notify_template`, default in the function) with `{{ref}} {{block}}
+  {{date}} {{flight}} {{time}} {{time_label}} {{origin}} {{dest}} {{vehicle}}
+  {{driver}}` and POSTs `{ event: 'ride_notify', ride, message, recipients }`
+  (recipients = the driver + every crew member that has a `contact` phone) to
+  `cities.notify_webhook_url`. Whatever sits behind that URL (Zapier / Make / a
+  gateway script / the WhatsApp Business API) does the actual sending; every
+  attempt is logged in `public.ride_notifications` (`ok`, `recipients`,
+  `detail`, `sent_by`; RLS select mirrors `rides`). Set the URL + template per
+  city at **Settings -> Notifications**. Migration
+  `20260908150000_ride_notifications.sql`; `src/lib/notify.js` is the client
+  wrapper.
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).
@@ -644,7 +666,7 @@ keys, tables or deploy targets with any other project.
   RLS (`cities_super`) is hard-coded to `current_user_role() = 'super_admin'`
   regardless of any page-permission row - granting a role "view" here would be
   misleading). Same left-list-plus-panel shell as Role Access (`.set-layout` in
-  `Settings.css`, sized down from `.ra-layout`), four sections, no nested
+  `Settings.css`, sized down from `.ra-layout`), five sections, no nested
   routes - a local `section` state swaps the panel, like Role Access's mode
   switch:
   - **Airport Locations** - pick a city -> edit its `airport_name` + coordinates
@@ -699,6 +721,13 @@ keys, tables or deploy targets with any other project.
     Links are written straight into `cities.tracker_url` through this panel's
     own save, never committed
     to a migration or the repo.
+  - **Notifications** - per city: `cities.notify_webhook_url` + a
+    `notify_template` (placeholder text area). Same mirrors-filter +
+    read-only-until-Edit shell. Powers the ride **Notify** action (see the Ride
+    section). Webhook URLs are written straight into `cities` through this
+    panel, never committed.
+  (SECTIONS list is now five: Airport Locations, Ride Buffer Time, Block KM
+  Buffer, Live Tracker, Notifications.)
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

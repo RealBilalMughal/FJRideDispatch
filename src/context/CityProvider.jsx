@@ -39,7 +39,7 @@ export function CityProvider({ children }) {
     const { data: cs } = await supabase
       .from('cities')
       .select(
-        'id, name, sort, airport_name, airport_lat, airport_lng, checkin_buffer_min, checkout_buffer_min, return_leg_buffer_min, deadhead_buffer_min, crew_wait_buffer_min, pickup_extra_km, dropoff_extra_km, tracker_url',
+        'id, name, sort, airport_name, airport_lat, airport_lng, checkin_buffer_min, checkout_buffer_min, return_leg_buffer_min, deadhead_buffer_min, crew_wait_buffer_min, pickup_extra_km, dropoff_extra_km, tracker_url, notify_webhook_url, notify_template',
       )
       .order('sort')
       .order('name')

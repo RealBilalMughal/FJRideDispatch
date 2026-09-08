@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Pencil, Ruler, Satellite, Shield, Timer } from 'lucide-react'
+import { MapPinned, Pencil, Ruler, Satellite, Send, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -27,6 +27,7 @@ const SECTIONS = [
   { key: 'buffer', label: 'Ride Buffer Time', icon: Timer },
   { key: 'blockkm', label: 'Block KM Buffer', icon: Ruler },
   { key: 'tracker', label: 'Live Tracker', icon: Satellite },
+  { key: 'notify', label: 'Notifications', icon: Send },
 ]
 
 export default function Settings() {
@@ -76,8 +77,10 @@ export default function Settings() {
             <RideBufferTimePanel />
           ) : section === 'blockkm' ? (
             <BlockKmBufferPanel />
-          ) : (
+          ) : section === 'tracker' ? (
             <LiveTrackerPanel />
+          ) : (
+            <NotificationsPanel />
           )}
         </div>
       </div>
@@ -834,6 +837,176 @@ function LiveTrackerPanel() {
             <div className="view-row">
               <span className="view-label">Tracker link</span>
               <span className="view-value">{city?.tracker_url || '—'}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Notifications ────────────────────────────────────────────────────────
+// Per-city webhook URL + message template. Pressing "Notify" on a ride calls
+// the `notify-ride` Edge Function, which renders the template and POSTs a JSON
+// payload (ride + recipient phones + message) to this URL. The receiver
+// (Zapier / Make / a gateway script / WhatsApp Business API) does the sending.
+const NOTIFY_PLACEHOLDER = [
+  'FJ Ride {{ref}} — {{block}} on {{date}}',
+  'Flight {{flight}} · {{time_label}} {{time}}',
+  '{{origin}} → {{dest}}',
+  'Vehicle {{vehicle}} · Driver {{driver}}',
+].join('\n')
+
+function NotificationsPanel() {
+  const { allowedCities: cities, cityId: activeCityId, reloadCities } = useCity()
+  const locked = activeCityId != null
+  const [cityId, setCityId] = useState(
+    () => (locked && cities.find((c) => c.id === activeCityId)?.id) || cities[0]?.id || '',
+  )
+  const city = useMemo(() => cities.find((c) => String(c.id) === String(cityId)), [cities, cityId])
+  const cityName = city?.name || ''
+
+  const [editing, setEditing] = useState(false)
+  const [url, setUrl] = useState('')
+  const [tpl, setTpl] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (locked && cities.some((c) => c.id === activeCityId)) {
+      setCityId(activeCityId)
+      setEditing(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, activeCityId])
+
+  const pickCity = (id) => {
+    setCityId(id)
+    setEditing(false)
+    setErr('')
+  }
+  const startEdit = () => {
+    setUrl(city?.notify_webhook_url ?? '')
+    setTpl(city?.notify_template ?? '')
+    setErr('')
+    setEditing(true)
+  }
+  const cancel = () => {
+    setErr('')
+    setEditing(false)
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setErr('')
+    if (!cityId) return setErr('Pick a city')
+    const u = url.trim()
+    if (u && !/^https:\/\//i.test(u)) return setErr('Webhook must be a full https:// URL')
+    setBusy(true)
+    const { error } = await supabase
+      .from('cities')
+      .update({ notify_webhook_url: u || null, notify_template: tpl.trim() || null })
+      .eq('id', Number(cityId))
+    setBusy(false)
+    if (error) return setErr(error.message)
+    toast.success('Notification settings updated')
+    setEditing(false)
+    reloadCities?.()
+  }
+
+  return (
+    <>
+      <div className="set-panel-head">
+        <div>
+          <h3>Notifications</h3>
+          <div className="sub">
+            Per city: a webhook URL the &ldquo;Notify&rdquo; button on a ride POSTs to
+            (ride details + driver / crew phones + the rendered message), and the message
+            template. Point the URL at whatever sends your WhatsApp / SMS (Zapier, Make, a
+            gateway script&hellip;). Placeholders:{' '}
+            <code>{'{{ref}} {{block}} {{date}} {{flight}} {{time}} {{time_label}} {{origin}} {{dest}} {{vehicle}} {{driver}}'}</code>
+          </div>
+        </div>
+        {!editing && cities.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
+            <Pencil size={13} /> Edit
+          </button>
+        )}
+      </div>
+
+      {cities.length === 0 ? (
+        <p className="field-hint">No cities found.</p>
+      ) : (
+        <div className="set-form">
+          <div className="field">
+            <label htmlFor="nt-city">City</label>
+            {locked ? (
+              <input className="input" value={cityName} disabled />
+            ) : (
+              <select
+                id="nt-city"
+                className="select"
+                value={cityId}
+                onChange={(e) => pickCity(e.target.value)}
+                disabled={editing}
+              >
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {editing ? (
+            <form className="modal-form" onSubmit={submit}>
+              {err && <div className="modal-error">{err}</div>}
+              <div className="field">
+                <label htmlFor="nt-url">Webhook URL</label>
+                <input
+                  id="nt-url"
+                  className="input"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://hook.eu2.make.com/..."
+                  autoComplete="off"
+                  autoFocus
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="nt-tpl">Message template</label>
+                <textarea
+                  id="nt-tpl"
+                  className="input"
+                  rows={5}
+                  value={tpl}
+                  onChange={(e) => setTpl(e.target.value)}
+                  placeholder={NOTIFY_PLACEHOLDER}
+                />
+                <span className="field-hint">Leave blank to use the default template above.</span>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-square" disabled={busy}>
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <div className="view-row">
+                <span className="view-label">Webhook URL</span>
+                <span className="view-value">{city?.notify_webhook_url || '—'}</span>
+              </div>
+              <div className="view-row">
+                <span className="view-label">Template</span>
+                <span className="view-value" style={{ whiteSpace: 'pre-wrap', textAlign: 'right' }}>
+                  {city?.notify_template || '(default)'}
+                </span>
+              </div>
             </div>
           )}
         </div>

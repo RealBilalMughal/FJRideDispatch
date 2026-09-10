@@ -70,6 +70,31 @@
   margin-top: 4px;
 }
 
+.pw-field {
+  position: relative;
+}
+.pw-field .input {
+  width: 100%;
+  padding-right: 40px;
+}
+.pw-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pw-toggle:hover {
+  color: var(--accent);
+}
+
 .login-error {
   background: var(--danger-soft);
   color: var(--danger);

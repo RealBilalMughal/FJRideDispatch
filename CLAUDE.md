@@ -217,7 +217,10 @@ keys, tables or deploy targets with any other project.
     drivers (and a vendor / city change clears a driver that no longer fits; CSV
     import applies the same constraint). The list filter bar also has a
     **tracker filter** (Any / Has tracker link / No tracker link, off
-    `vehicles.tracker_url`).
+    `vehicles.tracker_url`). Stat cards are **Total / Active / Inactive**
+    (no "With driver"). Activate/deactivate is a **clickable `.status-toggle`
+    pill** (table + View modal) that opens a `ConfirmDialog` first, not an
+    instant inline `<select>`.
     **Day driver + Night driver** (both optional) - a 24h vehicle with a 2-driver
     shift. `driver_id` = day, `night_driver_id` = night. A driver holds at most one
     day slot and one night slot (two partial unique indexes) and day != night on a

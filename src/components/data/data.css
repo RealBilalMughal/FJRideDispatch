@@ -454,3 +454,28 @@ table.data-table {
 .status-text.on { color: var(--success); }
 .status-text.off { color: var(--muted); }
 .status-text.bad { color: var(--danger); }
+
+/* clickable status pill (opens a confirm) */
+.status-toggle {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, color 0.12s;
+}
+.status-toggle.on {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+}
+.status-toggle.off {
+  color: var(--muted);
+}
+.status-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

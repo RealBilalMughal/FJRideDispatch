@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Car, Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
+import { Ban, Car, Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -11,6 +11,7 @@ import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { useSelection } from '../lib/useSelection'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
+import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
 import DataTable from '../components/data/DataTable'
 import BulkDeleteBar from '../components/data/BulkDeleteBar'
@@ -161,13 +162,20 @@ export default function Vehicles() {
     () => ({
       total: list.length,
       active: list.filter((r) => r.is_active).length,
-      assigned: list.filter((r) => r.driver_id || r.night_driver_id).length,
+      inactive: list.filter((r) => !r.is_active).length,
     }),
     [list],
   )
 
-  const setActive = async (row, next) => {
+  const [activePending, setActivePending] = useState(null) // { row, next }
+  const [activeBusy, setActiveBusy] = useState(false)
+  const doSetActive = async () => {
+    if (!activePending) return
+    const { row, next } = activePending
+    setActiveBusy(true)
     const { error } = await supabase.from('vehicles').update({ is_active: next }).eq('id', row.id)
+    setActiveBusy(false)
+    setActivePending(null)
     if (error) return toast.error(error.message)
     toast.success(next ? 'Vehicle activated' : 'Vehicle deactivated')
     fetchRows()
@@ -233,14 +241,14 @@ export default function Vehicles() {
       header: 'Status',
       render: (r) =>
         canEdit ? (
-          <select
-            className="inline-select"
-            value={r.is_active ? 'active' : 'inactive'}
-            onChange={(e) => setActive(r, e.target.value === 'active')}
+          <button
+            type="button"
+            className={`status-toggle ${r.is_active ? 'on' : 'off'}`}
+            onClick={() => setActivePending({ row: r, next: !r.is_active })}
+            title={r.is_active ? 'Click to deactivate' : 'Click to activate'}
           >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+            {r.is_active ? 'Active' : 'Inactive'}
+          </button>
         ) : (
           <span className={`status-text ${r.is_active ? 'on' : 'off'}`}>
             {r.is_active ? 'Active' : 'Inactive'}
@@ -309,7 +317,7 @@ export default function Vehicles() {
         items={[
           { key: 'total', label: 'Total', value: stats.total, icon: Car },
           { key: 'active', label: 'Active', value: stats.active, icon: UserCheck },
-          { key: 'assigned', label: 'With driver', value: stats.assigned, icon: UserCheck },
+          { key: 'inactive', label: 'Inactive', value: stats.inactive, icon: Ban },
         ]}
       />
 
@@ -469,6 +477,24 @@ export default function Vehicles() {
         onConfirm={doDelete}
         onClose={() => !deleting && setPending(null)}
       />
+
+      <ConfirmDialog
+        open={Boolean(activePending)}
+        title={activePending?.next ? 'Activate vehicle' : 'Deactivate vehicle'}
+        message={
+          activePending
+            ? `${activePending.next ? 'Activate' : 'Deactivate'} "${activePending.row.vehicle_no}" (ID ${activePending.row.ref_no})?${
+                activePending.next ? '' : ' It stays in the fleet but won’t be offered for new rides.'
+              }`
+            : ''
+        }
+        confirmLabel={activePending?.next ? 'Activate' : 'Deactivate'}
+        busyLabel="Saving…"
+        tone={activePending?.next ? 'accent' : 'danger'}
+        busy={activeBusy}
+        onConfirm={doSetActive}
+        onClose={() => !activeBusy && setActivePending(null)}
+      />
     </div>
   )
 }
@@ -490,6 +516,8 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [askActive, setAskActive] = useState(false)
+  const [activeBusy, setActiveBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const title = isAdd ? 'Add Vehicle' : editing ? `Edit ${row.vehicle_no}` : `${row.vehicle_no} · ID ${row.ref_no}`
 
@@ -595,6 +623,15 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
 
   if (!editing) {
     const cityName = allowedCities.find((c) => c.id === row.city_id)?.name || row.city_name || '—'
+    const toggleActive = async () => {
+      setActiveBusy(true)
+      const { error } = await supabase.from('vehicles').update({ is_active: !row.is_active }).eq('id', row.id)
+      setActiveBusy(false)
+      setAskActive(false)
+      if (error) return toast.error(error.message)
+      toast.success(row.is_active ? 'Vehicle deactivated' : 'Vehicle activated')
+      onDone()
+    }
     return (
       <Modal open onClose={onClose} title={title} width={460}>
         <div className="modal-form">
@@ -609,13 +646,30 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
             ['Day driver', row.day_driver_name || '—'],
             ['Night driver', row.night_driver_name || '—'],
             ['Tracker link', row.tracker_url || '—'],
-            ['Status', row.is_active ? 'Active' : 'Inactive'],
           ].map(([k, v]) => (
             <div className="view-row" key={k}>
               <span className="view-label">{k}</span>
               <span className="view-value">{v}</span>
             </div>
           ))}
+          <div className="view-row">
+            <span className="view-label">Status</span>
+            <span className="view-value">
+              {canEdit ? (
+                <button
+                  type="button"
+                  className={`status-toggle ${row.is_active ? 'on' : 'off'}`}
+                  onClick={() => setAskActive(true)}
+                >
+                  {row.is_active ? 'Active' : 'Inactive'}
+                </button>
+              ) : (
+                <span className={`status-text ${row.is_active ? 'on' : 'off'}`}>
+                  {row.is_active ? 'Active' : 'Inactive'}
+                </span>
+              )}
+            </span>
+          </div>
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
               Close
@@ -627,6 +681,19 @@ function VehicleModal({ row, startInEdit = false, canEdit = true, drivers, vendo
             )}
           </div>
         </div>
+        <ConfirmDialog
+          open={askActive}
+          title={row.is_active ? 'Deactivate vehicle' : 'Activate vehicle'}
+          message={`${row.is_active ? 'Deactivate' : 'Activate'} "${row.vehicle_no}"?${
+            row.is_active ? ' It stays in the fleet but won’t be offered for new rides.' : ''
+          }`}
+          confirmLabel={row.is_active ? 'Deactivate' : 'Activate'}
+          busyLabel="Saving…"
+          tone={row.is_active ? 'danger' : 'accent'}
+          busy={activeBusy}
+          onConfirm={toggleActive}
+          onClose={() => !activeBusy && setAskActive(false)}
+        />
       </Modal>
     )
   }

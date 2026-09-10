@@ -34,8 +34,10 @@ const BLOCKS = [
   { key: 'deadhead', icon: Waypoints },
   { key: 'return_leg', icon: RotateCcw },
 ]
-const km = (r) => Number(r.distance_km) || 0
-const extraKmOf = (r) => Number(r.extra_km) || 0
+// a cancelled ride's KM is excluded from totals unless count_km was ticked
+const kmCounts = (r) => !(r.status === 'cancelled' && !r.count_km)
+const km = (r) => (kmCounts(r) ? Number(r.distance_km) || 0 : 0)
+const extraKmOf = (r) => (kmCounts(r) ? Number(r.extra_km) || 0 : 0)
 const fmtKm = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} km`
 const firstCrewName = (rc) =>
   [...(rc || [])].sort((a, b) => a.seq - b.seq).map((x) => x.crew?.name).filter(Boolean)[0] || ''
@@ -76,7 +78,7 @@ function rollup(rows) {
 }
 
 const RANGE_SELECT =
-  'block_type, distance_km, extra_km, shift, ride_date, start_at, city_id, city:cities(name), ride_crew(seq)'
+  'block_type, distance_km, extra_km, status, count_km, shift, ride_date, start_at, city_id, city:cities(name), ride_crew(seq)'
 const LIVE_SELECT =
   'id, ref_no, block_type, start_at, end_at, vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(name))'
 
@@ -112,7 +114,9 @@ export default function Dashboard() {
         const span = dateList(from, to).length
         const prevTo = addDays(from, -1)
         const prevFrom = addDays(prevTo, -(span - 1))
-        prev = scope(supabase.from('rides').select('block_type, distance_km, extra_km, ride_crew(seq)'))
+        prev = scope(
+          supabase.from('rides').select('block_type, distance_km, extra_km, status, count_km, ride_crew(seq)'),
+        )
           .gte('ride_date', prevFrom)
           .lte('ride_date', prevTo)
       }

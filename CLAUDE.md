@@ -81,8 +81,8 @@ keys, tables or deploy targets with any other project.
   `20260906240000_tracker_per_city.sql`, `20260906250000_vehicle_tracker.sql`,
   `20260907120000_crew_wait_buffer.sql`, `20260908120000_vehicle_vendor.sql`,
   `20260908130000_ride_extra_km.sql`, `20260908140000_ride_track_points.sql`,
-  `20260908140100_ride_track_cron.sql`, `20260908150000_ride_notifications.sql`
-  (all APPLIED).
+  `20260908140100_ride_track_cron.sql`, `20260908150000_ride_notifications.sql`,
+  `20260910120000_ride_cancel.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -538,6 +538,21 @@ keys, tables or deploy targets with any other project.
   deliberately tiny modal (title = `Ride <ref_no>`, same as the full view's
   header but without the block suffix, then just Flight and Note) - not the
   full View modal. CSV export gained a matching **Note** column (last).
+- **Cancel a ride** - a `Ban` row action (needs `rides.edit`; hidden on an
+  already-cancelled ride, which shows an `Undo2` "reinstate" action instead).
+  `CancelRideModal` takes a **required reason** + a checkbox *"count this
+  ride's KM in reports anyway"* (default off). On confirm: `status =
+  'cancelled'`, `cancel_reason`, `cancelled_at`, `cancelled_by`, `count_km`
+  (migration `20260910120000_ride_cancel.sql`). **`billableKm(r)`** in
+  `Rides.jsx` (`= 0` for a cancelled ride unless `count_km`) is what the
+  **Rides Summary** and **Dashboard** (`kmCounts()` / `km()` / `extraKmOf()`
+  in `Dashboard.jsx`, incl. the deadhead ratio) sum - the per-row **KM
+  column** still shows the ride's own `distance_km` but **struck through** for
+  a not-counted cancelled ride. CSV export gained **Billable KM**, **Status**,
+  **Cancel reason** columns; the table ID cell shows a red **Cancelled**
+  badge; the Vehicle Board fades + strikes cancelled bars and drops cancelled
+  rides from the Unassigned strip / conflict checks. Reinstate clears every
+  cancel field and sets `count_km` back to true.
 - **Pickup + "Also create a Deadhead"** - a checkbox under the crew list on
   the **main Ride form** (Add only, `block_type === 'pickup'`, >=1 crew). On
   submit it creates the Pickup ride PLUS a second ride the same moment: a

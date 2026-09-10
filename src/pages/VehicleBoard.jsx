@@ -17,7 +17,7 @@ import './VehicleBoard.css'
 
 const RIDE_SELECT = `
   id, ref_no, block_type, ride_date, start_at, end_at, distance_km, duration_min,
-  origin_label, dest_label, waypoints, route_geometry, vehicle_id, city_id, shift, driver_id,
+  origin_label, dest_label, waypoints, route_geometry, vehicle_id, city_id, shift, driver_id, status,
   vehicle:vehicles(ref_no, vehicle_no),
   ride_crew(seq, crew:crew(name))
 `
@@ -92,7 +92,10 @@ export default function VehicleBoard() {
   }, [rides])
 
   const unassigned = useMemo(
-    () => rides.filter((r) => !r.vehicle_id).sort((a, b) => (a.start_at || '').localeCompare(b.start_at || '')),
+    () =>
+      rides
+        .filter((r) => !r.vehicle_id && r.status !== 'cancelled')
+        .sort((a, b) => (a.start_at || '').localeCompare(b.start_at || '')),
     [rides],
   )
 
@@ -105,7 +108,7 @@ export default function VehicleBoard() {
       const veh = vId ? vehicles.find((v) => v.id === vId) : null
       if (vId && ride.start_at && ride.end_at) {
         const clash = (byVehicle.get(vId) || []).filter(
-          (o) => o.id !== rideId && o.start_at && o.end_at,
+          (o) => o.id !== rideId && o.start_at && o.end_at && o.status !== 'cancelled',
         ).map((o) => ({ s: ms(o.start_at), e: ms(o.end_at) }))
         if (overlaps(ms(ride.start_at), ms(ride.end_at), clash)) {
           toast(`Heads up — ${veh?.vehicle_no} already has a ride in that window`, { icon: '⚠️' })
@@ -131,7 +134,7 @@ export default function VehicleBoard() {
       vehicles.map((v) => [
         v.id,
         (byVehicle.get(v.id) || [])
-          .filter((r) => r.start_at && r.end_at)
+          .filter((r) => r.start_at && r.end_at && r.status !== 'cancelled')
           .map((r) => ({ s: ms(r.start_at), e: ms(r.end_at) })),
       ]),
     )
@@ -326,11 +329,11 @@ export default function VehicleBoard() {
                             key={r.id}
                             type="button"
                             draggable={canEdit}
-                            className={`vb-bar block-${r.block_type}`}
+                            className={`vb-bar block-${r.block_type}${r.status === 'cancelled' ? ' cancelled' : ''}`}
                             style={{ left: pct(s), width: `calc(${pct(e)} - ${pct(s)})` }}
                             onDragStart={(ev) => ev.dataTransfer.setData('text/ride', r.id)}
                             onClick={() => setOpenRide(r)}
-                            title={`#${r.ref_no} ${blockLabel(r.block_type)} · ${fmtTimeOnly12(r.start_at)}–${fmtTimeOnly12(r.end_at)}`}
+                            title={`#${r.ref_no} ${blockLabel(r.block_type)}${r.status === 'cancelled' ? ' (cancelled)' : ''} · ${fmtTimeOnly12(r.start_at)}–${fmtTimeOnly12(r.end_at)}`}
                           >
                             #{r.ref_no} {blockLabel(r.block_type)}
                           </button>

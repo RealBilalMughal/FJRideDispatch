@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Ban,
   RotateCcw,
   Route as RouteIcon,
   Send,
@@ -16,6 +17,7 @@ import {
   Sigma,
   Sparkles,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -80,6 +82,7 @@ const SELECT = `
   vehicle_id, driver_id, airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
   waypoints, route_geometry, distance_km, extra_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
+  cancel_reason, cancelled_at, count_km,
   city:cities(name),
   vehicle:vehicles(ref_no, vehicle_no, tracker_url),
   driver:drivers!rides_driver_id_fkey(ref_no, name),
@@ -108,8 +111,15 @@ const EXPORT_COLS = [
   { key: 'eta', label: 'ETA' },
   { key: 'km', label: 'KM' },
   { key: 'extra_km', label: 'Extra KM' },
+  { key: 'billable_km', label: 'Billable KM' },
+  { key: 'status', label: 'Status' },
+  { key: 'cancel_reason', label: 'Cancel reason' },
   { key: 'notes', label: 'Note' },
 ]
+
+// KM that counts toward totals: 0 for a cancelled ride unless count_km is set.
+const billableKm = (r) =>
+  r.status === 'cancelled' && !r.count_km ? 0 : Number(r.distance_km) || 0
 
 const DATE_PRESETS = [
   { value: 'today', label: 'Today' },
@@ -239,6 +249,7 @@ export default function Rides() {
   const [createRideFor, setCreateRideFor] = useState(null) // a dropoff ride - "Create Ride" (Return Leg / Deadhead)
   const [notifyFor, setNotifyFor] = useState(null) // a ride row - "Notify" confirm
   const [notifying, setNotifying] = useState(false)
+  const [cancelFor, setCancelFor] = useState(null) // a ride row - "Cancel ride" modal
   const { selected, toggle, toggleAll, clear } = useSelection()
 
   const doNotify = async () => {
@@ -249,6 +260,16 @@ export default function Rides() {
     setNotifyFor(null)
     if (res?.ok) toast.success(`Sent to ${res.recipients} recipient(s)`)
     else toast.error(res?.error || 'Could not send the notification')
+  }
+
+  const reinstateRide = async (r) => {
+    const { error } = await supabase
+      .from('rides')
+      .update({ status: 'dispatched', cancel_reason: null, cancelled_at: null, cancelled_by: null, count_km: true })
+      .eq('id', r.id)
+    if (error) return toast.error(error.message)
+    toast.success(`Ride ${r.display_ref} reinstated`)
+    fetchRows()
   }
 
   // Today/Week/Month presets -> a concrete [dateFrom, dateTo]; "all" clears the range.
@@ -414,15 +435,12 @@ export default function Rides() {
     for (const r of filtered) {
       const cur = m.get(r.duty_sheet_display) || { count: 0, km: 0 }
       cur.count += 1
-      cur.km += Number(r.distance_km) || 0
+      cur.km += billableKm(r)
       m.set(r.duty_sheet_display, cur)
     }
     return [...m.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
   }, [filtered])
-  const summaryKm = useMemo(
-    () => filtered.reduce((a, r) => a + (Number(r.distance_km) || 0), 0),
-    [filtered],
-  )
+  const summaryKm = useMemo(() => filtered.reduce((a, r) => a + billableKm(r), 0), [filtered])
 
   const doDelete = async () => {
     if (!pending) return
@@ -460,6 +478,9 @@ export default function Rides() {
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
       extra_km: Number(r.extra_km) > 0 ? Number(r.extra_km).toFixed(2) : '',
+      billable_km: billableKm(r) ? billableKm(r).toFixed(2) : '0',
+      status: statusLabel(r.status),
+      cancel_reason: r.cancel_reason ?? '',
       notes: r.notes ?? '',
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
@@ -480,7 +501,20 @@ export default function Rides() {
   }
 
   const columns = [
-    { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.display_ref}</span> },
+    {
+      key: 'ref',
+      header: 'ID',
+      render: (r) => (
+        <span className="primary">
+          {r.display_ref}
+          {r.status === 'cancelled' && (
+            <span className="badge badge-danger" style={{ marginLeft: 6 }} title={r.cancel_reason || ''}>
+              Cancelled
+            </span>
+          )}
+        </span>
+      ),
+    },
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
     { key: 'dutysheet', header: 'Duty Sheet', render: (r) => fmtDate(r.duty_sheet_display) },
     { key: 'fno', header: 'Flight', render: (r) => r.flight_no || '—' },
@@ -519,7 +553,18 @@ export default function Rides() {
     {
       key: 'km',
       header: 'KM',
-      render: (r) => (r.distance_km != null ? Number(r.distance_km).toFixed(2) : '—'),
+      render: (r) => {
+        if (r.distance_km == null) return '—'
+        const notCounted = r.status === 'cancelled' && !r.count_km
+        return (
+          <span
+            style={notCounted ? { textDecoration: 'line-through', color: 'var(--muted)' } : undefined}
+            title={notCounted ? 'Cancelled — not counted in KM totals' : undefined}
+          >
+            {Number(r.distance_km).toFixed(2)}
+          </span>
+        )
+      },
     },
     {
       key: 'actions',
@@ -556,11 +601,25 @@ export default function Rides() {
             <button title="View" onClick={() => setDetail({ row: r, edit: false })}>
               <Eye size={13} />
             </button>
-            {canEdit && r.vehicle_id && (
+            {canEdit && r.vehicle_id && r.status !== 'cancelled' && (
               <button title="Notify driver + crew" onClick={() => setNotifyFor(r)}>
                 <Send size={13} />
               </button>
             )}
+            {canEdit &&
+              (r.status === 'cancelled' ? (
+                <button
+                  title={`Cancelled: ${r.cancel_reason || '—'} · click to reinstate`}
+                  className="row-actions-note"
+                  onClick={() => reinstateRide(r)}
+                >
+                  <Undo2 size={13} />
+                </button>
+              ) : (
+                <button title="Cancel ride" className="danger" onClick={() => setCancelFor(r)}>
+                  <Ban size={13} />
+                </button>
+              ))}
             {r.notes && (
               <button
                 title={`Note: ${r.notes}`}
@@ -871,6 +930,17 @@ export default function Rides() {
         onConfirm={doNotify}
         onClose={() => !notifying && setNotifyFor(null)}
       />
+      {cancelFor && (
+        <CancelRideModal
+          row={cancelFor}
+          cancelledBy={profile?.id}
+          onClose={() => setCancelFor(null)}
+          onDone={() => {
+            setCancelFor(null)
+            fetchRows()
+          }}
+        />
+      )}
       {createRideFor && (
         <CreateRideModal
           row={createRideFor}
@@ -925,6 +995,73 @@ function NotePopup({ row, onClose }) {
           </button>
         </div>
       </div>
+    </Modal>
+  )
+}
+
+// ── Cancel ride ─────────────────────────────────────────────────────────
+// Sets status = 'cancelled' + a reason. By default a cancelled ride drops out
+// of KM totals (Dashboard / Summary); ticking "count this ride's KM anyway"
+// keeps count_km = true so it still bills.
+function CancelRideModal({ row, cancelledBy, onClose, onDone }) {
+  const [reason, setReason] = useState('')
+  const [countKm, setCountKm] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!reason.trim()) return setErr('A reason is required')
+    setBusy(true)
+    const { error } = await supabase
+      .from('rides')
+      .update({
+        status: 'cancelled',
+        cancel_reason: reason.trim(),
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: cancelledBy ?? null,
+        count_km: countKm,
+      })
+      .eq('id', row.id)
+    setBusy(false)
+    if (error) return setErr(error.message)
+    toast.success(`Ride ${row.display_ref} cancelled`)
+    onDone()
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Cancel ride ${row.display_ref}`} width={440}>
+      <form className="modal-form" onSubmit={submit}>
+        {err && <div className="modal-error">{err}</div>}
+        <div className="field">
+          <label htmlFor="cx-reason">Reason</label>
+          <textarea
+            id="cx-reason"
+            className="input"
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. flight cancelled, crew no-show, double booking…"
+            autoFocus
+          />
+        </div>
+        <label className="check-line">
+          <input type="checkbox" checked={countKm} onChange={(e) => setCountKm(e.target.checked)} />
+          Count this ride&rsquo;s {row.distance_km != null ? `${Number(row.distance_km).toFixed(2)} ` : ''}KM in
+          reports anyway
+        </label>
+        <span className="field-hint">
+          Left unticked, the cancelled ride shows a struck-through KM and is excluded from every KM total.
+        </span>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Keep ride
+          </button>
+          <button type="submit" className="btn btn-square btn-danger" disabled={busy}>
+            {busy ? 'Cancelling…' : 'Cancel ride'}
+          </button>
+        </div>
+      </form>
     </Modal>
   )
 }
@@ -2300,6 +2437,20 @@ function RideModal({
               <span className="view-label">Status</span>
               <span className="view-value">{statusLabel(row.status)}</span>
             </div>
+            {row.status === 'cancelled' && (
+              <>
+                <div className="view-row">
+                  <span className="view-label">Cancel reason</span>
+                  <span className="view-value">{row.cancel_reason || '—'}</span>
+                </div>
+                <div className="view-row">
+                  <span className="view-label">KM in reports</span>
+                  <span className="view-value">
+                    {row.count_km ? 'Counted' : 'Not counted'}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="view-row">
               <span className="view-label">Notes</span>
               <span className="view-value">{row.notes || '—'}</span>

@@ -215,6 +215,10 @@
 .vb-bar[draggable='true']:active {
   cursor: grabbing;
 }
+.vb-bar.cancelled {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
 
 .vb-bar.block-pickup {
   background: rgba(30, 135, 75, 0.14);

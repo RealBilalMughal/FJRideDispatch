@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
+import { setRemember } from '../lib/supabase'
 import './Login.css'
 
 export default function Login() {
@@ -9,6 +10,7 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [remember, setRememberState] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -18,6 +20,7 @@ export default function Login() {
     e.preventDefault()
     setBusy(true)
     setError('')
+    setRemember(remember)
     const { error: signInError } = await signIn(email.trim(), password)
     if (signInError) {
       setError(
@@ -38,7 +41,6 @@ export default function Login() {
         </div>
 
         <h1>Sign in</h1>
-        <p className="lead">Dispatch console &middot; internal staff only.</p>
 
         <form className="login-form" onSubmit={onSubmit}>
           <div className="field">
@@ -80,14 +82,21 @@ export default function Login() {
             </div>
           </div>
 
+          <label className="login-remember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRememberState(e.target.checked)}
+            />
+            Remember me
+          </label>
+
           {error && <div className="login-error">{error}</div>}
 
           <button className="btn" type="submit" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
-        <p className="login-foot">No public sign-up. Accounts are created by an administrator.</p>
       </div>
     </div>
   )

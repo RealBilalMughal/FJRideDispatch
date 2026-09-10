@@ -30,6 +30,12 @@ keys, tables or deploy targets with any other project.
   once the trip feature exists. The map itself (Leaflet + OSM) needs no key.
 - The `service_role` key must NEVER be in this frontend repo, never in a `VITE_`
   var, never committed. Server-only (Supabase Edge Function secrets) if ever needed.
+- **Login** (`src/pages/Login.jsx`) shows the BusCaro logo (`public/logo.png`),
+  a show/hide-password toggle, and a **Remember me** checkbox (default on). The
+  Supabase client (`src/lib/supabase.js`) uses a custom `storage` adapter +
+  `setRemember()`: remember-on -> session in `localStorage` (survives a browser
+  restart); remember-off -> `sessionStorage` (gone on close). Favicon is
+  `public/favicon.png`.
 
 ## Theme (ported from GraphicSpark - https://www.graphicspark.pk/)
 - Fonts: **Space Grotesk** (headings) + **Inter** (body/UI), from Google Fonts

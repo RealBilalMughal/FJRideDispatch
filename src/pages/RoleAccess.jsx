@@ -523,17 +523,17 @@ export default function RoleAccess() {
                     ? `${activeUser.full_name || activeUser.email}`
                     : 'Select a user'}
               </h3>
-              <div className="sub">
-                {mode === 'roles'
-                  ? 'Click a column header to toggle all · click the row dot for the whole page'
-                  : activeUser
+              {mode !== 'roles' && (
+                <div className="sub">
+                  {activeUser
                     ? `Roles: ${
                         (activeUserRoles.length ? activeUserRoles : [activeUser.role])
                           .map(label)
                           .join(', ') || '—'
                       }${overrideCount ? ` · ${overrideCount} custom` : ''}`
                     : 'Pick someone on the left'}
-              </div>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {mode === 'roles' &&

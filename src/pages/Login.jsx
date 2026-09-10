@@ -34,8 +34,7 @@ export default function Login() {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-brand">
-          <span className="mark">FJ</span>
-          <span className="name">Ride Dispatch</span>
+          <img src="/logo.png" alt="BusCaro" className="login-logo" />
         </div>
 
         <h1>Sign in</h1>

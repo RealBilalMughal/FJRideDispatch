@@ -86,7 +86,7 @@ export default function Dashboard() {
   const { profile, can } = useAuth()
   const { cityId, cityName, ready } = useCity()
   const canRides = can('rides', 'view')
-  const name = (profile?.full_name || '').split(' ')[0]
+  const fullName = (profile?.full_name || '').trim()
 
   const [preset, setPreset] = useState('this-month')
   const initial = presetRange('this-month')
@@ -223,9 +223,9 @@ export default function Dashboard() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Dashboard</h1>
+          <h1 className="page-title">{fullName ? `Welcome back, ${fullName}` : 'Dashboard'}</h1>
           <p className="page-subtitle">
-            {name ? `Welcome back, ${name}.` : 'FJ Ride Dispatch'} · {cityName} · {rangeLabel}
+            {cityName} · {rangeLabel}
           </p>
         </div>
         {canRides && (

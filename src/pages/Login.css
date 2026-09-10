@@ -22,30 +22,12 @@
 .login-brand {
   display: flex;
   align-items: center;
-  gap: 11px;
   margin-bottom: 26px;
 }
 
-.login-brand .mark {
-  min-width: 34px;
-  height: 34px;
-  padding: 0 7px;
-  border-radius: 9px;
-  background: var(--accent);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.login-brand .name {
-  font-family: var(--font-heading);
-  font-weight: 600;
-  font-size: 17px;
-  color: var(--heading);
-  letter-spacing: 0.2px;
+.login-brand .login-logo {
+  height: 40px;
+  width: auto;
 }
 
 .login-card h1 {

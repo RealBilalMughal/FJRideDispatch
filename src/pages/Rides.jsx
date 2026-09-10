@@ -508,8 +508,11 @@ export default function Rides() {
         <span className="primary">
           {r.display_ref}
           {r.status === 'cancelled' && (
-            <span className="badge badge-danger" style={{ marginLeft: 6 }} title={r.cancel_reason || ''}>
-              Cancelled
+            <span
+              style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--danger)' }}
+              title={r.cancel_reason || ''}
+            >
+              CANCELLED
             </span>
           )}
         </span>

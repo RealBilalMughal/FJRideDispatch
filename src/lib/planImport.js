@@ -29,6 +29,11 @@ const BLOCK_MAP = {
   return_leg: 'return_leg',
   returnleg: 'return_leg',
   'return leg': 'return_leg',
+  // A deadheading crew member riding a pickup/dropoff-shaped leg with no
+  // Flight No of their own - operationally a Deadhead (a repositioning, not
+  // a real dispatched pickup/dropoff), just written differently in the sheet.
+  'pickup-dhd-passenger': 'deadhead',
+  'dropoff-dhd-passenger': 'deadhead',
 }
 
 export function normalizeBlockType(raw) {
@@ -36,14 +41,23 @@ export function normalizeBlockType(raw) {
   return BLOCK_MAP[String(raw ?? '').trim().toLowerCase()] || BLOCK_MAP[key] || null
 }
 
-// "2026-09-08" as-is; "9/8/2026" (Excel's US default when a CSV date cell
-// isn't ISO-formatted) -> "2026-09-08". Anything else -> null (row skipped).
+// "2026-09-08" as-is; "01-09-26" / "01-09-2026" (dash, DAY first - the
+// planning sheet's own format, matching this app's own DD-MMM-YY display
+// convention) -> "2026-09-08"; "9/8/2026" (slash, Excel's US default when a
+// CSV date cell isn't ISO-formatted - MONTH first) -> "2026-09-08". Anything
+// else -> null (row skipped).
 export function parsePlanDate(raw) {
   const s = String(raw ?? '').trim()
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (m) {
-    const [, mo, d, y] = m
+  const dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/)
+  if (dash) {
+    const [, d, mo, yRaw] = dash
+    const y = yRaw.length === 2 ? `20${yRaw}` : yRaw
+    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (slash) {
+    const [, mo, d, y] = slash
     return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
   }
   return null
@@ -136,8 +150,10 @@ export function buildPlanRows(records, { allowedCities, flights, crew, vehicles 
     const crew_matches = parseCrewCell(r['crew']).map((e) => matchCrewEntry(e, cityCrew))
     const matchedFlight = matchFlight(r['flight no'], flights, city_id)
     const matchedVehicle = matchVehicle(car, is_adhoc_car, vehicles, city_id)
-    const planned_km = Number(r['distance (km)'])
-    const crew_count = Number(r['crew count'])
+    const kmRaw = String(r['distance (km)'] ?? '').trim()
+    const countRaw = String(r['crew count'] ?? '').trim()
+    const planned_km = kmRaw ? Number(kmRaw) : null
+    const crew_count = countRaw ? Number(countRaw) : null
 
     ok.push({
       plan_date,

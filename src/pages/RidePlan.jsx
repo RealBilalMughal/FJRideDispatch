@@ -499,15 +499,17 @@ export default function RidePlan() {
         </div>
       )}
 
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(r) => r.id}
-        loading={loading}
-        emptyLabel="No plan uploaded for this date"
-        title="Plan"
-        subtitle={`${rows.length} shown`}
-      />
+      <div className="rp-plan-table">
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          loading={loading}
+          emptyLabel="No plan uploaded for this date"
+          title="Plan"
+          subtitle={`${rows.length} shown`}
+        />
+      </div>
 
       {importOpen && (
         <ImportModal

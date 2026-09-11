@@ -531,7 +531,13 @@ function CrewModal({
       ? await supabase.from('crew').insert({ ...payload, created_by: createdBy ?? null })
       : await supabase.from('crew').update(payload).eq('id', row.id)
     setBusy(false)
-    if (res.error) return setErr(res.error.message)
+    if (res.error) {
+      return setErr(
+        res.error.code === '23505'
+          ? 'This phone number is already used by another crew member.'
+          : res.error.message,
+      )
+    }
     toast.success(isAdd ? 'Crew added' : 'Crew updated')
     onDone()
   }
@@ -760,19 +766,53 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
         stop_name: (r.stop_name || '').trim() || null,
         stop_lat: pin ? pin.lat : null,
         stop_lng: pin ? pin.lng : null,
-        created_by: createdBy ?? null,
       })
     })
-    setParsed({ ok, skipped, warning: hc.warning })
+
+    // phone is the de-dupe key (see crew_contact_uniq): a row whose phone
+    // already belongs to a crew member UPDATES that record (e.g. a corrected
+    // full name from an external roster) instead of creating a duplicate.
+    const phones = [...new Set(ok.map((r) => r.contact).filter(Boolean))]
+    let existingByPhone = new Map()
+    if (phones.length) {
+      const { data: existing } = await supabase.from('crew').select('id, contact').in('contact', phones)
+      existingByPhone = new Map((existing ?? []).map((c) => [c.contact, c.id]))
+    }
+    const tagged = ok.map((r) => {
+      const existingId = r.contact ? existingByPhone.get(r.contact) : null
+      return existingId ? { ...r, existingId, action: 'update' } : { ...r, action: 'insert' }
+    })
+    setParsed({ ok: tagged, skipped, warning: hc.warning })
   }
 
   const runImport = async () => {
     if (!parsed?.ok.length) return
     setBusy(true)
-    const { error } = await supabase.from('crew').insert(parsed.ok)
+    const inserts = parsed.ok.filter((r) => r.action === 'insert')
+    const updates = parsed.ok.filter((r) => r.action === 'update')
+    if (inserts.length) {
+      const { error } = await supabase
+        .from('crew')
+        .insert(inserts.map(({ action: _action, ...r }) => ({ ...r, created_by: createdBy ?? null })))
+      if (error) {
+        setBusy(false)
+        return setErr(error.message)
+      }
+    }
+    for (const r of updates) {
+      const { action: _action, existingId, contact: _contact, ...patch } = r
+      const { error } = await supabase.from('crew').update(patch).eq('id', existingId)
+      if (error) {
+        setBusy(false)
+        return setErr(`Update failed for "${r.name}": ${error.message}`)
+      }
+    }
     setBusy(false)
-    if (error) return setErr(error.message)
-    toast.success(`Imported ${parsed.ok.length} crew`)
+    toast.success(
+      `${inserts.length ? `${inserts.length} added` : ''}${inserts.length && updates.length ? ' · ' : ''}${
+        updates.length ? `${updates.length} updated` : ''
+      }`,
+    )
     onDone(parsed.ok.length)
   }
 
@@ -785,7 +825,9 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
           Upload a CSV with columns{' '}
           <b>name, phone, designation, city, stop_name, coordinates</b>. Coordinates are one cell,
           like <code>31.478100, 74.328700</code> (same as the Add Crew form). City must be one you
-          have access to; phone is a Pakistan mobile.
+          have access to; phone is a Pakistan mobile. <b>Phone is the match key</b> — a row whose
+          phone already belongs to a crew member updates that record (e.g. a corrected name)
+          instead of creating a duplicate.
         </p>
 
         <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={downloadSample}>
@@ -800,7 +842,9 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
         {parsed && (
           <div className="import-summary">
             {parsed.warning && <div className="field-error">{parsed.warning}</div>}
-            <b>{parsed.ok.length}</b> ready to import
+            <b>{parsed.ok.filter((r) => r.action === 'insert').length}</b> new
+            {' · '}
+            <b>{parsed.ok.filter((r) => r.action === 'update').length}</b> update (matched by phone)
             {parsed.skipped.length > 0 && (
               <>
                 {' · '}

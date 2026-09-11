@@ -208,6 +208,17 @@ keys, tables or deploy targets with any other project.
   `src/components/StopMap.jsx` - draggable, click-to-set, no key). One stop per
   crew. City-scoped. (Airport name/location editing lives on the **Settings**
   page now, not here - see Pages -> Settings.)
+  **`crew.contact` (phone) is the de-dupe key** - a partial unique index
+  (`crew_contact_uniq`, migration `20260911120000_crew_phone_unique.sql`,
+  `where contact is not null and contact <> ''` since phone is optional).
+  The Add/Edit form maps a `23505` violation to "This phone number is
+  already used by another crew member." **CSV import matches by phone
+  first**: a row whose phone already belongs to a crew member **updates**
+  that record (name/designation/city/stop - not `is_active`/`created_by`/
+  `ref_no`) instead of inserting a duplicate; a new/blank phone inserts.
+  The import preview splits **New** vs **Update (matched by phone)** counts.
+  This is what makes an export -> rename in Excel -> re-import round trip
+  safe (e.g. reconciling against an external roster).
 - `Vendors` / `Drivers` / `Vehicles` (`vendors`/`drivers`/`vehicles` perms, sidebar
   group **"Fleet"**) - Crew-style: city-scoped table, advanced filters, CSV
   export/import (`*-sample.csv`), View/Edit/Delete. All have a mandatory City.

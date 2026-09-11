@@ -129,8 +129,10 @@ export function matchFlight(flightNo, flights, cityId) {
 }
 
 // records: from parseCsvObjects (headers already lower-cased/trimmed).
-// Returns { ok: parsedRow[], skipped: {line, reason}[] } - `ok` rows are
-// ready to insert into ride_plan_rows once wrapped with an import_id.
+// Returns { ok: parsedRow[], skipped: {line, reason}[] } - `ok` rows carry a
+// `line` (CSV line number, for the import preview only - strip it before
+// inserting into ride_plan_rows, which has no such column) and are otherwise
+// ready to insert once wrapped with an import_id.
 export function buildPlanRows(records, { allowedCities, flights, crew, vehicles }) {
   const ok = []
   const skipped = []
@@ -156,6 +158,7 @@ export function buildPlanRows(records, { allowedCities, flights, crew, vehicles 
     const crew_count = countRaw ? Number(countRaw) : null
 
     ok.push({
+      line, // transient - for the import preview only, stripped before insert
       plan_date,
       city_id,
       trip_id: String(r['trip id']).trim(),

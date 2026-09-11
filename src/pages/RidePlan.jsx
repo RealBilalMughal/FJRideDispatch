@@ -481,15 +481,15 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
     if (!parsed) return null
     let confirmed = 0
     let fuzzy = 0
-    let unmatched = 0
+    const unmatchedRows = []
     for (const r of parsed.ok) {
       for (const m of r.crew_matches) {
-        if (m.tier === 'unmatched') unmatched++
+        if (m.tier === 'unmatched') unmatchedRows.push({ line: r.line, tripId: r.trip_id, raw: m.raw })
         else if (m.tier === 'fuzzy') fuzzy++
         else confirmed++
       }
     }
-    return { confirmed, fuzzy, unmatched }
+    return { confirmed, fuzzy, unmatched: unmatchedRows.length, unmatchedRows }
   }, [parsed])
 
   const runImport = async () => {
@@ -513,7 +513,7 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
     }
     const { error } = await supabase
       .from('ride_plan_rows')
-      .insert(parsed.ok.map((r) => ({ ...r, import_id: imp.id })))
+      .insert(parsed.ok.map(({ line: _line, ...r }) => ({ ...r, import_id: imp.id })))
     setBusy(false)
     if (error) return setErr(error.message)
     toast.success(`${parsed.ok.length} plan rows imported`)
@@ -559,6 +559,16 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
                   <>
                     {', '}
                     <span className="status-text bad">{matchSummary.unmatched} unmatched</span>
+                    <ul className="import-skip-list">
+                      {matchSummary.unmatchedRows.slice(0, 10).map((u, i) => (
+                        <li key={i}>
+                          Row {u.line} (Trip {u.tripId}): {u.raw}
+                        </li>
+                      ))}
+                      {matchSummary.unmatchedRows.length > 10 && (
+                        <li>…and {matchSummary.unmatchedRows.length - 10} more</li>
+                      )}
+                    </ul>
                   </>
                 )}
               </>

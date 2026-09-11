@@ -66,7 +66,16 @@ const tierText = (tier) =>
   tier === 'employee_no' || tier === 'exact_name' ? '' : tier === 'fuzzy' ? ' · fuzzy match' : ' · unmatched'
 const tierClass = (tier) => (tier === 'unmatched' ? 'bad' : tier === 'fuzzy' ? 'off' : '')
 
-function CrewMatchCell({ matches, crew }) {
+// A followed Pickup/Dropoff whose dispatched ride ended up with a different
+// crew count than the plan (e.g. plan had 2, only 1 was actually added).
+const hasCrewMismatch = (row) =>
+  row.status === 'followed' &&
+  (row.block_type === 'pickup' || row.block_type === 'dropoff') &&
+  row.actualCrewCount != null &&
+  row.actualCrewCount !== (row.crew_matches || []).length
+
+function CrewMatchCell({ row, crew }) {
+  const matches = row.crew_matches
   if (!matches?.length) return <span className="secondary">—</span>
   return (
     <div className="crew-cell-stack">
@@ -79,6 +88,11 @@ function CrewMatchCell({ matches, crew }) {
           </div>
         )
       })}
+      {hasCrewMismatch(row) && (
+        <div className="status-text bad">
+          Actual: {row.actualCrewCount} of {matches.length} planned
+        </div>
+      )}
     </div>
   )
 }
@@ -147,7 +161,18 @@ export default function RidePlan() {
     if (cityId != null) q = q.eq('city_id', cityId)
     const { data, error } = await q
     if (error) toast.error('Could not load the plan')
-    setRows(data ?? [])
+    const list = data ?? []
+
+    // actual crew count on each linked ride, for the planned-vs-actual crew
+    // check below - counted client-side (one extra query) rather than relying
+    // on a PostgREST count-aggregate embed that may not be available.
+    const rideIds = [...new Set(list.filter((r) => r.ride?.id).map((r) => r.ride.id))]
+    let crewCountByRide = new Map()
+    if (rideIds.length) {
+      const { data: rc } = await supabase.from('ride_crew').select('ride_id').in('ride_id', rideIds)
+      crewCountByRide = (rc ?? []).reduce((m, x) => m.set(x.ride_id, (m.get(x.ride_id) || 0) + 1), new Map())
+    }
+    setRows(list.map((r) => ({ ...r, actualCrewCount: r.ride?.id ? crewCountByRide.get(r.ride.id) || 0 : null })))
     setLoading(false)
   }, [canView, planDate, cityId])
 
@@ -194,8 +219,29 @@ export default function RidePlan() {
 
   const canFollow = (r) => r.status === 'pending' && (r.block_type === 'pickup' || r.block_type === 'dropoff')
 
-  const doSkip = async (reason) => {
+  // A "Skip" can instead LINK an already-created ride (e.g. one dispatched
+  // manually on the Rides page, outside the Follow flow) by its ref number -
+  // the row then counts as followed and its Actual KM feeds the report,
+  // same as a row that went through Follow.
+  const doSkip = async (reason, refNo) => {
     if (!skipFor) return
+    if (refNo) {
+      const { data: linkedRide, error: findErr } = await supabase
+        .from('rides')
+        .select('id')
+        .eq('ref_no', Number(refNo))
+        .maybeSingle()
+      if (findErr) return toast.error(findErr.message)
+      if (!linkedRide) return toast.error(`Ride ${refNo} not found`)
+      const { error } = await supabase
+        .from('ride_plan_rows')
+        .update({ status: 'followed', ride_id: linkedRide.id, skip_reason: reason.trim() || null })
+        .eq('id', skipFor.id)
+      if (error) return toast.error(error.message)
+      toast.success(`Linked to ride ${refNo}`)
+      setSkipFor(null)
+      return fetchRows()
+    }
     const { error } = await supabase
       .from('ride_plan_rows')
       .update({ status: 'skipped', skip_reason: reason.trim() || null })
@@ -208,7 +254,7 @@ export default function RidePlan() {
   const reopen = async (row) => {
     const { error } = await supabase
       .from('ride_plan_rows')
-      .update({ status: 'pending', skip_reason: null })
+      .update({ status: 'pending', skip_reason: null, ride_id: null })
       .eq('id', row.id)
     if (error) return toast.error(error.message)
     fetchRows()
@@ -217,11 +263,18 @@ export default function RidePlan() {
   const report = useMemo(() => {
     const byBlock = {}
     for (const r of rows) {
-      const b = (byBlock[r.block_type] ??= { block: r.block_type, followed: 0, plannedKm: 0, actualKm: 0 })
+      const b = (byBlock[r.block_type] ??= {
+        block: r.block_type,
+        followed: 0,
+        plannedKm: 0,
+        actualKm: 0,
+        crewMismatch: 0,
+      })
       if (r.status !== 'followed') continue
       b.followed += 1
       b.plannedKm += Number(r.planned_km) || 0
       b.actualKm += Number(billableKm(r.ride)) || 0
+      if (hasCrewMismatch(r)) b.crewMismatch += 1
     }
     return Object.values(byBlock)
   }, [rows])
@@ -243,7 +296,7 @@ export default function RidePlan() {
       render: (r) => `${fmtTime12(r.start_time) || '—'}${r.end_time ? ` – ${fmtTime12(r.end_time)}` : ''}`,
     },
     { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
-    { key: 'crew', header: 'Crew', render: (r) => <CrewMatchCell matches={r.crew_matches} crew={crew} /> },
+    { key: 'crew', header: 'Crew', render: (r) => <CrewMatchCell row={r} crew={crew} /> },
     {
       key: 'car',
       header: 'Vehicle',
@@ -365,6 +418,7 @@ export default function RidePlan() {
                   <th>Planned KM</th>
                   <th>Actual KM</th>
                   <th>Δ</th>
+                  <th>Crew mismatch</th>
                 </tr>
               </thead>
               <tbody>
@@ -377,6 +431,7 @@ export default function RidePlan() {
                     <td className={b.actualKm - b.plannedKm > 0 ? 'status-text bad' : 'status-text on'}>
                       {(b.actualKm - b.plannedKm).toFixed(2)}
                     </td>
+                    <td className={b.crewMismatch > 0 ? 'status-text bad' : 'status-text off'}>{b.crewMismatch}</td>
                   </tr>
                 ))}
               </tbody>
@@ -421,12 +476,28 @@ export default function RidePlan() {
 
 function SkipModal({ row, onClose, onSkip }) {
   const [reason, setReason] = useState('')
+  const [refNo, setRefNo] = useState('')
   const [busy, setBusy] = useState(false)
   return (
     <Modal open onClose={onClose} title={`Skip trip ${row.trip_id}`} width={420}>
       <div className="modal-form">
         <div className="field">
-          <label htmlFor="skip-reason">Reason (optional)</label>
+          <label htmlFor="skip-refno">Ride ID (optional)</label>
+          <input
+            id="skip-refno"
+            className="input"
+            inputMode="numeric"
+            value={refNo}
+            onChange={(e) => setRefNo(e.target.value.replace(/\D/g, ''))}
+            placeholder="e.g. 1234 - if this trip was already dispatched manually"
+          />
+          <span className="field-hint">
+            Link to an already-created ride's ID instead of skipping - the row counts as followed and
+            its Actual KM feeds the report.
+          </span>
+        </div>
+        <div className="field">
+          <label htmlFor="skip-reason">Note (optional)</label>
           <textarea
             id="skip-reason"
             className="input"
@@ -447,11 +518,11 @@ function SkipModal({ row, onClose, onSkip }) {
             disabled={busy}
             onClick={async () => {
               setBusy(true)
-              await onSkip(reason)
+              await onSkip(reason, refNo)
               setBusy(false)
             }}
           >
-            {busy ? 'Skipping…' : 'Skip'}
+            {busy ? 'Working…' : refNo ? 'Link ride' : 'Skip'}
           </button>
         </div>
       </div>

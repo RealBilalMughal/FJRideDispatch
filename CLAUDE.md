@@ -859,17 +859,24 @@ keys, tables or deploy targets with any other project.
     argument already) so the Rides page can mark that plan row **followed**
     + `ride_id` (and the paired Deadhead row too, if one was auto-created)
     before closing the modal and clearing the query param.
-  - **No** (any pending row, labelled "No" - the row's `status` value stays
-    `'skipped'` in the DB, only the UI text changed) - a small `Modal`, no
-    `window.prompt`, with a Note (optional reason text) **and an optional
-    Ride ID** field. Left blank, it's a plain No (`status: 'skipped'`). Given
-    a ride's `ref_no` (e.g. the dispatcher created that trip manually on the
-    Rides page instead of using Follow), it looks that ride up and **links**
-    it instead - `status: 'followed'`, `ride_id` set, the Note saved
-    alongside - so the row counts as followed and its Actual KM feeds the
-    report exactly like a Followed row. **Reopen** (any No OR linked-via-No
-    row, back to pending) always clears `ride_id` too now, not just
-    `status`/`skip_reason`.
+  - **No** (any pending row) - opens the exact same Add Ride flow as
+    **Follow** (`/rides?planRow=<id>&plan_no=1`) - a dispatcher clicking "No"
+    still usually means "dispatch it anyway, just not quite per the plan",
+    not "there's no ride". The `plan_no=1` flag only changes the prefilled
+    ride's `notes` (`buildPlanInitial()`'s `viaNo` param -
+    `'...  - dispatched despite "No"'` instead of the plain `'Plan trip X'`
+    Follow uses) - everything else (crew/flight/vehicle prefill, the
+    `RideModal.submit()` `onDone` linking the plan row back) is identical.
+  - **Not happening** (any pending row) - the ACTUAL "there is no ride"
+    case, a separate small `Modal` (no `window.prompt`) with a Note
+    (optional reason) **and an optional Ride ID** field. Left blank, it's a
+    plain `status: 'skipped'`. Given a ride's `ref_no` instead (e.g. the
+    dispatcher already created that trip manually on the Rides page), it
+    looks that ride up and **links** it instead - `status: 'followed'`,
+    `ride_id` set, the Note saved alongside - so the row counts as followed
+    and its Actual KM feeds the report exactly like a Followed row.
+    **Reopen** (any No/Not-happening/linked row, back to pending) always
+    clears `ride_id` too now, not just `status`/`skip_reason`.
   - **Actual Crew** - its own column, next to the planned Crew column: the
     linked ride's real crew names (`ride_crew` joined to `crew(name)`,
     ordered by `seq`, one extra query per refresh keyed by ride id) - blank

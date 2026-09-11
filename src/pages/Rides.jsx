@@ -189,7 +189,7 @@ function CheckCell({ scheduled, actual }) {
 // Build a RideModal `initial` prefill from a Ride Plan row (see RidePlan.jsx /
 // src/lib/planImport.js) - matches the plan's own crew/flight/vehicle
 // resolutions against the arrays this page already has loaded.
-function buildPlanInitial(planRow, { flights, crew }) {
+function buildPlanInitial(planRow, { flights, crew, viaNo = false }) {
   const matchedFlight = planRow.matched_flight_id
     ? flights.find((f) => f.id === planRow.matched_flight_id)
     : null
@@ -208,7 +208,7 @@ function buildPlanInitial(planRow, { flights, crew }) {
     checkout_old: slot === 'checkout' ? toTime24(matchedFlight?.flight_time) : undefined,
     vehicle_id: planRow.matched_vehicle_id ?? '',
     start_time: toTime24(planRow.start_time),
-    notes: `Plan trip ${planRow.trip_id}`,
+    notes: viaNo ? `Plan trip ${planRow.trip_id} - dispatched despite "No"` : `Plan trip ${planRow.trip_id}`,
     crewList,
   }
 }
@@ -295,7 +295,7 @@ export default function Rides() {
           .maybeSingle()
         pairedRowId = pair?.id ?? null
       }
-      const initial = buildPlanInitial(planRow, { flights, crew })
+      const initial = buildPlanInitial(planRow, { flights, crew, viaNo: searchParams.get('plan_no') === '1' })
       if (pairedRowId) initial.alsoDeadhead = true
       if (!alive) return
       setPlanPrefill({ initial, planRowId: planRow.id, pairedRowId })

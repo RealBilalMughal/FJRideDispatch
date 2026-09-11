@@ -453,9 +453,18 @@ export default function RidePlan() {
               Follow
             </button>
           )}
+          {canEdit && canFollow(r) && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-square btn-sm"
+              onClick={() => navigate(`/rides?planRow=${r.id}&plan_no=1`)}
+            >
+              No
+            </button>
+          )}
           {canEdit && r.status === 'pending' && (
             <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => setSkipFor(r)}>
-              No
+              Not happening
             </button>
           )}
           {canEdit && r.status === 'skipped' && (
@@ -648,7 +657,7 @@ function SkipModal({ row, onClose, onSkip }) {
   const [refNo, setRefNo] = useState('')
   const [busy, setBusy] = useState(false)
   return (
-    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Not Followed`} width={420}>
+    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Not Happening`} width={420}>
       <div className="modal-form">
         <div className="field">
           <label htmlFor="skip-refno">Ride ID (optional)</label>
@@ -658,11 +667,11 @@ function SkipModal({ row, onClose, onSkip }) {
             inputMode="numeric"
             value={refNo}
             onChange={(e) => setRefNo(e.target.value.replace(/\D/g, ''))}
-            placeholder="e.g. 1234 - if this trip was already dispatched manually"
+            placeholder="e.g. 1234 - if this trip was already dispatched separately"
           />
           <span className="field-hint">
-            Link to an already-created ride's ID instead of marking No - the row counts as followed
-            and its Actual KM feeds the report.
+            Link an already-created ride's ID instead - the row counts as followed and its Actual KM
+            feeds the report.
           </span>
         </div>
         <div className="field">
@@ -691,7 +700,7 @@ function SkipModal({ row, onClose, onSkip }) {
               setBusy(false)
             }}
           >
-            {busy ? 'Working…' : refNo ? 'Link ride' : 'No'}
+            {busy ? 'Working…' : refNo ? 'Link ride' : 'Confirm'}
           </button>
         </div>
       </div>

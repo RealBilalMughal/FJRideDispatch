@@ -122,10 +122,15 @@ export function matchVehicle(car, isAdhoc, vehicles, cityId) {
   return vehicles.find((v) => v.city_id === cityId && v.vehicle_no.trim().toLowerCase() === target) || null
 }
 
+// The plan sheet writes the airline code on the flight number ("9P841"); the
+// Flights registry stores just the digits ("841"). Fly Jinnah's IATA code
+// ("9P") starts with a DIGIT, so stripping leading letters doesn't work -
+// take the trailing run of digits instead, which is the flight number either way.
+const digitsOnly = (s) => String(s ?? '').trim().match(/(\d+)$/)?.[1] ?? ''
 export function matchFlight(flightNo, flights, cityId) {
-  const target = String(flightNo ?? '').trim().toLowerCase()
+  const target = digitsOnly(flightNo)
   if (!target) return null
-  return flights.find((f) => f.city_id === cityId && f.flight_no.trim().toLowerCase() === target) || null
+  return flights.find((f) => f.city_id === cityId && digitsOnly(f.flight_no) === target) || null
 }
 
 // records: from parseCsvObjects (headers already lower-cased/trimmed).

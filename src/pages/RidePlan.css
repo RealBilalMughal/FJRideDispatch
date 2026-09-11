@@ -31,6 +31,18 @@
   gap: 6px;
 }
 
+.rp-follow-btn:hover {
+  background: rgba(30, 135, 75, 0.12);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.rp-no-btn:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* The page itself never scrolls - title/KM summary/date-bar (and the Report
    panel, if open) stay put in normal flow; `position: sticky` here is just a
    safety net in case the table-height calc below is ever a few px short on

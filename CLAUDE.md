@@ -874,16 +874,21 @@ keys, tables or deploy targets with any other project.
     happening" modal's Ride-ID-link path sets `via_no: true` too (same
     reasoning - a ride exists, but not via the primary flow); `Reopen` always
     resets it back to `false` alongside `status`/`ride_id`/`skip_reason`.
-  - **Not happening** (any pending row) - the ACTUAL "there is no ride"
-    case, a separate small `Modal` (no `window.prompt`) with a Note
-    (optional reason) **and an optional Ride ID** field. Left blank, it's a
-    plain `status: 'skipped'`. Given a ride's `ref_no` instead (e.g. the
-    dispatcher already created that trip manually on the Rides page), it
-    looks that ride up and **links** it instead - `status: 'followed'`,
-    `ride_id` set, the Note saved alongside - so the row counts as followed
-    and its Actual KM feeds the report exactly like a Followed row.
-    **Reopen** (any No/Not-happening/linked row, back to pending) always
-    clears `ride_id` too now, not just `status`/`skip_reason`.
+  - **Not happening** (any pending row) - an icon-only action (`Ban`, the
+    same "circle with a line through it" icon `Rides.jsx` already uses for
+    Cancel ride) rather than a text button like Follow/No, since it's the
+    least-common path. Opens the ACTUAL "there is no ride" case, a separate
+    small `Modal` (no `window.prompt`) with a Note (optional reason) **and
+    an optional Ride ID** field. Left blank, it's a plain `status:
+    'skipped'`. Given a ride's `ref_no` instead (e.g. the dispatcher already
+    created that trip manually on the Rides page), it looks that ride up and
+    **links** it instead - `status: 'followed'`, `ride_id` set, the Note
+    saved alongside - so the row counts as followed and its Actual KM feeds
+    the report exactly like a Followed row. **Reopen** (any No/Not-
+    happening/linked row, back to pending) always clears `ride_id` too now,
+    not just `status`/`skip_reason`. Follow/No are `.rp-follow-btn`/
+    `.rp-no-btn` (RidePlan.css) - a plain flat text button each, tinted
+    light green / light red only on hover.
   - **Actual Crew** - its own column, next to the planned Crew column: the
     linked ride's real crew names (`ride_crew` joined to `crew(name)`,
     ordered by `seq`, one extra query per refresh keyed by ride id) - blank
@@ -898,9 +903,13 @@ keys, tables or deploy targets with any other project.
     vehicle (looked up against this page's own `vehicles` array by the
     ride's `vehicle_id`) as a second flat red line under the planned `car`
     whenever they differ and the row is followed.
-  - **Δ KM** - a table column right after Actual KM: that row's own
+  - **Difference** - a table column right after Actual KM: that row's own
     `billableKm(ride) - planned_km`, flat red when positive (ran over), flat
-    green otherwise - the Report panel's per-block delta, but per-row.
+    green otherwise - the Report panel's per-block delta, but per-row. The
+    same total (`summary.total.actualKm - plannedKm`) gets its own top
+    summary card too, right after Total - a plain inline `color` (not
+    `.status-text`, which would shrink the number to 12px against its 20px
+    siblings) keyed the same red-over/green-under way.
   - **Top KM summary** - always-visible `StatCards` row (the shared
     Crew/Vehicles-page component, flat - not the Dashboard's boxed cards): a
     **Total** card first (`active`, accent-coloured value), then one per

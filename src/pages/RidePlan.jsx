@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Download, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -387,6 +387,7 @@ export default function RidePlan() {
     }),
     [rows],
   )
+  const totalDelta = summary.total.actualKm - summary.total.plannedKm
 
   const columns = [
     { key: 'trip', header: 'Trip', render: (r) => r.trip_id },
@@ -447,7 +448,7 @@ export default function RidePlan() {
     },
     {
       key: 'delta',
-      header: 'Δ KM',
+      header: 'Difference',
       align: 'right',
       render: (r) => {
         if (r.status !== 'followed' || !r.ride) return '—'
@@ -463,7 +464,7 @@ export default function RidePlan() {
           {canEdit && canFollow(r) && (
             <button
               type="button"
-              className="btn btn-ghost btn-square btn-sm"
+              className="btn btn-ghost btn-square btn-sm rp-follow-btn"
               onClick={() => navigate(`/rides?planRow=${r.id}`)}
             >
               Follow
@@ -472,15 +473,20 @@ export default function RidePlan() {
           {canEdit && canFollow(r) && (
             <button
               type="button"
-              className="btn btn-ghost btn-square btn-sm"
+              className="btn btn-ghost btn-square btn-sm rp-no-btn"
               onClick={() => navigate(`/rides?planRow=${r.id}&plan_no=1`)}
             >
               No
             </button>
           )}
           {canEdit && r.status === 'pending' && (
-            <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => setSkipFor(r)}>
-              Not happening
+            <button
+              type="button"
+              className="icon-btn"
+              title="Not happening"
+              onClick={() => setSkipFor(r)}
+            >
+              <Ban size={15} />
             </button>
           )}
           {canEdit && r.status === 'skipped' && (
@@ -543,6 +549,17 @@ export default function RidePlan() {
               value: `${summary.total.plannedKm.toFixed(2)} km`,
               hint: `Actual: ${summary.total.actualKm.toFixed(2)} km${summary.total.followed ? ` (${summary.total.followed} followed)` : ''}`,
               active: true,
+            },
+            {
+              key: 'difference',
+              label: 'Difference',
+              value: (
+                <span style={{ color: totalDelta > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                  {totalDelta >= 0 ? '+' : ''}
+                  {totalDelta.toFixed(2)} km
+                </span>
+              ),
+              hint: totalDelta > 0 ? 'over plan' : totalDelta < 0 ? 'under plan' : 'on plan',
             },
             ...SUMMARY_BLOCKS.map((b) => ({
               key: b,

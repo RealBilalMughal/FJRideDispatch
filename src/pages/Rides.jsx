@@ -280,24 +280,29 @@ export default function Rides() {
         toast.error('You do not have permission to add rides')
         return clearPlanParam()
       }
-      // A paired Deadhead (off a Pickup), same Trip ID, still pending - auto-check
-      // "Also create a Deadhead" so this one Add covers both legs, same as the
-      // existing checkbox already does for a manually-dispatched pickup.
+      // A paired Deadhead (off a Pickup) or Return Leg (off a Dropoff), same
+      // Trip ID, still pending - auto-check "Also create a Deadhead/Return
+      // Leg" so this one Add covers both legs, same as the existing
+      // checkboxes already do for a manually-dispatched pickup/dropoff.
       let pairedRowId = null
-      if (planRow.block_type === 'pickup') {
+      const pairedBlock = planRow.block_type === 'pickup' ? 'deadhead' : planRow.block_type === 'dropoff' ? 'return_leg' : null
+      if (pairedBlock) {
         const { data: pair } = await supabase
           .from('ride_plan_rows')
           .select('id')
           .eq('trip_id', planRow.trip_id)
           .eq('city_id', planRow.city_id)
-          .eq('block_type', 'deadhead')
+          .eq('block_type', pairedBlock)
           .eq('status', 'pending')
           .maybeSingle()
         pairedRowId = pair?.id ?? null
       }
       const viaNo = searchParams.get('plan_no') === '1'
       const initial = buildPlanInitial(planRow, { flights, crew, viaNo })
-      if (pairedRowId) initial.alsoDeadhead = true
+      if (pairedRowId) {
+        if (planRow.block_type === 'pickup') initial.alsoDeadhead = true
+        else if (planRow.block_type === 'dropoff') initial.alsoReturnLeg = true
+      }
       if (!alive) return
       setPlanPrefill({ initial, planRowId: planRow.id, pairedRowId, viaNo })
       setAddOpen(true)
@@ -974,12 +979,13 @@ export default function Rides() {
                 .from('ride_plan_rows')
                 .update({ status: 'followed', ride_id: result?.rideId ?? null, via_no: planPrefill.viaNo ?? false })
                 .eq('id', planPrefill.planRowId)
-              if (planPrefill.pairedRowId && result?.deadheadRideId) {
+              const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId
+              if (planPrefill.pairedRowId && pairedRideId) {
                 await supabase
                   .from('ride_plan_rows')
                   .update({
                     status: 'followed',
-                    ride_id: result.deadheadRideId,
+                    ride_id: pairedRideId,
                     via_no: planPrefill.viaNo ?? false,
                   })
                   .eq('id', planPrefill.pairedRowId)
@@ -1974,6 +1980,7 @@ function RideModal({
   const [busy, setBusy] = useState(false)
   const [routeData, setRouteData] = useState(null) // { distanceKm, durationMin, line }
   const [dhRoute, setDhRoute] = useState(null) // "Also create a Deadhead" preview: { distanceKm, durationMin, line }
+  const [rlRoute, setRlRoute] = useState(null) // "Also create a Return Leg" preview: { distanceKm, durationMin, line }
   const [playback, setPlayback] = useState(false) // Ride View: show the recorded trip instead of the route/live map
   const [notifyBusy, setNotifyBusy] = useState(false)
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
@@ -1990,6 +1997,11 @@ function RideModal({
   // crew stop) so the vehicle is positioned before the pickup run. Chains off
   // the pickup -> displays as "<pickup ref>-PD", cascades on delete.
   const [alsoDeadhead, setAlsoDeadhead] = useState(Boolean(initial?.alsoDeadhead))
+  // Dropoff only, add-only: also create a Return Leg ride (last crew stop ->
+  // Airport) once this dropoff ends, mirroring "Also create a Deadhead"
+  // above - same pattern, opposite direction. Chains off the dropoff ->
+  // displays as "<dropoff ref>-R", cascades on delete.
+  const [alsoReturnLeg, setAlsoReturnLeg] = useState(Boolean(initial?.alsoReturnLeg))
 
   const initialCrew = row
     ? [...(row?.ride_crew || [])]
@@ -2046,6 +2058,10 @@ function RideModal({
   const deadheadBufferMin = useMemo(() => {
     const d = Number(allowedCities.find((x) => x.id === cityId)?.deadhead_buffer_min)
     return Number.isFinite(d) ? d : DEFAULT_DEADHEAD_BUFFER_MIN
+  }, [allowedCities, cityId])
+  const returnLegBufferMin = useMemo(() => {
+    const r = Number(allowedCities.find((x) => x.id === cityId)?.return_leg_buffer_min)
+    return Number.isFinite(r) ? r : DEFAULT_RETURN_LEG_BUFFER_MIN
   }, [allowedCities, cityId])
   const crewWaitBufferMin = useMemo(() => {
     const w = Number(allowedCities.find((x) => x.id === cityId)?.crew_wait_buffer_min)
@@ -2160,6 +2176,30 @@ function RideModal({
     }
   }, [isAdd, alsoDeadhead, form.block_type, dhFirstCrew, airport])
 
+  // "Also create a Return Leg" (Dropoff, add-mode): preview the last crew ->
+  // Airport leg so the form can show that return leg's own Ride Time up front.
+  const rlLastCrew = crewList[crewList.length - 1]
+  useEffect(() => {
+    if (!(isAdd && alsoReturnLeg && form.block_type === 'dropoff' && rlLastCrew)) {
+      setRlRoute(null)
+      return
+    }
+    const pts = buildRoutePoints('return_leg', null, [{ ...rlLastCrew, crew_id: rlLastCrew.id }], airport)
+    if (!routeComplete(pts)) {
+      setRlRoute(null)
+      return
+    }
+    let alive = true
+    const id = setTimeout(async () => {
+      const info = await routeInfo(pts.map((p) => [p.lng, p.lat]))
+      if (alive) setRlRoute(info)
+    }, 400)
+    return () => {
+      alive = false
+      clearTimeout(id)
+    }
+  }, [isAdd, alsoReturnLeg, form.block_type, rlLastCrew, airport])
+
   // A multi-crew pickup / dropoff waits at every crew stop for them to board /
   // alight - crewCount * the city's crew-wait buffer (once there's >1 crew). It
   // folds into duration_min so ETA, end_at, the Pickup-Time auto-suggest and
@@ -2224,6 +2264,20 @@ function RideModal({
       : null
   const dhArriveAt =
     dhStartAt ? new Date(new Date(startAt).getTime() - deadheadBufferMin * 60000).toISOString() : null
+
+  // "Also create a Return Leg": it LEAVES the last crew's stop
+  // `return_leg_buffer_min` after this dropoff's own arrival there, so its
+  // own Ride Time = Drop-off ETA + that buffer. Arrival at the airport =
+  // Ride Time + the Airport drive. Shown in the form and reused at submit.
+  const rlDriveMin = rlRoute?.durationMin ?? null
+  const rlStartAt =
+    alsoReturnLeg && etaAt
+      ? new Date(new Date(etaAt).getTime() + returnLegBufferMin * 60000).toISOString()
+      : null
+  const rlArriveAt =
+    rlStartAt && rlDriveMin != null
+      ? new Date(new Date(rlStartAt).getTime() + rlDriveMin * 60000).toISOString()
+      : null
 
   // vehicle conflict pre-check — TEMPORARILY DISABLED (commented out) per
   // request, to be reworked/re-applied properly later. Leaving `conflict`
@@ -2303,6 +2357,8 @@ function RideModal({
     if (form.vehicle_id && !startAt) return setErr('Set the ride start time for the vehicle')
     if (isAdd && alsoDeadhead && form.block_type === 'pickup' && !startAt)
       return setErr('Set the Pickup Time — the deadhead is timed to arrive just before it')
+    if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && !etaAt)
+      return setErr('Set the Drop Time — the return leg is timed off its arrival')
     if (form.vehicle_id && conflict)
       return setErr(`Vehicle busy on Ride ${conflict.ref_no} till ${fmtTimeOnly12(conflict.end_at)}`)
 
@@ -2436,9 +2492,71 @@ function RideModal({
       }
     }
 
+    // Dropoff + "Also create a Return Leg": one extra ride, the last crew
+    // stop -> Airport, on the same vehicle, leaving `return_leg_buffer_min`
+    // after this dropoff's own arrival there. Chains off the dropoff
+    // (return_of_ride_id) so it shows as "<dropoff ref>-R" and cascades if
+    // the dropoff is deleted - same shape CreateRideModal's Return Leg tab
+    // already produces, just created inline instead of as a second step.
+    let rlNote = ''
+    let rlRideId = null
+    if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && crewList.length && etaAt) {
+      try {
+        const lastC = crewList[crewList.length - 1]
+        const rlPts = buildRoutePoints('return_leg', null, [{ ...lastC, crew_id: lastC.id }], airport)
+        // reuse the form's preview route; only re-fetch if it isn't ready yet
+        const rlInfo =
+          rlRoute ?? (routeComplete(rlPts) ? await routeInfo(rlPts.map((p) => [p.lng, p.lat])) : null)
+        const rlDrive = rlInfo?.durationMin ?? 0
+        const rlStart =
+          rlStartAt ?? new Date(new Date(etaAt).getTime() + returnLegBufferMin * 60000).toISOString()
+        const rlEnd = new Date(new Date(rlStart).getTime() + (rlDrive + BUFFER_MIN) * 60000).toISOString()
+        const rlIns = await supabase
+          .from('rides')
+          .insert({
+            city_id: cityId,
+            flight_id: form.flight_id,
+            flight_no: form.flight_no,
+            flight_code: form.flight_code || null,
+            block_type: 'return_leg',
+            ride_date: form.ride_date,
+            duty_sheet_date: dutySheetDate,
+            vehicle_id: form.vehicle_id || null,
+            shift: form.vehicle_id ? shift : null,
+            driver_id: driverId || null,
+            airport_name: airport.name || null,
+            airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
+            airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
+            origin_label: rlPts[0]?.label || null,
+            origin_lat: rlPts[0]?.lat ?? null,
+            origin_lng: rlPts[0]?.lng ?? null,
+            dest_label: rlPts[1]?.label || null,
+            dest_lat: rlPts[1]?.lat ?? null,
+            dest_lng: rlPts[1]?.lng ?? null,
+            waypoints: rlPts,
+            route_geometry: rlInfo?.line ?? null,
+            distance_km: rlInfo?.distanceKm ?? null,
+            duration_min: rlInfo?.durationMin ?? null,
+            start_at: rlStart,
+            end_at: rlEnd,
+            status: 'dispatched',
+            return_of_ride_id: rideId,
+            created_by: createdBy ?? null,
+          })
+          .select('id')
+          .single()
+        if (rlIns.error) throw new Error(rlIns.error.message)
+        await supabase.from('ride_crew').insert({ ride_id: rlIns.data.id, crew_id: lastC.id, seq: 0 })
+        rlRideId = rlIns.data.id
+        rlNote = `, return leg ${rideRefNo}-R`
+      } catch (e3) {
+        toast.error(`Ride created, but the return leg failed: ${e3.message}`)
+      }
+    }
+
     setBusy(false)
-    toast.success(isAdd ? `Ride created${dhNote}` : 'Ride updated')
-    onDone({ rideId, rideRefNo, deadheadRideId: dhRideId })
+    toast.success(isAdd ? `Ride created${dhNote}${rlNote}` : 'Ride updated')
+    onDone({ rideId, rideRefNo, deadheadRideId: dhRideId, returnLegRideId: rlRideId })
   }
 
   const rowRef = row?.display_ref ?? row?.ref_no
@@ -2828,6 +2946,31 @@ function RideModal({
                       : `Deadhead Ride Time ${fmtTimeOnly12(dhStartAt)} — leave the airport by then, ` +
                         `${dhDriveMin} min drive, reach ${crewList[0].stop_name || crewList[0].name} ` +
                         `${fmtTimeOnly12(dhArriveAt)} (${deadheadBufferMin} min before the ${fmtTimeOnly12(startAt)} pickup).`}
+                </span>
+              )}
+            </>
+          )}
+          {isAdd && form.block_type === 'dropoff' && crewList.length > 0 && (
+            <>
+              <label className="check-line" style={{ marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={alsoReturnLeg}
+                  onChange={(e) => setAlsoReturnLeg(e.target.checked)}
+                />
+                Also create a Return Leg ride (
+                {crewList[crewList.length - 1].stop_name || crewList[crewList.length - 1].name} → Airport)
+              </label>
+              {alsoReturnLeg && (
+                <span className="field-hint">
+                  {!etaAt
+                    ? 'Set the Drop Time first — the return leg is timed off its arrival.'
+                    : rlDriveMin == null
+                      ? 'Working out the crew → Airport drive…'
+                      : `Return Leg Ride Time ${fmtTimeOnly12(rlStartAt)} — leave ` +
+                        `${crewList[crewList.length - 1].stop_name || crewList[crewList.length - 1].name} then, ` +
+                        `${rlDriveMin} min drive, reach the airport ${fmtTimeOnly12(rlArriveAt)} ` +
+                        `(${returnLegBufferMin} min after the ${fmtTimeOnly12(etaAt)} drop-off arrival).`}
                 </span>
               )}
             </>

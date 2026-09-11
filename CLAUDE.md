@@ -593,6 +593,31 @@ keys, tables or deploy targets with any other project.
   `ride_crew` row (that crew, seq 0) for the Crew column, cascades on delete
   with the Pickup. Fails soft - if the deadhead insert errors, the Pickup
   still stands (toast warns).
+- **Dropoff + "Also create a Return Leg"** - the mirror image, same pattern
+  reversed: a checkbox under the crew list (Add only, `block_type ===
+  'dropoff'`, >=1 crew). On submit it creates the Dropoff ride PLUS a
+  **Return Leg**, route **the last crew stop -> Airport**, same vehicle/
+  shift/driver/city/`ride_date`/`duty_sheet_date`/flight as the Dropoff,
+  `return_of_ride_id` = the Dropoff. Timed to LEAVE `cities.return_leg_buffer_min`
+  after the Dropoff's own arrival at that crew stop: `start_at` = Dropoff's
+  ETA (`start_at + duration_min`) + that buffer, `end_at` = `start_at` + ORS
+  drive + the fixed vehicle-conflict `BUFFER_MIN`. Checking the box shows a
+  live hint the same way (`rlRoute`, debounced ORS for the crew→Airport
+  leg). Displays as **`<dropoff ref>-R`** (the same shape `CreateRideModal`'s
+  Return Leg tab already produces, so `suffixFor()`/`followOnByParent`
+  needed no changes), one `ride_crew` row (last crew, seq 0), cascades with
+  the Dropoff, fails soft. Both this and the Deadhead checkbox key off
+  `crewList[0]` / `crewList[crewList.length - 1]` - the LIVE form state at
+  submit, not the original plan's crew count - so if a dispatcher started
+  from a 3-crew planned Pickup/Dropoff (via Ride Plan's Follow/No) but
+  removed one before saving, the deadhead/return leg automatically follows
+  whichever crew member is actually first/last in the 2 that remain.
+  Ride Plan's Follow/No auto-ticks this checkbox too, mirroring the Deadhead
+  case, when a pending Return Leg plan row shares the followed Dropoff's
+  Trip ID (`Rides.jsx`'s prefill effect, `initial.alsoReturnLeg`) - and its
+  own reconciliation effect still catches this the same way regardless of
+  whether the Return Leg arrived via this checkbox or `CreateRideModal`,
+  since both produce the identical `return_of_ride_id`-linked shape.
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
   edit per-city on the **Settings** page (see Pages -> Settings), or directly
   on `cities.airport_*`.

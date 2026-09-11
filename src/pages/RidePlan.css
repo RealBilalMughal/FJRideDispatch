@@ -31,10 +31,22 @@
   gap: 6px;
 }
 
-/* Freeze the table header while the plan's rows scroll underneath it - the
-   page itself is the scroll container (no fixed topbar to sit below), so a
-   plain `top: 0` sticky pins it at the viewport edge. overflow-y is forced
-   back to visible because setting overflow-x alone on .data-table-scroll
+/* Freeze the page's own title/KM summary/date-bar at the top of the
+   viewport - the page itself is the scroll container (no fixed topbar to
+   sit below), so a plain `top: 0` sticky pins it there as the rest scrolls
+   underneath. */
+.rp-frozen-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  padding-bottom: 10px;
+}
+
+/* The table's own column-header row freezes too, right below the block
+   above (--rp-thead-top, its measured height - see RidePlan.jsx) rather
+   than at the very top, so the two don't overlap. overflow-y is forced back
+   to visible because setting overflow-x alone on .data-table-scroll
    implicitly makes overflow-y "auto" too (a CSS quirk), which would turn it
    into its own (never-scrolling, since it has no height cap) sticky context
    instead of the page. */
@@ -44,7 +56,7 @@
 
 .rp-plan-table .data-table thead th {
   position: sticky;
-  top: 0;
+  top: var(--rp-thead-top, 0px);
   background: var(--bg);
   z-index: 2;
 }

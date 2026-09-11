@@ -135,6 +135,21 @@ export default function RidePlan() {
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Freeze the page's own title/summary/date-bar at the top of the viewport
+  // (position: sticky) - the table's own column-header row then sticks right
+  // below it, at this measured height, rather than a fixed guess, so it
+  // still lines up if the frozen block's height ever changes (wrapping on a
+  // narrow screen, a longer city name, etc.).
+  const topBarRef = useRef(null)
+  const [topBarH, setTopBarH] = useState(0)
+  useEffect(() => {
+    const el = topBarRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setTopBarH(entry.contentRect.height))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const [flights, setFlights] = useState([])
   const [crew, setCrew] = useState([])
   const [vehicles, setVehicles] = useState([])
@@ -393,74 +408,76 @@ export default function RidePlan() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Ride Plan</h1>
-          <p className="page-subtitle">
-            {rows.length} rows · {cityName}
-          </p>
-        </div>
-        <div className="page-actions">
-          <button className="icon-btn" onClick={fetchRows} title="Refresh">
-            <RefreshCw size={15} />
-          </button>
-          <button
-            className={`filter-toggle${reportOpen ? ' on' : ''}`}
-            onClick={() => setReportOpen((v) => !v)}
-          >
-            <Sigma size={13} /> Report
-          </button>
-          {canAdd && (
-            <button className="btn btn-ghost btn-square btn-sm" onClick={() => setImportOpen(true)}>
-              <Upload size={14} /> Upload plan
+    <div className="page" style={{ '--rp-thead-top': `${topBarH}px` }}>
+      <div ref={topBarRef} className="rp-frozen-top">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Ride Plan</h1>
+            <p className="page-subtitle">
+              {rows.length} rows · {cityName}
+            </p>
+          </div>
+          <div className="page-actions">
+            <button className="icon-btn" onClick={fetchRows} title="Refresh">
+              <RefreshCw size={15} />
             </button>
-          )}
-          {canDelete && rows.length > 0 && (
-            <button className="btn btn-square btn-sm btn-danger" onClick={() => setDeletePlanOpen(true)}>
-              <Trash2 size={14} /> Delete plan
+            <button
+              className={`filter-toggle${reportOpen ? ' on' : ''}`}
+              onClick={() => setReportOpen((v) => !v)}
+            >
+              <Sigma size={13} /> Report
             </button>
-          )}
+            {canAdd && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={() => setImportOpen(true)}>
+                <Upload size={14} /> Upload plan
+              </button>
+            )}
+            {canDelete && rows.length > 0 && (
+              <button className="btn btn-square btn-sm btn-danger" onClick={() => setDeletePlanOpen(true)}>
+                <Trash2 size={14} /> Delete plan
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <StatCards
-        items={[
-          {
-            key: 'total',
-            label: 'Total',
-            value: `${summary.total.plannedKm.toFixed(2)} km`,
-            hint: `Actual: ${summary.total.actualKm.toFixed(2)} km${summary.total.followed ? ` (${summary.total.followed} followed)` : ''}`,
-            active: true,
-          },
-          ...SUMMARY_BLOCKS.map((b) => ({
-            key: b,
-            label: blockLabel(b),
-            value: `${summary[b].plannedKm.toFixed(2)} km`,
-            hint: `Actual: ${summary[b].actualKm.toFixed(2)} km${summary[b].followed ? ` (${summary[b].followed} followed)` : ''}`,
-          })),
-        ]}
-      />
-
-      <div className="rp-datebar">
-        <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, -1))}>
-          <ChevronLeft size={16} />
-        </button>
-        <input
-          type="date"
-          className="input"
-          value={planDate}
-          onChange={(e) => setPlanDate(e.target.value)}
+        <StatCards
+          items={[
+            {
+              key: 'total',
+              label: 'Total',
+              value: `${summary.total.plannedKm.toFixed(2)} km`,
+              hint: `Actual: ${summary.total.actualKm.toFixed(2)} km${summary.total.followed ? ` (${summary.total.followed} followed)` : ''}`,
+              active: true,
+            },
+            ...SUMMARY_BLOCKS.map((b) => ({
+              key: b,
+              label: blockLabel(b),
+              value: `${summary[b].plannedKm.toFixed(2)} km`,
+              hint: `Actual: ${summary[b].actualKm.toFixed(2)} km${summary[b].followed ? ` (${summary[b].followed} followed)` : ''}`,
+            })),
+          ]}
         />
-        <span className="secondary">{fmtDate(planDate)}</span>
-        <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, 1))}>
-          <ChevronRight size={16} />
-        </button>
-        {planDate !== pkToday() && (
-          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => setPlanDate(pkToday())}>
-            Today
+
+        <div className="rp-datebar">
+          <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, -1))}>
+            <ChevronLeft size={16} />
           </button>
-        )}
+          <input
+            type="date"
+            className="input"
+            value={planDate}
+            onChange={(e) => setPlanDate(e.target.value)}
+          />
+          <span className="secondary">{fmtDate(planDate)}</span>
+          <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, 1))}>
+            <ChevronRight size={16} />
+          </button>
+          {planDate !== pkToday() && (
+            <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => setPlanDate(pkToday())}>
+              Today
+            </button>
+          )}
+        </div>
       </div>
 
       {reportOpen && (

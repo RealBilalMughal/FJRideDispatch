@@ -827,7 +827,20 @@ keys, tables or deploy targets with any other project.
     order - the sheet interleaves a vehicle's Deadhead/Pickup/Dropoff/Return
     Leg legs by when they're planned, not by Trip ID). No pagination on this
     table - the whole day's plan renders as one page (a day is ~50-100
-    rows), matching "ek page mein aaye, next wala scene na ho". **`crew.employee_no`** (optional,
+    rows), matching "ek page mein aaye, next wala scene na ho".
+  - **Re-uploading a file that covers already-imported dates** - `ImportModal`
+    checks this up front (`onFile`, after parsing: queries `ride_plan_rows`
+    for the parsed dates + city ids) rather than letting a second upload
+    silently ADD a duplicate copy of every row (which is exactly what
+    happened once in practice - the same file got uploaded three times,
+    `seq` collided across the three imports since each one's own numbering
+    restarts at 2, and the table's "as in the sheet" order broke). If any
+    exist, the modal shows the count (and how many were already Followed/
+    No) and requires an explicit "Yes, delete and replace" checkbox before
+    Import re-enables - `runImport()` then deletes those rows first (by
+    `plan_date` + `city_id`, not by `import_id` - an import can't assume it
+    owns every row for its own dates if an earlier duplicate import also
+    touched them) before inserting the fresh batch. **`crew.employee_no`** (optional,
     unique like `contact`) was added alongside - the sheet's Crew cells are
     `"<employee_no> <name> (<designation>)"`, comma-separated for a combined
     pickup/drop. Exposed in the Crew Add/Edit form, table and CSV import/

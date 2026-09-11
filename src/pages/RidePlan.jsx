@@ -747,6 +747,8 @@ function SkipModal({ row, onClose, onSkip }) {
 
 function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy, onClose, onDone }) {
   const [parsed, setParsed] = useState(null) // { ok, skipped, warning }
+  const [existing, setExisting] = useState(null) // { total, followed, dates } for dates this file also covers, or null
+  const [replaceConfirmed, setReplaceConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
@@ -755,6 +757,8 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
   const onFile = async (e) => {
     setErr('')
     setParsed(null)
+    setExisting(null)
+    setReplaceConfirmed(false)
     const file = e.target.files?.[0]
     if (!file) return
     const text = await file.text()
@@ -763,6 +767,28 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
     if (!hc.ok) return setErr(hc.error)
     const { ok, skipped } = buildPlanRows(records, { allowedCities, flights, crew, vehicles })
     setParsed({ ok, skipped, warning: hc.warning })
+
+    // Re-uploading a file that covers dates already imported would otherwise
+    // just ADD a second copy of every row (seq collides with the earlier
+    // import's own 2.. numbering too, breaking the sheet-order display) -
+    // check for that up front so the dispatcher can choose to replace.
+    const dates = [...new Set(ok.map((r) => r.plan_date))]
+    const cityIds = [...new Set(ok.map((r) => r.city_id))]
+    if (dates.length && cityIds.length) {
+      const { data: ex } = await supabase
+        .from('ride_plan_rows')
+        .select('plan_date, status')
+        .in('plan_date', dates)
+        .in('city_id', cityIds)
+      if (ex?.length) {
+        setExisting({
+          total: ex.length,
+          followed: ex.filter((r) => r.status === 'followed').length,
+          dates,
+          cityIds,
+        })
+      }
+    }
   }
 
   const matchSummary = useMemo(() => {
@@ -782,6 +808,7 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
 
   const runImport = async () => {
     if (!parsed?.ok.length) return
+    if (existing && !replaceConfirmed) return
     setBusy(true)
     // the import batch's own city - the currently filtered city, else the most
     // common Base among the parsed rows (a plan can span more than one city)
@@ -789,6 +816,18 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
     parsed.ok.forEach((r) => counts.set(r.city_id, (counts.get(r.city_id) || 0) + 1))
     const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
     const importCityId = cityId ?? dominant
+
+    if (existing) {
+      const { error: delErr } = await supabase
+        .from('ride_plan_rows')
+        .delete()
+        .in('plan_date', existing.dates)
+        .in('city_id', existing.cityIds)
+      if (delErr) {
+        setBusy(false)
+        return setErr(delErr.message)
+      }
+    }
 
     const { data: imp, error: impErr } = await supabase
       .from('ride_plan_imports')
@@ -879,6 +918,24 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
           </div>
         )}
 
+        {existing && (
+          <div className="import-summary">
+            <div className="modal-error">
+              <b>{existing.total}</b> row(s) already exist for {existing.dates.length} date(s) this file
+              covers{existing.followed ? ` — ${existing.followed} already Followed/No` : ''}. Importing will{' '}
+              <b>replace</b> them (delete, then re-import), or Cancel and pick a different date range.
+            </div>
+            <label className="check-line" style={{ marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={replaceConfirmed}
+                onChange={(e) => setReplaceConfirmed(e.target.checked)}
+              />
+              Yes, delete the {existing.total} existing row(s) and replace them
+            </label>
+          </div>
+        )}
+
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
             Cancel
@@ -886,7 +943,7 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
           <button
             type="button"
             className="btn btn-square"
-            disabled={busy || !parsed?.ok.length}
+            disabled={busy || !parsed?.ok.length || (existing && !replaceConfirmed)}
             onClick={runImport}
           >
             {busy ? 'Importing…' : `Import ${parsed?.ok.length || 0}`}

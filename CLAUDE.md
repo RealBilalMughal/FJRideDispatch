@@ -799,14 +799,25 @@ keys, tables or deploy targets with any other project.
     export the same as every other field.
   - **`src/lib/planImport.js`** does the parsing/matching (pure functions,
     no I/O): `normalizeBlockType` (the sheet spells it "returnleg", no
-    underscore), `parsePlanDate`, `matchCityByBase` (a city's Base code is
-    its airport's first 3 letters - `cities.airport_name` - with a
-    LHE/KHI/ISB fallback map), `parseCrewCell` + `matchCrewEntry` (tiers,
-    best first: exact `employee_no` -> exact name -> "every word of one name
-    is in the other" fuzzy -> unmatched, picked by hand later), `matchVehicle`
-    (skipped when Ad-hoc Car = Yes), `matchFlight`, and `buildPlanRows` which
-    ties it together per CSV row and returns `{ ok, skipped }` (mirrors
-    `Crew.jsx`'s `ImportModal` parse/skip/tag shape).
+    underscore; also maps `pickup-dhd-passenger`/`dropoff-dhd-passenger` - a
+    deadheading crew member with no Flight No, riding a pickup/dropoff-shaped
+    leg - onto `deadhead`), `parsePlanDate` (real sheet format is
+    `"01-09-26"`, dash, DAY first, 2-digit year - matching this app's own
+    `01-Aug-26` display convention; ISO and US-slash also accepted),
+    `matchCityByBase` (a city's Base code is its airport's first 3 letters -
+    `cities.airport_name` - with a LHE/KHI/ISB fallback map), `parseCrewCell`
+    + `matchCrewEntry` (tiers, best first: exact `employee_no` -> exact name
+    -> "every word of one name is in the other" fuzzy -> unmatched, picked by
+    hand later), `matchVehicle` (skipped when Ad-hoc Car = Yes), `matchFlight`
+    (the sheet writes the airline code on it, `"9P841"`; the Flights registry
+    stores just `"841"` - and Fly Jinnah's own IATA code starts with a
+    *digit* (`9P`), so matching compares the **trailing digit run** on both
+    sides, not a stripped-leading-letters prefix, which would've missed this
+    exact case), and `buildPlanRows` which ties it together per CSV row and
+    returns `{ ok, skipped }` (mirrors `Crew.jsx`'s `ImportModal` parse/skip/
+    tag shape) - each `ok` row also carries a transient `line` (CSV line
+    number, for the import preview's unmatched-crew list; stripped before the
+    real insert, `ride_plan_rows` has no such column).
   - **Trip ID is the sheet's own pairing key**: a Deadhead row and its Pickup
     share one Trip ID, as does a Return Leg and its Dropoff (confirmed
     against real data - counts matched exactly). This means Deadhead/Return
@@ -834,14 +845,29 @@ keys, tables or deploy targets with any other project.
     argument already) so the Rides page can mark that plan row **followed**
     + `ride_id` (and the paired Deadhead row too, if one was auto-created)
     before closing the modal and clearing the query param.
-  - **Skip** (any pending row, optional reason) / **Reopen** (a skipped row,
-    back to pending) - a small reason `Modal`, no `window.prompt`.
+  - **Skip** (any pending row) - a small `Modal`, no `window.prompt`, with a
+    Note (optional reason text) **and an optional Ride ID** field. Left
+    blank, it's a plain skip (`status: 'skipped'`). Given a ride's `ref_no`
+    (e.g. the dispatcher created that trip manually on the Rides page
+    instead of using Follow), it looks that ride up and **links** it instead
+    - `status: 'followed'`, `ride_id` set, the Note saved alongside - so the
+    row counts as followed and its Actual KM feeds the report exactly like a
+    Followed row. **Reopen** (any skipped OR linked-via-Skip row, back to
+    pending) always clears `ride_id` too now, not just `status`/`skip_reason`.
+  - **Crew mismatch** - every followed Pickup/Dropoff also gets its linked
+    ride's real crew count (one extra `ride_crew` count query per refresh,
+    `Map<ride_id, count>` client-side rather than relying on a PostgREST
+    count-aggregate embed). When it doesn't equal the plan's own crew count
+    (`crew_matches.length` - e.g. the plan wanted 2, only 1 was actually
+    added to the ride), the Crew column shows a flat red "Actual: 1 of 2
+    planned" line under the names (`hasCrewMismatch()`).
   - **Report** (`Sigma` toggle, like the Rides Summary panel) - per block
     type, for the selected `plan_date`: followed-row count, Σ planned KM, Σ
     actual KM (**followed rows only** - the point is comparing what was
     planned against what actually happened when the plan WAS followed,
     matching a cancelled-and-not-counted ride's KM out via the same
-    `billableKm()` rule the Rides Summary/Dashboard use), and the delta.
+    `billableKm()` rule the Rides Summary/Dashboard use), the delta, and a
+    **Crew mismatch** count (how many of that block's followed rows have one).
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

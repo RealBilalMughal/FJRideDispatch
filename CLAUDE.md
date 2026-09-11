@@ -792,7 +792,15 @@ keys, tables or deploy targets with any other project.
     `is_adhoc_car`, `flight_no`, `origin`/`destination`, `start_time`/
     `end_time`, `planned_km`, `crew_raw` + resolved `crew_matches` jsonb,
     `matched_flight_id`, `matched_vehicle_id`, `status` pending/followed/
-    skipped, `ride_id` once dispatched). **`crew.employee_no`** (optional,
+    skipped, `ride_id` once dispatched, **`seq`** - migration
+    `20260911160000_ride_plan_seq.sql`). **`seq` is just the CSV row number
+    at import time** (`buildPlanRows`' `line`, renamed at insert) - the page
+    orders by it, not `trip_id` (lexicographic sort puts `"_10"` before
+    `"_2"`, and even a numeric sort doesn't reproduce the sheet's actual row
+    order - the sheet interleaves a vehicle's Deadhead/Pickup/Dropoff/Return
+    Leg legs by when they're planned, not by Trip ID). No pagination on this
+    table - the whole day's plan renders as one page (a day is ~50-100
+    rows), matching "ek page mein aaye, next wala scene na ho". **`crew.employee_no`** (optional,
     unique like `contact`) was added alongside - the sheet's Crew cells are
     `"<employee_no> <name> (<designation>)"`, comma-separated for a combined
     pickup/drop. Exposed in the Crew Add/Edit form, table and CSV import/
@@ -861,13 +869,20 @@ keys, tables or deploy targets with any other project.
     (`crew_matches.length` - e.g. the plan wanted 2, only 1 was actually
     added to the ride), the Crew column shows a flat red "Actual: 1 of 2
     planned" line under the names (`hasCrewMismatch()`).
-  - **Report** (`Sigma` toggle, like the Rides Summary panel) - per block
-    type, for the selected `plan_date`: followed-row count, Σ planned KM, Σ
-    actual KM (**followed rows only** - the point is comparing what was
-    planned against what actually happened when the plan WAS followed,
-    matching a cancelled-and-not-counted ride's KM out via the same
-    `billableKm()` rule the Rides Summary/Dashboard use), the delta, and a
-    **Crew mismatch** count (how many of that block's followed rows have one).
+  - **Top KM summary** - always-visible `StatCards` row (the shared
+    Crew/Vehicles-page component, flat - not the Dashboard's boxed cards),
+    one per block type in a **fixed Deadhead/Pickup/Dropoff/Return Leg
+    order** (`SUMMARY_BLOCKS`, not row insertion order): the card's value is
+    that block's **Planned KM summed over every row of the day's plan**
+    (regardless of status - this is the whole plan, not just what's been
+    dispatched), its hint line is the **Actual KM so far** (followed rows
+    only, via `billableKm()`) plus a followed count.
+  - **Report** (`Sigma` toggle, like the Rides Summary panel) - a second,
+    more detailed panel below the date bar: per block type, for the selected
+    `plan_date`, followed-row count, Σ planned KM, Σ actual KM (**followed
+    rows only** here too - this panel is about comparing plan vs actual only
+    where the plan WAS followed), the delta, and a **Crew mismatch** count
+    (how many of that block's followed rows have one).
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

@@ -12,11 +12,13 @@ import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanRows } from '../lib/planImport'
 import Modal from '../components/Modal'
 import DataTable from '../components/data/DataTable'
-import Pagination from '../components/data/Pagination'
+import StatCards from '../components/data/StatCards'
 import '../components/data/data.css'
 import './RidePlan.css'
 
-const PAGE_SIZE = 20
+// Fixed order for the top KM summary - not the insertion order rows happen
+// to appear in.
+const SUMMARY_BLOCKS = ['deadhead', 'pickup', 'dropoff', 'return_leg']
 
 const SAMPLE_COLS = PLAN_REQUIRED_COLUMNS.map((key) => ({ key, label: key }))
 const SAMPLE = [
@@ -125,7 +127,6 @@ export default function RidePlan() {
   const [planDate, setPlanDate] = useState(pkToday())
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
@@ -157,7 +158,7 @@ export default function RidePlan() {
       .from('ride_plan_rows')
       .select('*, ride:rides(id, ref_no, distance_km, status, count_km)')
       .eq('plan_date', planDate)
-      .order('trip_id')
+      .order('seq')
     if (cityId != null) q = q.eq('city_id', cityId)
     const { data, error } = await q
     if (error) toast.error('Could not load the plan')
@@ -279,7 +280,22 @@ export default function RidePlan() {
     return Object.values(byBlock)
   }, [rows])
 
-  const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Top summary: the WHOLE day's planned KM per block type (every row, not
+  // just followed ones - this is the plan itself), alongside how much of it
+  // has actually happened so far (followed rows only).
+  const summary = useMemo(() => {
+    const byBlock = Object.fromEntries(SUMMARY_BLOCKS.map((b) => [b, { plannedKm: 0, actualKm: 0, followed: 0 }]))
+    for (const r of rows) {
+      const b = byBlock[r.block_type]
+      if (!b) continue
+      b.plannedKm += Number(r.planned_km) || 0
+      if (r.status === 'followed') {
+        b.followed += 1
+        b.actualKm += Number(billableKm(r.ride)) || 0
+      }
+    }
+    return byBlock
+  }, [rows])
 
   const columns = [
     { key: 'trip', header: 'Trip', render: (r) => r.trip_id },
@@ -319,7 +335,7 @@ export default function RidePlan() {
       key: 'actions',
       header: 'Action',
       render: (r) => (
-        <div className="row-actions">
+        <div className="rp-row-actions">
           {canEdit && canFollow(r) && (
             <button
               type="button"
@@ -380,6 +396,15 @@ export default function RidePlan() {
         </div>
       </div>
 
+      <StatCards
+        items={SUMMARY_BLOCKS.map((b) => ({
+          key: b,
+          label: blockLabel(b),
+          value: `${summary[b].plannedKm.toFixed(2)} km`,
+          hint: `Actual: ${summary[b].actualKm.toFixed(2)} km${summary[b].followed ? ` (${summary[b].followed} followed)` : ''}`,
+        }))}
+      />
+
       <div className="rp-datebar">
         <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, -1))}>
           <ChevronLeft size={16} />
@@ -388,10 +413,7 @@ export default function RidePlan() {
           type="date"
           className="input"
           value={planDate}
-          onChange={(e) => {
-            setPlanDate(e.target.value)
-            setPage(1)
-          }}
+          onChange={(e) => setPlanDate(e.target.value)}
         />
         <span className="secondary">{fmtDate(planDate)}</span>
         <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, 1))}>
@@ -442,14 +464,13 @@ export default function RidePlan() {
 
       <DataTable
         columns={columns}
-        rows={pageRows}
+        rows={rows}
         rowKey={(r) => r.id}
         loading={loading}
         emptyLabel="No plan uploaded for this date"
         title="Plan"
         subtitle={`${rows.length} shown`}
       />
-      <Pagination page={page} pageSize={PAGE_SIZE} total={rows.length} onPage={setPage} />
 
       {importOpen && (
         <ImportModal
@@ -462,7 +483,6 @@ export default function RidePlan() {
           onClose={() => setImportOpen(false)}
           onDone={(earliestDate) => {
             setImportOpen(false)
-            setPage(1)
             if (earliestDate && earliestDate !== planDate) setPlanDate(earliestDate)
             else fetchRows()
           }}
@@ -586,7 +606,7 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
     }
     const { error } = await supabase
       .from('ride_plan_rows')
-      .insert(parsed.ok.map(({ line: _line, ...r }) => ({ ...r, import_id: imp.id })))
+      .insert(parsed.ok.map(({ line, ...r }) => ({ ...r, seq: line, import_id: imp.id })))
     setBusy(false)
     if (error) return setErr(error.message)
     toast.success(`${parsed.ok.length} plan rows imported`)

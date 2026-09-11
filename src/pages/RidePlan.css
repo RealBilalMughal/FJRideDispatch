@@ -21,3 +21,12 @@
   font-weight: 700;
   margin-bottom: 10px;
 }
+
+/* Follow/Skip/Reopen carry text, not icons - .row-actions (data.css) forces
+   a 28px icon-button width that clips a label, so this table gets its own
+   plain flex wrap instead. */
+.rp-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

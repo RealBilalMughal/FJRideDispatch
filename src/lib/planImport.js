@@ -135,9 +135,10 @@ export function matchFlight(flightNo, flights, cityId) {
 
 // records: from parseCsvObjects (headers already lower-cased/trimmed).
 // Returns { ok: parsedRow[], skipped: {line, reason}[] } - `ok` rows carry a
-// `line` (CSV line number, for the import preview only - strip it before
-// inserting into ride_plan_rows, which has no such column) and are otherwise
-// ready to insert once wrapped with an import_id.
+// `line` (the CSV row number) used two ways: the import preview's unmatched-
+// crew list, and - renamed to `seq` at insert time - the exact row order the
+// Ride Plan page displays, since Trip ID alone doesn't reproduce the sheet's
+// own sequence (see ride_plan_rows.seq).
 export function buildPlanRows(records, { allowedCities, flights, crew, vehicles }) {
   const ok = []
   const skipped = []

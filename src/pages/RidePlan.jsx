@@ -405,9 +405,11 @@ export default function RidePlan() {
           cityId={cityId}
           createdBy={profile?.id}
           onClose={() => setImportOpen(false)}
-          onDone={() => {
+          onDone={(earliestDate) => {
             setImportOpen(false)
-            fetchRows()
+            setPage(1)
+            if (earliestDate && earliestDate !== planDate) setPlanDate(earliestDate)
+            else fetchRows()
           }}
         />
       )}
@@ -517,7 +519,8 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
     setBusy(false)
     if (error) return setErr(error.message)
     toast.success(`${parsed.ok.length} plan rows imported`)
-    onDone()
+    const earliestDate = parsed.ok.map((r) => r.plan_date).sort()[0]
+    onDone(earliestDate)
   }
 
   return (

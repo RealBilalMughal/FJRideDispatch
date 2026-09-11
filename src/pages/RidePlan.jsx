@@ -135,11 +135,10 @@ export default function RidePlan() {
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  // Freeze the page's own title/summary/date-bar at the top of the viewport
-  // (position: sticky) - the table's own column-header row then sticks right
-  // below it, at this measured height, rather than a fixed guess, so it
-  // still lines up if the frozen block's height ever changes (wrapping on a
-  // narrow screen, a longer city name, etc.).
+  // The page itself never scrolls - only the table does, in its own fixed-
+  // height box, with its header frozen inside that box. topBarH re-triggers
+  // the table-height recalc below whenever the fixed area above it changes
+  // size (the Report panel opening, text wrapping on a narrow screen, etc.).
   const topBarRef = useRef(null)
   const [topBarH, setTopBarH] = useState(0)
   useEffect(() => {
@@ -149,6 +148,24 @@ export default function RidePlan() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Measure exactly how much viewport height is left below the table's own
+  // start (title/summary/date-bar/Report above it, whatever chrome sits
+  // above the page) rather than guessing - so the table's box is always
+  // sized to make the WHOLE page fit in one viewport with no page scroll.
+  const tableWrapRef = useRef(null)
+  const [tableMaxH, setTableMaxH] = useState(null)
+  useEffect(() => {
+    const el = tableWrapRef.current
+    if (!el) return
+    const recalc = () => {
+      const top = el.getBoundingClientRect().top
+      setTableMaxH(Math.max(200, window.innerHeight - top - 24))
+    }
+    recalc()
+    window.addEventListener('resize', recalc)
+    return () => window.removeEventListener('resize', recalc)
+  }, [topBarH, reportOpen])
 
   const [flights, setFlights] = useState([])
   const [crew, setCrew] = useState([])
@@ -408,7 +425,7 @@ export default function RidePlan() {
   }
 
   return (
-    <div className="page" style={{ '--rp-thead-top': `${topBarH}px` }}>
+    <div className="page">
       <div ref={topBarRef} className="rp-frozen-top">
         <div className="page-header">
           <div>
@@ -514,15 +531,17 @@ export default function RidePlan() {
         </div>
       )}
 
-      <div className="rp-plan-table">
+      <div
+        ref={tableWrapRef}
+        className="rp-plan-table"
+        style={tableMaxH ? { '--rp-table-max-h': `${tableMaxH}px` } : undefined}
+      >
         <DataTable
           columns={columns}
           rows={rows}
           rowKey={(r) => r.id}
           loading={loading}
           emptyLabel="No plan uploaded for this date"
-          title="Plan"
-          subtitle={`${rows.length} shown`}
         />
       </div>
 

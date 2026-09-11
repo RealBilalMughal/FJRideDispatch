@@ -31,14 +31,12 @@
   gap: 6px;
 }
 
-/* Freeze the page's own title/KM summary/date-bar at the top of the
-   viewport - the page itself is the scroll container (no fixed topbar to
-   sit below), so a plain `top: 0` sticky pins it there as the rest scrolls
-   underneath. `.page` has no background of its own - it sits directly on
-   the app shell's --surface - so a sticky block needs an opaque background
-   behind it too (or content scrolling past would show through), matched to
-   that same --surface rather than --bg (white), which would visibly recolour
-   this section against the rest of the page. */
+/* The page itself never scrolls - title/KM summary/date-bar (and the Report
+   panel, if open) stay put in normal flow; `position: sticky` here is just a
+   safety net in case the table-height calc below is ever a few px short on
+   some screen. `.page` has no background of its own - it sits directly on
+   the app shell's --surface - so this needs an explicit background to match
+   (not --bg/white, which would visibly recolour the section). */
 .rp-frozen-top {
   position: sticky;
   top: 0;
@@ -47,18 +45,16 @@
   padding-bottom: 10px;
 }
 
-/* The table's own column-header row freezes too, right below the block
-   above (--rp-thead-top, its measured height - see RidePlan.jsx) rather
-   than at the very top, so the two don't overlap. Same --surface reasoning
-   as .rp-frozen-top above. overflow-y is forced back to visible because
-   setting overflow-x alone on .data-table-scroll implicitly makes overflow-y
-   "auto" too (a CSS quirk), which would turn it into its own (never-
-   scrolling, since it has no height cap) sticky context instead of the
-   page. border-collapse: separate (rather than data.css's default
+/* The table is its OWN scroll box - sized in RidePlan.jsx to exactly fill
+   the viewport space left below it (measured via getBoundingClientRect, not
+   guessed), so the table scrolls internally while the rest of the page
+   stays fixed. overflow-x stays (data.css's default); overflow-y is now the
+   real scrollbar. border-collapse: separate (rather than data.css's default
    `collapse`) works around a real cross-browser bug where `position: sticky`
-   on a <th> inside a border-collapsed table silently does nothing. */
+   on a <th> silently does nothing inside a border-collapsed table. */
 .rp-plan-table .data-table-scroll {
-  overflow-y: visible;
+  overflow-y: auto;
+  max-height: var(--rp-table-max-h, none);
 }
 
 .rp-plan-table .data-table {
@@ -68,7 +64,7 @@
 
 .rp-plan-table .data-table thead th {
   position: sticky;
-  top: var(--rp-thead-top, 0px);
+  top: 0;
   background: var(--surface);
   z-index: 2;
 }

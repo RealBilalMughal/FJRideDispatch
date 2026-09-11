@@ -887,15 +887,25 @@ keys, tables or deploy targets with any other project.
     FROM the plan row TO the ride (`on delete set null` runs the other way,
     if the ride itself is ever deleted), so removing plan rows has no effect
     on the `rides` table at all.
-  - **Frozen top** - the title/actions, the KM summary cards and the date
-    bar sit in one `position: sticky; top: 0` block (`.rp-frozen-top`) pinned
-    at the viewport edge as the page scrolls (there's no fixed topbar above
-    it to account for - the whole app just scrolls the page itself). The
-    table's own column-header row sticks too, right below that block, at a
-    `--rp-thead-top` CSS var kept in sync with the frozen block's real
-    height via a `ResizeObserver` (not a guessed pixel value, so it still
-    lines up if that height changes - a narrow screen, a longer city name).
-    Only the Report panel and the table's rows scroll underneath both.
+  - **The page itself never scrolls - only the table does**, in its own
+    fixed-height box with its header frozen inside it (`.rp-plan-table .data-
+    table-scroll`, `overflow-y: auto`, `max-height: var(--rp-table-max-h)`).
+    That height isn't a guess: a `getBoundingClientRect()` measurement of
+    where the table box starts (`window.innerHeight - top - 24`), recomputed
+    on window resize and whenever the fixed area above it changes size (the
+    Report panel opening/closing, text wrapping on a narrow screen -
+    triggered off a `ResizeObserver`'d `topBarH` on the title/KM-summary/
+    date-bar block, `.rp-frozen-top`, which also keeps its own
+    `position: sticky; top: 0` as a safety net for a few px of calc error on
+    some screen). The DataTable's own optional title/subtitle bar is left
+    unset here specifically so `.rp-plan-table`'s top edge IS the table's
+    scroll box top, keeping that measurement exact. Both `.rp-frozen-top` and
+    the table's sticky `<thead>` are painted `var(--surface)` (what `.page`
+    actually sits on, having no background of its own) rather than `--bg`
+    (white), which would visibly recolour those sections; the table also
+    gets `border-collapse: separate` (data.css's shared `collapse` default
+    has a real cross-browser bug where `position: sticky` on a `<th>`
+    silently does nothing).
   - **Report** (`Sigma` toggle, like the Rides Summary panel) - a second,
     more detailed panel below the date bar: per block type, for the selected
     `plan_date`, followed-row count, Σ planned KM, Σ actual KM (**followed

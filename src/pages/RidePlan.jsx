@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Download, RefreshCw, Sigma, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -11,6 +11,7 @@ import { blockLabel } from '../lib/rideRoute'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanRows } from '../lib/planImport'
 import Modal from '../components/Modal'
+import ConfirmDelete from '../components/ConfirmDelete'
 import DataTable from '../components/data/DataTable'
 import StatCards from '../components/data/StatCards'
 import '../components/data/data.css'
@@ -123,6 +124,7 @@ export default function RidePlan() {
   const canView = can('ride_plan', 'view')
   const canAdd = can('ride_plan', 'add')
   const canEdit = can('ride_plan', 'edit')
+  const canDelete = can('ride_plan', 'delete')
 
   const [planDate, setPlanDate] = useState(pkToday())
   const [rows, setRows] = useState([])
@@ -130,6 +132,8 @@ export default function RidePlan() {
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
+  const [deletePlanOpen, setDeletePlanOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const [flights, setFlights] = useState([])
   const [crew, setCrew] = useState([])
@@ -261,6 +265,21 @@ export default function RidePlan() {
     fetchRows()
   }
 
+  // Deletes this day's plan rows only (not the rides they were followed
+  // into) - a plan can be re-uploaded after a correction without touching
+  // whatever has already been dispatched.
+  const doDeletePlan = async () => {
+    setDeleting(true)
+    let q = supabase.from('ride_plan_rows').delete().eq('plan_date', planDate)
+    if (cityId != null) q = q.eq('city_id', cityId)
+    const { error } = await q
+    setDeleting(false)
+    if (error) return toast.error(error.message)
+    toast.success(`Deleted the plan for ${fmtDate(planDate)}`)
+    setDeletePlanOpen(false)
+    fetchRows()
+  }
+
   const report = useMemo(() => {
     const byBlock = {}
     for (const r of rows) {
@@ -294,6 +313,10 @@ export default function RidePlan() {
         b.actualKm += Number(billableKm(r.ride)) || 0
       }
     }
+    byBlock.total = Object.values(byBlock).reduce(
+      (t, b) => ({ plannedKm: t.plannedKm + b.plannedKm, actualKm: t.actualKm + b.actualKm, followed: t.followed + b.followed }),
+      { plannedKm: 0, actualKm: 0, followed: 0 },
+    )
     return byBlock
   }, [rows])
 
@@ -393,16 +416,30 @@ export default function RidePlan() {
               <Upload size={14} /> Upload plan
             </button>
           )}
+          {canDelete && rows.length > 0 && (
+            <button className="btn btn-square btn-sm btn-danger" onClick={() => setDeletePlanOpen(true)}>
+              <Trash2 size={14} /> Delete plan
+            </button>
+          )}
         </div>
       </div>
 
       <StatCards
-        items={SUMMARY_BLOCKS.map((b) => ({
-          key: b,
-          label: blockLabel(b),
-          value: `${summary[b].plannedKm.toFixed(2)} km`,
-          hint: `Actual: ${summary[b].actualKm.toFixed(2)} km${summary[b].followed ? ` (${summary[b].followed} followed)` : ''}`,
-        }))}
+        items={[
+          {
+            key: 'total',
+            label: 'Total',
+            value: `${summary.total.plannedKm.toFixed(2)} km`,
+            hint: `Actual: ${summary.total.actualKm.toFixed(2)} km${summary.total.followed ? ` (${summary.total.followed} followed)` : ''}`,
+            active: true,
+          },
+          ...SUMMARY_BLOCKS.map((b) => ({
+            key: b,
+            label: blockLabel(b),
+            value: `${summary[b].plannedKm.toFixed(2)} km`,
+            hint: `Actual: ${summary[b].actualKm.toFixed(2)} km${summary[b].followed ? ` (${summary[b].followed} followed)` : ''}`,
+          })),
+        ]}
       />
 
       <div className="rp-datebar">
@@ -490,6 +527,15 @@ export default function RidePlan() {
       )}
 
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}
+
+      <ConfirmDelete
+        open={deletePlanOpen}
+        title={`Delete the plan for ${fmtDate(planDate)}`}
+        message={`This permanently deletes ${rows.length} plan row(s) for ${fmtDate(planDate)}${cityName !== 'All cities' ? ` · ${cityName}` : ''}. Rides already dispatched from them are NOT affected.`}
+        busy={deleting}
+        onConfirm={doDeletePlan}
+        onClose={() => setDeletePlanOpen(false)}
+      />
     </div>
   )
 }

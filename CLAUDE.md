@@ -870,13 +870,23 @@ keys, tables or deploy targets with any other project.
     added to the ride), the Crew column shows a flat red "Actual: 1 of 2
     planned" line under the names (`hasCrewMismatch()`).
   - **Top KM summary** - always-visible `StatCards` row (the shared
-    Crew/Vehicles-page component, flat - not the Dashboard's boxed cards),
-    one per block type in a **fixed Deadhead/Pickup/Dropoff/Return Leg
-    order** (`SUMMARY_BLOCKS`, not row insertion order): the card's value is
-    that block's **Planned KM summed over every row of the day's plan**
-    (regardless of status - this is the whole plan, not just what's been
-    dispatched), its hint line is the **Actual KM so far** (followed rows
-    only, via `billableKm()`) plus a followed count.
+    Crew/Vehicles-page component, flat - not the Dashboard's boxed cards): a
+    **Total** card first (`active`, accent-coloured value), then one per
+    block type in a **fixed Deadhead/Pickup/Dropoff/Return Leg order**
+    (`SUMMARY_BLOCKS`, not row insertion order). Each card's value is that
+    block's **Planned KM summed over every row of the day's plan** (Total =
+    all four blocks summed; regardless of status - this is the whole plan,
+    not just what's been dispatched), its hint line the **Actual KM so far**
+    (followed rows only, via `billableKm()`) plus a followed count.
+  - **Delete plan** (`Trash2`, needs `ride_plan.delete`, hidden when there's
+    nothing to delete) - a type-`DELETE` `ConfirmDelete` (never
+    `window.confirm`) that removes every `ride_plan_rows` row for the
+    currently-viewed `plan_date` (+ the topbar city filter, if one is set).
+    Deletes the PLAN rows only, never the `rides` they may have been
+    followed/linked into - `ride_plan_rows.ride_id` is a nullable pointer
+    FROM the plan row TO the ride (`on delete set null` runs the other way,
+    if the ride itself is ever deleted), so removing plan rows has no effect
+    on the `rides` table at all.
   - **Report** (`Sigma` toggle, like the Rides Summary panel) - a second,
     more detailed panel below the date bar: per block type, for the selected
     `plan_date`, followed-row count, Σ planned KM, Σ actual KM (**followed

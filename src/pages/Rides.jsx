@@ -295,10 +295,11 @@ export default function Rides() {
           .maybeSingle()
         pairedRowId = pair?.id ?? null
       }
-      const initial = buildPlanInitial(planRow, { flights, crew, viaNo: searchParams.get('plan_no') === '1' })
+      const viaNo = searchParams.get('plan_no') === '1'
+      const initial = buildPlanInitial(planRow, { flights, crew, viaNo })
       if (pairedRowId) initial.alsoDeadhead = true
       if (!alive) return
-      setPlanPrefill({ initial, planRowId: planRow.id, pairedRowId })
+      setPlanPrefill({ initial, planRowId: planRow.id, pairedRowId, viaNo })
       setAddOpen(true)
     })()
     return () => {
@@ -971,12 +972,16 @@ export default function Rides() {
             if (planPrefill) {
               await supabase
                 .from('ride_plan_rows')
-                .update({ status: 'followed', ride_id: result?.rideId ?? null })
+                .update({ status: 'followed', ride_id: result?.rideId ?? null, via_no: planPrefill.viaNo ?? false })
                 .eq('id', planPrefill.planRowId)
               if (planPrefill.pairedRowId && result?.deadheadRideId) {
                 await supabase
                   .from('ride_plan_rows')
-                  .update({ status: 'followed', ride_id: result.deadheadRideId })
+                  .update({
+                    status: 'followed',
+                    ride_id: result.deadheadRideId,
+                    via_no: planPrefill.viaNo ?? false,
+                  })
                   .eq('id', planPrefill.pairedRowId)
               }
             }

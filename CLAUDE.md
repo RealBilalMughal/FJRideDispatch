@@ -89,7 +89,8 @@ keys, tables or deploy targets with any other project.
   `20260908130000_ride_extra_km.sql`, `20260908140000_ride_track_points.sql`,
   `20260908140100_ride_track_cron.sql`, `20260908150000_ride_notifications.sql`,
   `20260910120000_ride_cancel.sql`, `20260911120000_crew_phone_unique.sql`,
-  `20260911140000_ride_plan.sql` (all APPLIED).
+  `20260911140000_ride_plan.sql`, `20260911160000_ride_plan_seq.sql`,
+  `20260911180000_ride_plan_via_no.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -862,11 +863,17 @@ keys, tables or deploy targets with any other project.
   - **No** (any pending row) - opens the exact same Add Ride flow as
     **Follow** (`/rides?planRow=<id>&plan_no=1`) - a dispatcher clicking "No"
     still usually means "dispatch it anyway, just not quite per the plan",
-    not "there's no ride". The `plan_no=1` flag only changes the prefilled
-    ride's `notes` (`buildPlanInitial()`'s `viaNo` param -
-    `'...  - dispatched despite "No"'` instead of the plain `'Plan trip X'`
-    Follow uses) - everything else (crew/flight/vehicle prefill, the
-    `RideModal.submit()` `onDone` linking the plan row back) is identical.
+    not "there's no ride". The `plan_no=1` flag changes the prefilled ride's
+    `notes` (`buildPlanInitial()`'s `viaNo` param - `'...  - dispatched
+    despite "No"'` instead of the plain `'Plan trip X'` Follow uses) AND gets
+    carried into `planPrefill.viaNo`, persisted onto the plan row as
+    **`ride_plan_rows.via_no`** (migration `20260911180000_ride_plan_via_no
+    .sql`) when `onDone` links it back - so `StatusCell` can show **"No
+    Follow"** (flat red) instead of plain "Followed" (flat green) for a row
+    dispatched this way, distinct at a glance in the table. The "Not
+    happening" modal's Ride-ID-link path sets `via_no: true` too (same
+    reasoning - a ride exists, but not via the primary flow); `Reopen` always
+    resets it back to `false` alongside `status`/`ride_id`/`skip_reason`.
   - **Not happening** (any pending row) - the ACTUAL "there is no ride"
     case, a separate small `Modal` (no `window.prompt`) with a Note
     (optional reason) **and an optional Ride ID** field. Left blank, it's a
@@ -891,6 +898,9 @@ keys, tables or deploy targets with any other project.
     vehicle (looked up against this page's own `vehicles` array by the
     ride's `vehicle_id`) as a second flat red line under the planned `car`
     whenever they differ and the row is followed.
+  - **Δ KM** - a table column right after Actual KM: that row's own
+    `billableKm(ride) - planned_km`, flat red when positive (ran over), flat
+    green otherwise - the Report panel's per-block delta, but per-row.
   - **Top KM summary** - always-visible `StatCards` row (the shared
     Crew/Vehicles-page component, flat - not the Dashboard's boxed cards): a
     **Total** card first (`active`, accent-coloured value), then one per

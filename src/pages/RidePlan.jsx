@@ -103,8 +103,9 @@ function CrewMatchCell({ row, crew }) {
 function StatusCell({ row }) {
   if (row.status === 'followed')
     return (
-      <span className="status-text on">
-        Followed{row.ride ? ` · ${row.ride.ref_no}` : ''}
+      <span className={`status-text ${row.via_no ? 'bad' : 'on'}`}>
+        {row.via_no ? 'No Follow' : 'Followed'}
+        {row.ride ? ` · ${row.ride.ref_no}` : ''}
       </span>
     )
   if (row.status === 'skipped')
@@ -293,7 +294,12 @@ export default function RidePlan() {
       if (!linkedRide) return toast.error(`Ride ${refNo} not found`)
       const { error } = await supabase
         .from('ride_plan_rows')
-        .update({ status: 'followed', ride_id: linkedRide.id, skip_reason: reason.trim() || null })
+        .update({
+          status: 'followed',
+          ride_id: linkedRide.id,
+          skip_reason: reason.trim() || null,
+          via_no: true,
+        })
         .eq('id', skipFor.id)
       if (error) return toast.error(error.message)
       toast.success(`Linked to ride ${refNo}`)
@@ -312,7 +318,7 @@ export default function RidePlan() {
   const reopen = async (row) => {
     const { error } = await supabase
       .from('ride_plan_rows')
-      .update({ status: 'pending', skip_reason: null, ride_id: null })
+      .update({ status: 'pending', skip_reason: null, ride_id: null, via_no: false })
       .eq('id', row.id)
     if (error) return toast.error(error.message)
     fetchRows()
@@ -438,6 +444,16 @@ export default function RidePlan() {
       header: 'Actual KM',
       align: 'right',
       render: (r) => (r.status === 'followed' && r.ride ? (Number(billableKm(r.ride)) || 0).toFixed(2) : '—'),
+    },
+    {
+      key: 'delta',
+      header: 'Δ KM',
+      align: 'right',
+      render: (r) => {
+        if (r.status !== 'followed' || !r.ride) return '—'
+        const d = (Number(billableKm(r.ride)) || 0) - (Number(r.planned_km) || 0)
+        return <span className={`status-text ${d > 0 ? 'bad' : 'on'}`}>{d.toFixed(2)}</span>
+      },
     },
     {
       key: 'actions',

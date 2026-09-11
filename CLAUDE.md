@@ -908,10 +908,16 @@ keys, tables or deploy targets with any other project.
     had; `startTouched` seeds `true` when `initial.start_time` is set so the
     Pickup/Drop-time auto-suggest effect doesn't overwrite the planned time.
     On save, `submit()`'s `onDone` now carries back `{ rideId, rideRefNo,
-    deadheadRideId }` (harmless for every other caller, which ignored the
-    argument already) so the Rides page can mark that plan row **followed**
-    + `ride_id` (and the paired Deadhead row too, if one was auto-created)
-    before closing the modal and clearing the query param.
+    deadheadRideId, returnLegRideId }` (harmless for every other caller,
+    which ignored the argument already) so the Rides page can mark that plan
+    row **followed** + `ride_id` (and the paired Deadhead/Return Leg row
+    too, if one was auto-created) before closing the modal and clearing the
+    query param. Both plan-row updates check their own result now (`.select
+    ('id')`, error or an empty array both toast - a silent 0-row update,
+    e.g. from an RLS policy quietly blocking it, used to look like nothing
+    happened at all) - and on success, **navigates back to `/ride-plan`**
+    itself rather than leaving the dispatcher on Rides looking at an
+    unchanged-looking plan page in another tab/window.
   - **No** (any pending row) - opens the exact same Add Ride flow as
     **Follow** (`/rides?planRow=<id>&plan_no=1`) - a dispatcher clicking "No"
     still usually means "dispatch it anyway, just not quite per the plan",

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   CalendarRange,
@@ -216,6 +216,7 @@ function buildPlanInitial(planRow, { flights, crew, viaNo = false }) {
 export default function Rides() {
   const { can, profile } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
+  const navigate = useNavigate()
 
   const canView = can('rides', 'view')
   const canAdd = can('rides', 'add')
@@ -982,14 +983,23 @@ export default function Rides() {
             clearPlanParam()
           }}
           onDone={async (result) => {
+            let planUpdateFailed = false
             if (planPrefill) {
-              await supabase
+              const upd = await supabase
                 .from('ride_plan_rows')
                 .update({ status: 'followed', ride_id: result?.rideId ?? null, via_no: planPrefill.viaNo ?? false })
                 .eq('id', planPrefill.planRowId)
+                .select('id')
+              if (upd.error || !upd.data?.length) {
+                planUpdateFailed = true
+                toast.error(
+                  upd.error?.message ||
+                    'Ride created, but the Ride Plan row could not be updated (check your Ride Plan permissions).',
+                )
+              }
               const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId
               if (planPrefill.pairedRowId && pairedRideId) {
-                await supabase
+                const pairedUpd = await supabase
                   .from('ride_plan_rows')
                   .update({
                     status: 'followed',
@@ -997,12 +1007,20 @@ export default function Rides() {
                     via_no: planPrefill.viaNo ?? false,
                   })
                   .eq('id', planPrefill.pairedRowId)
+                  .select('id')
+                if (pairedUpd.error || !pairedUpd.data?.length) {
+                  toast.error(pairedUpd.error?.message || 'Ride created, but its paired Ride Plan row could not be updated.')
+                }
               }
             }
             setAddOpen(false)
             setPlanPrefill(null)
             clearPlanParam()
             fetchRows()
+            // Follow/No came from the Ride Plan page - go back to it so the
+            // update is immediately visible, instead of leaving the
+            // dispatcher on Rides wondering why the plan looks unchanged.
+            if (planPrefill && !planUpdateFailed) navigate('/ride-plan')
           }}
         />
       )}

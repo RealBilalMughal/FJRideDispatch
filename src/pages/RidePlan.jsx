@@ -413,9 +413,7 @@ export default function RidePlan() {
         <div className="page-header">
           <div>
             <h1 className="page-title">Ride Plan</h1>
-            <p className="page-subtitle">
-              {rows.length} rows · {cityName}
-            </p>
+            <p className="page-subtitle">&nbsp;</p>
           </div>
           <div className="page-actions">
             <button className="icon-btn" onClick={fetchRows} title="Refresh">

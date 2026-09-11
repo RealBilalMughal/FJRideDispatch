@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   CalendarRange,
@@ -185,6 +186,33 @@ function CheckCell({ scheduled, actual }) {
   )
 }
 
+// Build a RideModal `initial` prefill from a Ride Plan row (see RidePlan.jsx /
+// src/lib/planImport.js) - matches the plan's own crew/flight/vehicle
+// resolutions against the arrays this page already has loaded.
+function buildPlanInitial(planRow, { flights, crew }) {
+  const matchedFlight = planRow.matched_flight_id
+    ? flights.find((f) => f.id === planRow.matched_flight_id)
+    : null
+  const slot = primaryTimeSlot(planRow.block_type)
+  const crewList = (planRow.crew_matches || [])
+    .map((m) => crew.find((c) => c.id === m.crew_id))
+    .filter(Boolean)
+  return {
+    block_type: planRow.block_type,
+    city_id: planRow.city_id,
+    ride_date: planRow.plan_date,
+    flight_id: matchedFlight?.id ?? '',
+    flight_no: matchedFlight?.flight_no ?? planRow.flight_no ?? '',
+    flight_code: matchedFlight?.flight_code ?? '',
+    checkin_old: slot === 'checkin' ? toTime24(matchedFlight?.flight_time) : undefined,
+    checkout_old: slot === 'checkout' ? toTime24(matchedFlight?.flight_time) : undefined,
+    vehicle_id: planRow.matched_vehicle_id ?? '',
+    start_time: toTime24(planRow.start_time),
+    notes: `Plan trip ${planRow.trip_id}`,
+    crewList,
+  }
+}
+
 export default function Rides() {
   const { can, profile } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
@@ -225,6 +253,59 @@ export default function Rides() {
       .select('id, ref_no, name')
       .then(({ data }) => setDrivers(data ?? []))
   }, [canView])
+
+  // Ride Plan hand-off: /rides?planRow=<id> opens the Add Ride modal
+  // pre-filled from that plan row (see src/pages/RidePlan.jsx's "Follow").
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [planPrefill, setPlanPrefill] = useState(null) // { initial, planRowId, pairedRowId }
+  const clearPlanParam = () => {
+    if (searchParams.get('planRow')) setSearchParams({}, { replace: true })
+  }
+  useEffect(() => {
+    const planRowId = searchParams.get('planRow')
+    if (!planRowId || !canView || flights.length === 0) return
+    let alive = true
+    ;(async () => {
+      const { data: planRow, error } = await supabase
+        .from('ride_plan_rows')
+        .select('*')
+        .eq('id', planRowId)
+        .single()
+      if (!alive) return
+      if (error || !planRow) {
+        toast.error('That plan row could not be found')
+        return clearPlanParam()
+      }
+      if (!canAdd) {
+        toast.error('You do not have permission to add rides')
+        return clearPlanParam()
+      }
+      // A paired Deadhead (off a Pickup), same Trip ID, still pending - auto-check
+      // "Also create a Deadhead" so this one Add covers both legs, same as the
+      // existing checkbox already does for a manually-dispatched pickup.
+      let pairedRowId = null
+      if (planRow.block_type === 'pickup') {
+        const { data: pair } = await supabase
+          .from('ride_plan_rows')
+          .select('id')
+          .eq('trip_id', planRow.trip_id)
+          .eq('city_id', planRow.city_id)
+          .eq('block_type', 'deadhead')
+          .eq('status', 'pending')
+          .maybeSingle()
+        pairedRowId = pair?.id ?? null
+      }
+      const initial = buildPlanInitial(planRow, { flights, crew })
+      if (pairedRowId) initial.alsoDeadhead = true
+      if (!alive) return
+      setPlanPrefill({ initial, planRowId: planRow.id, pairedRowId })
+      setAddOpen(true)
+    })()
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, canView, canAdd, flights, crew])
 
   const today = pkToday()
   const [page, setPage] = useState(1)
@@ -880,9 +961,28 @@ export default function Rides() {
           allowedCities={allowedCities}
           defaultCityId={cityId}
           createdBy={profile?.id}
-          onClose={() => setAddOpen(false)}
-          onDone={() => {
+          initial={planPrefill?.initial}
+          onClose={() => {
             setAddOpen(false)
+            setPlanPrefill(null)
+            clearPlanParam()
+          }}
+          onDone={async (result) => {
+            if (planPrefill) {
+              await supabase
+                .from('ride_plan_rows')
+                .update({ status: 'followed', ride_id: result?.rideId ?? null })
+                .eq('id', planPrefill.planRowId)
+              if (planPrefill.pairedRowId && result?.deadheadRideId) {
+                await supabase
+                  .from('ride_plan_rows')
+                  .update({ status: 'followed', ride_id: result.deadheadRideId })
+                  .eq('id', planPrefill.pairedRowId)
+              }
+            }
+            setAddOpen(false)
+            setPlanPrefill(null)
+            clearPlanParam()
             fetchRows()
           }}
         />
@@ -1858,6 +1958,7 @@ function RideModal({
   allowedCities,
   defaultCityId,
   createdBy,
+  initial, // pure Add-mode prefill (e.g. from a Ride Plan row) - see buildPlanInitial()
   onClose,
   onDone,
 }) {
@@ -1871,8 +1972,8 @@ function RideModal({
   const [playback, setPlayback] = useState(false) // Ride View: show the recorded trip instead of the route/live map
   const [notifyBusy, setNotifyBusy] = useState(false)
   const [conflict, setConflict] = useState(null) // { ref_no, end_at }
-  const [startTouched, setStartTouched] = useState(false)
-  const [shift, setShift] = useState(row?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
+  const [startTouched, setStartTouched] = useState(Boolean(initial?.start_time))
+  const [shift, setShift] = useState(row?.shift || initial?.shift || 'day') // manual Day/Night pick - no time-window auto-detection
   // Duty Sheet: for a Night ride, the dispatcher can count it against the
   // PREVIOUS day's duty sheet (the shift started the day before, even though
   // the ride itself is dispatched and happens on ride_date) - restore that
@@ -1883,28 +1984,30 @@ function RideModal({
   // Pickup only, add-only: also create a Deadhead ride (Airport -> the first
   // crew stop) so the vehicle is positioned before the pickup run. Chains off
   // the pickup -> displays as "<pickup ref>-PD", cascades on delete.
-  const [alsoDeadhead, setAlsoDeadhead] = useState(false)
+  const [alsoDeadhead, setAlsoDeadhead] = useState(Boolean(initial?.alsoDeadhead))
 
-  const initialCrew = [...(row?.ride_crew || [])]
-    .sort((a, b) => a.seq - b.seq)
-    .map((x) => x.crew)
-    .filter(Boolean)
+  const initialCrew = row
+    ? [...(row?.ride_crew || [])]
+        .sort((a, b) => a.seq - b.seq)
+        .map((x) => x.crew)
+        .filter(Boolean)
+    : (initial?.crewList ?? [])
 
   const [form, setForm] = useState({
-    flight_id: row?.flight_id ?? '',
-    flight_no: row?.flight_no ?? '',
-    flight_code: row?.flight_code ?? '',
-    block_type: row?.block_type ?? '',
+    flight_id: row?.flight_id ?? initial?.flight_id ?? '',
+    flight_no: row?.flight_no ?? initial?.flight_no ?? '',
+    flight_code: row?.flight_code ?? initial?.flight_code ?? '',
+    block_type: row?.block_type ?? initial?.block_type ?? '',
     deadhead_mode: row?.deadhead_mode ?? 'airport',
-    city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
-    ride_date: row?.ride_date ?? pkToday(),
-    checkin_old: toTime24(row?.checkin_old),
-    checkin_new: toTime24(row?.checkin_new),
-    checkout_old: toTime24(row?.checkout_old),
-    checkout_new: toTime24(row?.checkout_new),
-    start_time: row?.start_at ? isoToLocalTime(row.start_at) : '',
-    vehicle_id: row?.vehicle_id ?? '',
-    notes: row?.notes ?? '',
+    city_id: row?.city_id ?? initial?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
+    ride_date: row?.ride_date ?? initial?.ride_date ?? pkToday(),
+    checkin_old: toTime24(row?.checkin_old ?? initial?.checkin_old),
+    checkin_new: toTime24(row?.checkin_new ?? initial?.checkin_new),
+    checkout_old: toTime24(row?.checkout_old ?? initial?.checkout_old),
+    checkout_new: toTime24(row?.checkout_new ?? initial?.checkout_new),
+    start_time: row?.start_at ? isoToLocalTime(row.start_at) : (initial?.start_time ?? ''),
+    vehicle_id: row?.vehicle_id ?? initial?.vehicle_id ?? '',
+    notes: row?.notes ?? initial?.notes ?? '',
   })
   const [crewList, setCrewList] = useState(initialCrew)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
@@ -2271,6 +2374,7 @@ function RideModal({
     // before the pickup starts. Chains off the pickup (return_of_ride_id) so
     // it shows as "<pickup ref>-PD" and cascades if the pickup is deleted.
     let dhNote = ''
+    let dhRideId = null
     if (isAdd && alsoDeadhead && form.block_type === 'pickup' && crewList[0] && startAt) {
       try {
         const c1 = crewList[0]
@@ -2319,6 +2423,7 @@ function RideModal({
           .single()
         if (dhIns.error) throw new Error(dhIns.error.message)
         await supabase.from('ride_crew').insert({ ride_id: dhIns.data.id, crew_id: c1.id, seq: 0 })
+        dhRideId = dhIns.data.id
         dhNote = `, deadhead ${rideRefNo}-PD`
       } catch (e2) {
         toast.error(`Ride created, but the deadhead failed: ${e2.message}`)
@@ -2327,7 +2432,7 @@ function RideModal({
 
     setBusy(false)
     toast.success(isAdd ? `Ride created${dhNote}` : 'Ride updated')
-    onDone()
+    onDone({ rideId, rideRefNo, deadheadRideId: dhRideId })
   }
 
   const rowRef = row?.display_ref ?? row?.ref_no

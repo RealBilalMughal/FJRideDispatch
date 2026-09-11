@@ -1,0 +1,23 @@
+.rp-datebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 14px;
+}
+
+.rp-datebar input[type='date'] {
+  width: auto;
+}
+
+.rp-report {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+
+.rp-report h3 {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}

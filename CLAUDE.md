@@ -88,7 +88,8 @@ keys, tables or deploy targets with any other project.
   `20260907120000_crew_wait_buffer.sql`, `20260908120000_vehicle_vendor.sql`,
   `20260908130000_ride_extra_km.sql`, `20260908140000_ride_track_points.sql`,
   `20260908140100_ride_track_cron.sql`, `20260908150000_ride_notifications.sql`,
-  `20260910120000_ride_cancel.sql` (all APPLIED).
+  `20260910120000_ride_cancel.sql`, `20260911120000_crew_phone_unique.sql`,
+  `20260911140000_ride_plan.sql` (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -218,7 +219,9 @@ keys, tables or deploy targets with any other project.
   `ref_no`) instead of inserting a duplicate; a new/blank phone inserts.
   The import preview splits **New** vs **Update (matched by phone)** counts.
   This is what makes an export -> rename in Excel -> re-import round trip
-  safe (e.g. reconciling against an external roster).
+  safe (e.g. reconciling against an external roster). Also has an optional
+  **Employee No** field (form/table/CSV) - see Pages -> RidePlan, which
+  matches its plan sheet's crew cells against this.
 - `Vendors` / `Drivers` / `Vehicles` (`vendors`/`drivers`/`vehicles` perms, sidebar
   group **"Fleet"**) - Crew-style: city-scoped table, advanced filters, CSV
   export/import (`*-sample.csv`), View/Edit/Delete. All have a mandatory City.
@@ -776,6 +779,69 @@ keys, tables or deploy targets with any other project.
     panel, never committed.
   (SECTIONS list is now five: Airport Locations, Ride Buffer Time, Block KM
   Buffer, Live Tracker, Notifications.)
+- `RidePlan` (`/ride-plan`, sidebar label "Ride Plan", group "Dispatch",
+  `ride_plan` perm - migration `20260911140000_ride_plan.sql`) - upload the
+  planning team's daily dispatch plan (an Excel sheet, **exported as CSV**
+  same as every other import in this app: Date/Base/Car/Ad-hoc Car/Block
+  Type/Trip ID/Flight No/Origin/Destination/Start Time/End Time/Distance
+  (km)/Crew Count/Crew) and work each row through to a real ride, then
+  compare planned vs actual KM.
+  - **Schema**: one `ride_plan_imports` row per upload (`city_id` = the
+    dominant Base among its rows, or the topbar-filtered city), many
+    `ride_plan_rows` (`plan_date`, `trip_id`, `block_type`, `car`/
+    `is_adhoc_car`, `flight_no`, `origin`/`destination`, `start_time`/
+    `end_time`, `planned_km`, `crew_raw` + resolved `crew_matches` jsonb,
+    `matched_flight_id`, `matched_vehicle_id`, `status` pending/followed/
+    skipped, `ride_id` once dispatched). **`crew.employee_no`** (optional,
+    unique like `contact`) was added alongside - the sheet's Crew cells are
+    `"<employee_no> <name> (<designation>)"`, comma-separated for a combined
+    pickup/drop. Exposed in the Crew Add/Edit form, table and CSV import/
+    export the same as every other field.
+  - **`src/lib/planImport.js`** does the parsing/matching (pure functions,
+    no I/O): `normalizeBlockType` (the sheet spells it "returnleg", no
+    underscore), `parsePlanDate`, `matchCityByBase` (a city's Base code is
+    its airport's first 3 letters - `cities.airport_name` - with a
+    LHE/KHI/ISB fallback map), `parseCrewCell` + `matchCrewEntry` (tiers,
+    best first: exact `employee_no` -> exact name -> "every word of one name
+    is in the other" fuzzy -> unmatched, picked by hand later), `matchVehicle`
+    (skipped when Ad-hoc Car = Yes), `matchFlight`, and `buildPlanRows` which
+    ties it together per CSV row and returns `{ ok, skipped }` (mirrors
+    `Crew.jsx`'s `ImportModal` parse/skip/tag shape).
+  - **Trip ID is the sheet's own pairing key**: a Deadhead row and its Pickup
+    share one Trip ID, as does a Return Leg and its Dropoff (confirmed
+    against real data - counts matched exactly). This means Deadhead/Return
+    Leg plan rows need **no dispatch logic of their own** - they ride along
+    on the ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Create Ride ->
+    Return Leg" (Dropoff) features (see the Ride section). So only Pickup/
+    Dropoff rows get a **Follow** action; Deadhead/Return Leg rows just wait,
+    and a reconciliation effect (runs on every row-list refresh, `canEdit`
+    gated) auto-marks one **followed** the moment it finds a `rides` row with
+    `return_of_ride_id` = its followed sibling's `ride_id` and a matching
+    `block_type`.
+  - **Follow** navigates to **`/rides?planRow=<id>`**. `Rides.jsx` reads that
+    param (an effect gated on `flights`/`crew` being loaded), fetches the
+    plan row, builds a prefill via its own `buildPlanInitial()` (resolves the
+    matched flight/vehicle/crew against the arrays the Ride page already has
+    loaded, and auto-ticks **"Also create a Deadhead"** when a pending
+    Deadhead plan row shares the Trip ID), and opens the normal Add Ride
+    modal already pre-filled - **not a separate creation path**. `RideModal`
+    gained an `initial` prop for exactly this (every `useState` fallback is
+    `row?.x ?? initial?.x ?? ...`) - the very first prefill capability it's
+    had; `startTouched` seeds `true` when `initial.start_time` is set so the
+    Pickup/Drop-time auto-suggest effect doesn't overwrite the planned time.
+    On save, `submit()`'s `onDone` now carries back `{ rideId, rideRefNo,
+    deadheadRideId }` (harmless for every other caller, which ignored the
+    argument already) so the Rides page can mark that plan row **followed**
+    + `ride_id` (and the paired Deadhead row too, if one was auto-created)
+    before closing the modal and clearing the query param.
+  - **Skip** (any pending row, optional reason) / **Reopen** (a skipped row,
+    back to pending) - a small reason `Modal`, no `window.prompt`.
+  - **Report** (`Sigma` toggle, like the Rides Summary panel) - per block
+    type, for the selected `plan_date`: followed-row count, Σ planned KM, Σ
+    actual KM (**followed rows only** - the point is comparing what was
+    planned against what actually happened when the plan WAS followed,
+    matching a cancelled-and-not-counted ride's KM out via the same
+    `billableKm()` rule the Rides Summary/Dashboard use), and the delta.
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

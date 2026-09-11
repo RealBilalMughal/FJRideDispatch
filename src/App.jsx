@@ -7,6 +7,7 @@ import Login from './pages/Login'
 // Route pages are code-split so heavy deps stay out of the initial bundle.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Rides = lazy(() => import('./pages/Rides'))
+const RidePlan = lazy(() => import('./pages/RidePlan'))
 const VehicleBoard = lazy(() => import('./pages/VehicleBoard'))
 const Tracker = lazy(() => import('./pages/Tracker'))
 const Crew = lazy(() => import('./pages/Crew'))
@@ -28,6 +29,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="rides" element={<Rides />} />
+          <Route path="ride-plan" element={<RidePlan />} />
           <Route path="vehicle-board" element={<VehicleBoard />} />
           <Route path="tracker" element={<Tracker />} />
           <Route path="crew" element={<Crew />} />

@@ -41,6 +41,7 @@ const EXPORT_COLS = [
   { key: 'name', label: 'Name' },
   { key: 'phone', label: 'Phone' },
   { key: 'designation', label: 'Designation' },
+  { key: 'employee_no', label: 'Employee No' },
   { key: 'city', label: 'City' },
   { key: 'stop_name', label: 'Stop' },
   { key: 'coordinates', label: 'Coordinates' },
@@ -52,14 +53,15 @@ const SAMPLE_COLS = [
   { key: 'name', label: 'name' },
   { key: 'phone', label: 'phone' },
   { key: 'designation', label: 'designation' },
+  { key: 'employee_no', label: 'employee_no' },
   { key: 'city', label: 'city' },
   { key: 'stop_name', label: 'stop_name' },
   { key: 'coordinates', label: 'coordinates' },
 ]
 
 const SAMPLE = [
-  { name: 'Ahmed Raza', phone: '03001234567', designation: 'Driver', city: 'Lahore', stop_name: 'Model Town Gate', coordinates: '31.478100, 74.328700' },
-  { name: 'Bilal Khan', phone: '03217654321', designation: 'Captain', city: 'Islamabad', stop_name: 'F-7 Markaz', coordinates: '33.719400, 73.055300' },
+  { name: 'Ahmed Raza', phone: '03001234567', designation: 'Driver', employee_no: '107386', city: 'Lahore', stop_name: 'Model Town Gate', coordinates: '31.478100, 74.328700' },
+  { name: 'Bilal Khan', phone: '03217654321', designation: 'Captain', employee_no: '107807', city: 'Islamabad', stop_name: 'F-7 Markaz', coordinates: '33.719400, 73.055300' },
 ]
 
 const gmapsUrl = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
@@ -123,7 +125,7 @@ export default function Crew() {
     setLoading(true)
     let q = supabase
       .from('crew')
-      .select('id, ref_no, name, contact, designation, city_id, stop_name, stop_lat, stop_lng, is_active, created_at, city:cities(name)')
+      .select('id, ref_no, name, contact, designation, employee_no, city_id, stop_name, stop_lat, stop_lng, is_active, created_at, city:cities(name)')
       .order('ref_no', { ascending: false })
     if (cityId != null) q = q.eq('city_id', cityId)
     const { data, error } = await q
@@ -208,6 +210,7 @@ export default function Crew() {
       name: r.name,
       phone: r.contact ?? '',
       designation: r.designation ?? '',
+      employee_no: r.employee_no ?? '',
       city: r.city_name,
       stop_name: r.stop_name ?? '',
       coordinates: fmtLatLng(r.stop_lat, r.stop_lng),
@@ -242,6 +245,7 @@ export default function Crew() {
         r.contact ? <span className="phone-link">{formatPkPhone(r.contact)}</span> : '—',
     },
     { key: 'designation', header: 'Designation', render: (r) => r.designation || '—' },
+    { key: 'employee_no', header: 'Employee No', render: (r) => r.employee_no || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
     { key: 'stop', header: 'Stop', render: (r) => r.stop_name || '—' },
     {
@@ -498,6 +502,7 @@ function CrewModal({
     name: row?.name ?? '',
     phone: fromStored(row?.contact), // 10-digit local part
     designation: row?.designation ?? '',
+    employee_no: row?.employee_no ?? '',
     city_id: row?.city_id ?? defaultCityId ?? firstCity,
     stop_name: row?.stop_name ?? '',
     coordinates: fmtLatLng(row?.stop_lat, row?.stop_lng),
@@ -522,6 +527,7 @@ function CrewModal({
       name: form.name.trim(),
       contact: toStored(form.phone),
       designation: form.designation.trim() || null,
+      employee_no: form.employee_no.trim() || null,
       city_id: Number(form.city_id),
       stop_name: form.stop_name.trim() || null,
       stop_lat: pin ? pin.lat : null,
@@ -532,11 +538,14 @@ function CrewModal({
       : await supabase.from('crew').update(payload).eq('id', row.id)
     setBusy(false)
     if (res.error) {
-      return setErr(
-        res.error.code === '23505'
-          ? 'This phone number is already used by another crew member.'
-          : res.error.message,
-      )
+      if (res.error.code === '23505') {
+        return setErr(
+          res.error.message.includes('employee_no')
+            ? 'This Employee No is already used by another crew member.'
+            : 'This phone number is already used by another crew member.',
+        )
+      }
+      return setErr(res.error.message)
     }
     toast.success(isAdd ? 'Crew added' : 'Crew updated')
     onDone()
@@ -559,6 +568,10 @@ function CrewModal({
           <div className="view-row">
             <span className="view-label">Designation</span>
             <span className="view-value">{row.designation || '—'}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Employee No</span>
+            <span className="view-value">{row.employee_no || '—'}</span>
           </div>
           <div className="view-row">
             <span className="view-label">City</span>
@@ -635,6 +648,18 @@ function CrewModal({
               autoComplete="off"
             />
           </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="c-empno">Employee No</label>
+          <input
+            id="c-empno"
+            className="input"
+            value={form.employee_no}
+            onChange={(e) => set('employee_no', e.target.value)}
+            placeholder="e.g. 107386 - matches the Ride Plan sheet's crew IDs"
+            autoComplete="off"
+          />
         </div>
 
         <div className="field">
@@ -726,7 +751,7 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
     const hc = checkHeaders(
       headers,
       ['name', 'city'],
-      ['name', 'phone', 'contact', 'designation', 'city', 'stop_name', 'coordinates', 'latitude', 'longitude'],
+      ['name', 'phone', 'contact', 'designation', 'employee_no', 'city', 'stop_name', 'coordinates', 'latitude', 'longitude'],
     )
     if (!hc.ok) {
       setErr(hc.error)
@@ -762,6 +787,7 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
         name,
         contact,
         designation: (r.designation || '').trim() || null,
+        employee_no: (r.employee_no || '').trim() || null,
         city_id: cityId,
         stop_name: (r.stop_name || '').trim() || null,
         stop_lat: pin ? pin.lat : null,
@@ -823,7 +849,8 @@ function ImportModal({ allowedCities, createdBy, onClose, onDone }) {
 
         <p className="confirm-msg">
           Upload a CSV with columns{' '}
-          <b>name, phone, designation, city, stop_name, coordinates</b>. Coordinates are one cell,
+          <b>name, phone, designation, employee_no, city, stop_name, coordinates</b>. Employee No is
+          optional — matches the Ride Plan sheet's crew IDs. Coordinates are one cell,
           like <code>31.478100, 74.328700</code> (same as the Add Crew form). City must be one you
           have access to; phone is a Pakistan mobile. <b>Phone is the match key</b> — a row whose
           phone already belongs to a crew member updates that record (e.g. a corrected name)

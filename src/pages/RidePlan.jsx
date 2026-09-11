@@ -240,13 +240,17 @@ export default function RidePlan() {
   }, [fetchRows])
 
   // Deadhead / Return Leg rows aren't dispatched directly - they ride along on
-  // the ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Create Ride ->
-  // Return Leg" (Dropoff) features. Once this row's own Trip-ID sibling is
-  // followed, check whether its companion ride now exists and auto-link it.
+  // the ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Also create a
+  // Return Leg" (Dropoff) features. Once this row's own sibling is followed,
+  // check whether its companion ride now exists and auto-link it. Paired by
+  // adjacent `seq`, NOT Trip ID - a Deadhead is the row immediately BEFORE
+  // its Pickup, a Return Leg immediately AFTER its Dropoff (confirmed
+  // against real data; Trip ID only happens to match for the Deadhead case).
+  const siblingBlock = { deadhead: 'pickup', return_leg: 'dropoff' }
+  const siblingSeq = (r) => (r.block_type === 'deadhead' ? r.seq + 1 : r.block_type === 'return_leg' ? r.seq - 1 : null)
   const reconciling = useRef(false)
   useEffect(() => {
     if (!canEdit) return
-    const siblingBlock = { deadhead: 'pickup', return_leg: 'dropoff' }
     const pending = rows.filter((r) => r.status === 'pending' && siblingBlock[r.block_type])
     if (!pending.length || reconciling.current) return
     reconciling.current = true
@@ -254,7 +258,7 @@ export default function RidePlan() {
       let changed = false
       for (const r of pending) {
         const sibling = rows.find(
-          (s) => s.trip_id === r.trip_id && s.block_type === siblingBlock[r.block_type] && s.status === 'followed',
+          (s) => s.seq === siblingSeq(r) && s.block_type === siblingBlock[r.block_type] && s.status === 'followed',
         )
         if (!sibling?.ride_id) continue
         const { data: companion } = await supabase

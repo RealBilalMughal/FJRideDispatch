@@ -613,9 +613,10 @@ keys, tables or deploy targets with any other project.
   removed one before saving, the deadhead/return leg automatically follows
   whichever crew member is actually first/last in the 2 that remain.
   Ride Plan's Follow/No auto-ticks this checkbox too, mirroring the Deadhead
-  case, when a pending Return Leg plan row shares the followed Dropoff's
-  Trip ID (`Rides.jsx`'s prefill effect, `initial.alsoReturnLeg`) - and its
-  own reconciliation effect still catches this the same way regardless of
+  case, when a pending Return Leg plan row sits at the followed Dropoff's
+  `seq + 1` (`Rides.jsx`'s prefill effect, `initial.alsoReturnLeg` - see the
+  Ride Plan section's "Pairing is by adjacent seq, NOT Trip ID" for why) -
+  and its own reconciliation effect still catches this the same way regardless of
   whether the Return Leg arrived via this checkbox or `CreateRideModal`,
   since both produce the identical `return_of_ride_id`-linked shape.
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
@@ -852,16 +853,28 @@ keys, tables or deploy targets with any other project.
     tag shape) - each `ok` row also carries a transient `line` (CSV line
     number, for the import preview's unmatched-crew list; stripped before the
     real insert, `ride_plan_rows` has no such column).
-  - **Trip ID is the sheet's own pairing key**: a Deadhead row and its Pickup
-    share one Trip ID, as does a Return Leg and its Dropoff (confirmed
-    against real data - counts matched exactly). Deadhead/Return Leg rows
-    most commonly get satisfied for free - a reconciliation effect (runs on
-    every row-list refresh, `canEdit` gated) auto-marks one **followed** the
-    moment it finds a `rides` row with `return_of_ride_id` = its followed
-    sibling's `ride_id` and a matching `block_type`, riding along on the
-    ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Create Ride -> Return
-    Leg" (Dropoff) features (see the Ride section). But **every block type
-    gets its own Follow action too** (`canFollow(r) = r.status === 'pending'`,
+  - **Pairing is by adjacent `seq`, NOT Trip ID** - a Deadhead row is always
+    the row immediately BEFORE its Pickup, a Return Leg always immediately
+    AFTER its Dropoff (confirmed against real data: 182/192 Deadheads and
+    171/175 Return Legs hold this exactly; the handful of misses are all the
+    `pickup-dhd-passenger`/`dropoff-dhd-passenger` rows normalised to plain
+    `deadhead`, see above). Trip ID looked like the pairing key at first
+    (a Deadhead does share its Pickup's Trip ID) but that was a coincidence
+    of the sheet's own numbering (each Trip ID names "the next trip number
+    this vehicle will run", not a stable FK) - it does NOT hold for Return
+    Leg/Dropoff, which routinely carry *different* Trip IDs despite being
+    physically adjacent (the Return Leg's number belongs to whatever dropoff
+    that vehicle runs hours later, not the one it just came from). Both the
+    Follow/No auto-tick (`Rides.jsx`, below) and the reconciliation effect
+    match on `city_id` + adjacent `seq` (+ `car` when set), never Trip ID.
+    Deadhead/Return Leg rows most commonly get satisfied for free - a
+    reconciliation effect (runs on every row-list refresh, `canEdit` gated)
+    auto-marks one **followed** the moment it finds a `rides` row with
+    `return_of_ride_id` = its followed sibling's `ride_id` and a matching
+    `block_type`, riding along on the ALREADY-BUILT "Also create a Deadhead"
+    (Pickup) / "Also create a Return Leg" (Dropoff) features (see the Ride
+    section). But **every block type gets its own Follow action too**
+    (`canFollow(r) = r.status === 'pending'`,
     no block_type filter) - for a standalone Deadhead/Return Leg with no
     plan-paired Pickup/Dropoff (13/53 trips in the sample had no pair), or
     for positioning a vehicle ahead of its pickup on purpose. Since these
@@ -873,8 +886,9 @@ keys, tables or deploy targets with any other project.
     param (an effect gated on `flights`/`crew` being loaded), fetches the
     plan row, builds a prefill via its own `buildPlanInitial()` (resolves the
     matched flight/vehicle/crew against the arrays the Ride page already has
-    loaded, and auto-ticks **"Also create a Deadhead"** when a pending
-    Deadhead plan row shares the Trip ID), and opens the normal Add Ride
+    loaded, and auto-ticks **"Also create a Deadhead"/"Also create a Return
+    Leg"** when a pending Deadhead/Return Leg plan row sits at the adjacent
+    `seq`), and opens the normal Add Ride
     modal already pre-filled - **not a separate creation path**. `RideModal`
     gained an `initial` prop for exactly this (every `useState` fallback is
     `row?.x ?? initial?.x ?? ...`) - the very first prefill capability it's

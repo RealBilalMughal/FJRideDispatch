@@ -280,21 +280,29 @@ export default function Rides() {
         toast.error('You do not have permission to add rides')
         return clearPlanParam()
       }
-      // A paired Deadhead (off a Pickup) or Return Leg (off a Dropoff), same
-      // Trip ID, still pending - auto-check "Also create a Deadhead/Return
-      // Leg" so this one Add covers both legs, same as the existing
-      // checkboxes already do for a manually-dispatched pickup/dropoff.
+      // A paired Deadhead (off a Pickup) or Return Leg (off a Dropoff), still
+      // pending - auto-check "Also create a Deadhead/Return Leg" so this one
+      // Add covers both legs, same as the existing checkboxes already do for
+      // a manually-dispatched pickup/dropoff. Paired by adjacent `seq`, NOT
+      // Trip ID - the sheet's Trip ID on a Deadhead/Return Leg row names the
+      // NEXT trip number this vehicle will run, not the one it's physically
+      // tied to (confirmed against real data: a Deadhead is the row
+      // immediately BEFORE its Pickup, a Return Leg immediately AFTER its
+      // Dropoff - same Trip ID only coincides with that for the Deadhead
+      // case, not the Return Leg one).
       let pairedRowId = null
       const pairedBlock = planRow.block_type === 'pickup' ? 'deadhead' : planRow.block_type === 'dropoff' ? 'return_leg' : null
       if (pairedBlock) {
-        const { data: pair } = await supabase
+        const targetSeq = planRow.block_type === 'pickup' ? planRow.seq - 1 : planRow.seq + 1
+        let pairQ = supabase
           .from('ride_plan_rows')
           .select('id')
-          .eq('trip_id', planRow.trip_id)
           .eq('city_id', planRow.city_id)
+          .eq('seq', targetSeq)
           .eq('block_type', pairedBlock)
           .eq('status', 'pending')
-          .maybeSingle()
+        if (planRow.car) pairQ = pairQ.eq('car', planRow.car)
+        const { data: pair } = await pairQ.maybeSingle()
         pairedRowId = pair?.id ?? null
       }
       const viaNo = searchParams.get('plan_no') === '1'

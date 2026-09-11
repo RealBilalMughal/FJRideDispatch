@@ -887,6 +887,15 @@ keys, tables or deploy targets with any other project.
     FROM the plan row TO the ride (`on delete set null` runs the other way,
     if the ride itself is ever deleted), so removing plan rows has no effect
     on the `rides` table at all.
+  - **Frozen top** - the title/actions, the KM summary cards and the date
+    bar sit in one `position: sticky; top: 0` block (`.rp-frozen-top`) pinned
+    at the viewport edge as the page scrolls (there's no fixed topbar above
+    it to account for - the whole app just scrolls the page itself). The
+    table's own column-header row sticks too, right below that block, at a
+    `--rp-thead-top` CSS var kept in sync with the frozen block's real
+    height via a `ResizeObserver` (not a guessed pixel value, so it still
+    lines up if that height changes - a narrow screen, a longer city name).
+    Only the Report panel and the table's rows scroll underneath both.
   - **Report** (`Sigma` toggle, like the Rides Summary panel) - a second,
     more detailed panel below the date bar: per block type, for the selected
     `plan_date`, followed-row count, Σ planned KM, Σ actual KM (**followed

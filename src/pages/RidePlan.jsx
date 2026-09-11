@@ -155,12 +155,16 @@ export default function RidePlan() {
   // sized to make the WHOLE page fit in one viewport with no page scroll.
   const tableWrapRef = useRef(null)
   const [tableMaxH, setTableMaxH] = useState(null)
+  // 48px = .app-content's own bottom padding (layout.css) - it sits AFTER
+  // .page ends, so it has to come off the table's budget too, or the page
+  // is left just tall enough to trigger a few px of page-level scroll.
+  const APP_CONTENT_BOTTOM_PAD = 48
   useEffect(() => {
     const el = tableWrapRef.current
     if (!el) return
     const recalc = () => {
       const top = el.getBoundingClientRect().top
-      setTableMaxH(Math.max(200, window.innerHeight - top - 24))
+      setTableMaxH(Math.max(200, window.innerHeight - top - APP_CONTENT_BOTTOM_PAD))
     }
     recalc()
     window.addEventListener('resize', recalc)

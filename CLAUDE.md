@@ -828,15 +828,21 @@ keys, tables or deploy targets with any other project.
     real insert, `ride_plan_rows` has no such column).
   - **Trip ID is the sheet's own pairing key**: a Deadhead row and its Pickup
     share one Trip ID, as does a Return Leg and its Dropoff (confirmed
-    against real data - counts matched exactly). This means Deadhead/Return
-    Leg plan rows need **no dispatch logic of their own** - they ride along
-    on the ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Create Ride ->
-    Return Leg" (Dropoff) features (see the Ride section). So only Pickup/
-    Dropoff rows get a **Follow** action; Deadhead/Return Leg rows just wait,
-    and a reconciliation effect (runs on every row-list refresh, `canEdit`
-    gated) auto-marks one **followed** the moment it finds a `rides` row with
-    `return_of_ride_id` = its followed sibling's `ride_id` and a matching
-    `block_type`.
+    against real data - counts matched exactly). Deadhead/Return Leg rows
+    most commonly get satisfied for free - a reconciliation effect (runs on
+    every row-list refresh, `canEdit` gated) auto-marks one **followed** the
+    moment it finds a `rides` row with `return_of_ride_id` = its followed
+    sibling's `ride_id` and a matching `block_type`, riding along on the
+    ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Create Ride -> Return
+    Leg" (Dropoff) features (see the Ride section). But **every block type
+    gets its own Follow action too** (`canFollow(r) = r.status === 'pending'`,
+    no block_type filter) - for a standalone Deadhead/Return Leg with no
+    plan-paired Pickup/Dropoff (13/53 trips in the sample had no pair), or
+    for positioning a vehicle ahead of its pickup on purpose. Since these
+    plan rows carry no Flight No or crew at all, `RideModal`'s `submit()`
+    only requires a flight for `pickup`/`dropoff`/`deadhead`-via-checkbox
+    now, not `deadhead`/`return_leg` reached this way - the dispatcher picks
+    the crew stop by hand in the form same as building either manually.
   - **Follow** navigates to **`/rides?planRow=<id>`**. `Rides.jsx` reads that
     param (an effect gated on `flights`/`crew` being loaded), fetches the
     plan row, builds a prefill via its own `buildPlanInitial()` (resolves the
@@ -853,22 +859,31 @@ keys, tables or deploy targets with any other project.
     argument already) so the Rides page can mark that plan row **followed**
     + `ride_id` (and the paired Deadhead row too, if one was auto-created)
     before closing the modal and clearing the query param.
-  - **Skip** (any pending row) - a small `Modal`, no `window.prompt`, with a
-    Note (optional reason text) **and an optional Ride ID** field. Left
-    blank, it's a plain skip (`status: 'skipped'`). Given a ride's `ref_no`
-    (e.g. the dispatcher created that trip manually on the Rides page
-    instead of using Follow), it looks that ride up and **links** it instead
-    - `status: 'followed'`, `ride_id` set, the Note saved alongside - so the
-    row counts as followed and its Actual KM feeds the report exactly like a
-    Followed row. **Reopen** (any skipped OR linked-via-Skip row, back to
-    pending) always clears `ride_id` too now, not just `status`/`skip_reason`.
+  - **No** (any pending row, labelled "No" - the row's `status` value stays
+    `'skipped'` in the DB, only the UI text changed) - a small `Modal`, no
+    `window.prompt`, with a Note (optional reason text) **and an optional
+    Ride ID** field. Left blank, it's a plain No (`status: 'skipped'`). Given
+    a ride's `ref_no` (e.g. the dispatcher created that trip manually on the
+    Rides page instead of using Follow), it looks that ride up and **links**
+    it instead - `status: 'followed'`, `ride_id` set, the Note saved
+    alongside - so the row counts as followed and its Actual KM feeds the
+    report exactly like a Followed row. **Reopen** (any No OR linked-via-No
+    row, back to pending) always clears `ride_id` too now, not just
+    `status`/`skip_reason`.
+  - **Actual Crew** - its own column, next to the planned Crew column: the
+    linked ride's real crew names (`ride_crew` joined to `crew(name)`,
+    ordered by `seq`, one extra query per refresh keyed by ride id) - blank
+    for a pending/No row, "—" for a followed one with none.
   - **Crew mismatch** - every followed Pickup/Dropoff also gets its linked
-    ride's real crew count (one extra `ride_crew` count query per refresh,
-    `Map<ride_id, count>` client-side rather than relying on a PostgREST
-    count-aggregate embed). When it doesn't equal the plan's own crew count
-    (`crew_matches.length` - e.g. the plan wanted 2, only 1 was actually
-    added to the ride), the Crew column shows a flat red "Actual: 1 of 2
-    planned" line under the names (`hasCrewMismatch()`).
+    ride's real crew count (from the Actual Crew fetch above). When it
+    doesn't equal the plan's own crew count (`crew_matches.length` - e.g. the
+    plan wanted 2, only 1 was actually added to the ride), the Crew column
+    shows a flat red "Actual: 1 of 2 planned" line under the names
+    (`hasCrewMismatch()`).
+  - **Vehicle mismatch** - the Vehicle column shows the linked ride's real
+    vehicle (looked up against this page's own `vehicles` array by the
+    ride's `vehicle_id`) as a second flat red line under the planned `car`
+    whenever they differ and the row is followed.
   - **Top KM summary** - always-visible `StatCards` row (the shared
     Crew/Vehicles-page component, flat - not the Dashboard's boxed cards): a
     **Total** card first (`active`, accent-coloured value), then one per
@@ -877,7 +892,9 @@ keys, tables or deploy targets with any other project.
     block's **Planned KM summed over every row of the day's plan** (Total =
     all four blocks summed; regardless of status - this is the whole plan,
     not just what's been dispatched), its hint line the **Actual KM so far**
-    (followed rows only, via `billableKm()`) plus a followed count.
+    (followed rows only, via `billableKm()`) plus a followed count. Two more
+    cards close the row: **Followed** and **No**, each just a plain count of
+    that day's rows in that status (hint = how many are still pending).
   - **Delete plan** (`Trash2`, needs `ride_plan.delete`, hidden when there's
     nothing to delete) - a type-`DELETE` `ConfirmDelete` (never
     `window.confirm`) that removes every `ride_plan_rows` row for the

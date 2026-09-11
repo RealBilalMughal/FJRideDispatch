@@ -263,7 +263,7 @@ export default function Rides() {
   }
   useEffect(() => {
     const planRowId = searchParams.get('planRow')
-    if (!planRowId || !canView || flights.length === 0) return
+    if (!planRowId || !canView || flights.length === 0 || crew.length === 0) return
     let alive = true
     ;(async () => {
       const { data: planRow, error } = await supabase
@@ -2287,7 +2287,8 @@ function RideModal({
   const submit = async (e) => {
     e.preventDefault()
     setErr('')
-    if (!form.flight_id) return setErr('Pick a flight')
+    if (!form.flight_id && form.block_type !== 'deadhead' && form.block_type !== 'return_leg')
+      return setErr('Pick a flight')
     if (!form.block_type) return setErr('Pick a block type')
     if (!cityId) return setErr('Pick a city')
     if (crewList.length < rule.min) return setErr(`This block needs at least ${rule.min} crew`)
@@ -2303,8 +2304,8 @@ function RideModal({
     setBusy(true)
     const payload = {
       city_id: cityId,
-      flight_id: form.flight_id,
-      flight_no: form.flight_no,
+      flight_id: form.flight_id || null,
+      flight_no: form.flight_no || null,
       flight_code: form.flight_code || null,
       block_type: form.block_type,
       deadhead_mode: form.block_type === 'deadhead' ? form.deadhead_mode : null,

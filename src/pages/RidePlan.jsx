@@ -508,7 +508,7 @@ export default function RidePlan() {
     { key: 'crew', header: 'Crew', render: (r) => <CrewMatchCell row={r} crew={crew} /> },
     {
       key: 'crewCount',
-      header: 'Crew Count',
+      header: 'Crew C',
       align: 'right',
       render: (r) => (r.isExtra ? '—' : r.crew_count ?? r.crew_matches?.length ?? '—'),
     },
@@ -532,7 +532,7 @@ export default function RidePlan() {
     },
     {
       key: 'actualCrewCount',
-      header: 'Actual Crew Count',
+      header: 'A Crew C',
       align: 'right',
       render: (r) => (r.status === 'followed' ? r.actualCrewCount ?? '—' : '—'),
     },

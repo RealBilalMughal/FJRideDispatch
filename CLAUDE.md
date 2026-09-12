@@ -970,8 +970,9 @@ keys, tables or deploy targets with any other project.
     same helper the Ride page's own route icon uses) - the actual ground
     route that was dispatched, not the flight's city pair. Needs
     `ride:rides(...)` to also select `waypoints` in `fetchRows()`.
-  - **Crew Count column** - its own column right after the planned Crew
-    column: `crew_count` from the sheet (falling back to
+  - **Crew C column** ("Crew C", short for Crew Count - kept narrow since
+    the table already runs wide) - its own column right after the planned
+    Crew column: `crew_count` from the sheet (falling back to
     `crew_matches.length` if that cell was blank).
   - **Date bar**: the native `<input type="date">` is the only date shown
     now - a separate `fmtDate()`-formatted span used to sit right next to it
@@ -1000,7 +1001,8 @@ keys, tables or deploy targets with any other project.
     vehicle (looked up against this page's own `vehicles` array by the
     ride's `vehicle_id`) as a second flat red line under the planned `car`
     whenever they differ and the row is followed.
-  - **Actual Crew Count** - its own column right after Actual Crew: the
+  - **A Crew C column** ("A Crew C", Actual Crew Count) - its own column
+    right after Actual Crew: the
     count-only counterpart to the (names-list) Actual Crew column, same as
     the planned side already splits into Crew (names) + Crew Count (number).
     `—` for a pending/No row; otherwise `displayCrewCount(actualCrewNames,

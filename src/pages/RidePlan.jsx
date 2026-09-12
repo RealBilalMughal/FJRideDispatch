@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, Navigation, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { addDays, fmtTime12, pkToday } from '../lib/time'
 import { blockLabel } from '../lib/rideRoute'
+import { gmapsRoute } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanRows } from '../lib/planImport'
 import Modal from '../components/Modal'
@@ -64,15 +65,6 @@ const billableKm = (ride) => {
   if (ride.status === 'cancelled' && !ride.count_km) return 0
   return ride.distance_km
 }
-
-// The plan only carries the flight's own city pair (e.g. "LHE"/"KHI"), not
-// ground coordinates for the actual pickup/dropoff route - Google Maps still
-// resolves IATA-style codes as places, so this is a rough visual reference
-// (which cities this leg's flight connects), not the vehicle's real route.
-const gmapsFlightRoute = (origin, destination) =>
-  origin && destination
-    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`
-    : null
 
 const tierText = (tier) =>
   tier === 'employee_no' || tier === 'exact_name' ? '' : tier === 'fuzzy' ? ' · fuzzy match' : ' · unmatched'
@@ -141,6 +133,8 @@ export default function RidePlan() {
   const [loading, setLoading] = useState(true)
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
+  const [noReasonFor, setNoReasonFor] = useState(null) // a row - "No" reason prompt before it opens the Add Ride flow
+  const [reasonFor, setReasonFor] = useState(null) // a row - view its saved reason (No or Not happening)
   const [reportOpen, setReportOpen] = useState(false)
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -206,7 +200,7 @@ export default function RidePlan() {
     setLoading(true)
     let q = supabase
       .from('ride_plan_rows')
-      .select('*, ride:rides(id, ref_no, distance_km, status, count_km, vehicle_id)')
+      .select('*, ride:rides(id, ref_no, distance_km, status, count_km, vehicle_id, waypoints)')
       .eq('plan_date', planDate)
       .order('seq')
     if (cityId != null) q = q.eq('city_id', cityId)
@@ -290,6 +284,24 @@ export default function RidePlan() {
   }, [rows, fetchRows, canEdit])
 
   const canFollow = (r) => r.status === 'pending'
+
+  // "No" asks for a reason FIRST, saves it, then opens the same Add Ride
+  // flow as Follow - the reason is just context for why this deviated from
+  // plan, not a block on actually dispatching it.
+  const doNoReason = async (reason) => {
+    if (!noReasonFor) return
+    const trimmed = reason.trim()
+    if (trimmed) {
+      const { error } = await supabase
+        .from('ride_plan_rows')
+        .update({ skip_reason: trimmed })
+        .eq('id', noReasonFor.id)
+      if (error) return toast.error(error.message)
+    }
+    const id = noReasonFor.id
+    setNoReasonFor(null)
+    navigate(`/rides?planRow=${id}&plan_no=1`)
+  }
 
   // A "Skip" can instead LINK an already-created ride (e.g. one dispatched
   // manually on the Rides page, outside the Follow flow) by its ref number -
@@ -409,18 +421,7 @@ export default function RidePlan() {
     {
       key: 'route',
       header: 'Route',
-      render: (r) => {
-        const gm = gmapsFlightRoute(r.origin, r.destination)
-        if (!gm) return '—'
-        return (
-          <>
-            {r.origin} → {r.destination}{' '}
-            <a href={gm} target="_blank" rel="noreferrer" title="Open in Google Maps" className="rp-route-link">
-              <Navigation size={13} />
-            </a>
-          </>
-        )
-      },
+      render: (r) => (r.origin && r.destination ? `${r.origin} → ${r.destination}` : '—'),
     },
     {
       key: 'time',
@@ -429,6 +430,12 @@ export default function RidePlan() {
     },
     { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
     { key: 'crew', header: 'Crew', render: (r) => <CrewMatchCell row={r} crew={crew} /> },
+    {
+      key: 'crewCount',
+      header: 'Crew Count',
+      align: 'right',
+      render: (r) => r.crew_count ?? r.crew_matches?.length ?? '—',
+    },
     {
       key: 'actualCrew',
       header: 'Actual Crew',
@@ -483,43 +490,61 @@ export default function RidePlan() {
     {
       key: 'actions',
       header: 'Action',
-      render: (r) => (
-        <div className="rp-row-actions">
-          {canEdit && canFollow(r) && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-square btn-sm rp-follow-btn"
-              onClick={() => navigate(`/rides?planRow=${r.id}`)}
-            >
-              Follow
-            </button>
-          )}
-          {canEdit && canFollow(r) && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-square btn-sm rp-no-btn"
-              onClick={() => navigate(`/rides?planRow=${r.id}&plan_no=1`)}
-            >
-              No
-            </button>
-          )}
-          {canEdit && r.status === 'pending' && (
-            <button
-              type="button"
-              className="icon-btn"
-              title="Not happening"
-              onClick={() => setSkipFor(r)}
-            >
-              <Ban size={15} />
-            </button>
-          )}
-          {canEdit && r.status === 'skipped' && (
-            <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => reopen(r)}>
-              Reopen
-            </button>
-          )}
-        </div>
-      ),
+      render: (r) => {
+        const gm = r.status === 'followed' ? gmapsRoute(r.ride?.waypoints) : null
+        return (
+          <div className="rp-row-actions">
+            {canEdit && canFollow(r) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm rp-follow-btn"
+                onClick={() => navigate(`/rides?planRow=${r.id}`)}
+              >
+                Follow
+              </button>
+            )}
+            {canEdit && canFollow(r) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm rp-no-btn"
+                onClick={() => setNoReasonFor(r)}
+              >
+                No
+              </button>
+            )}
+            {canEdit && r.status === 'pending' && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Not happening"
+                onClick={() => setSkipFor(r)}
+              >
+                <Ban size={15} />
+              </button>
+            )}
+            {canEdit && r.status === 'skipped' && (
+              <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => reopen(r)}>
+                Reopen
+              </button>
+            )}
+            {r.skip_reason && (
+              <button
+                type="button"
+                className="icon-btn rp-reason-btn"
+                title="View reason"
+                onClick={() => setReasonFor(r)}
+              >
+                <MessageSquare size={15} />
+              </button>
+            )}
+            {gm && (
+              <a href={gm} target="_blank" rel="noreferrer" className="icon-btn" title="Open ride route in Google Maps">
+                <Navigation size={15} />
+              </a>
+            )}
+          </div>
+        )
+      },
     },
   ]
 
@@ -695,6 +720,10 @@ export default function RidePlan() {
       )}
 
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}
+      {noReasonFor && (
+        <NoReasonModal row={noReasonFor} onClose={() => setNoReasonFor(null)} onContinue={doNoReason} />
+      )}
+      {reasonFor && <ReasonPopup row={reasonFor} onClose={() => setReasonFor(null)} />}
 
       <ConfirmDelete
         open={deletePlanOpen}
@@ -705,6 +734,65 @@ export default function RidePlan() {
         onClose={() => setDeletePlanOpen(false)}
       />
     </div>
+  )
+}
+
+function NoReasonModal({ row, onClose, onContinue }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Reason for No`} width={420}>
+      <div className="modal-form">
+        <div className="field">
+          <label htmlFor="no-reason">Reason (optional)</label>
+          <textarea
+            id="no-reason"
+            className="input"
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. flight delayed, vehicle swapped…"
+            autoFocus
+          />
+        </div>
+        <span className="field-hint">
+          Saved on this row (click its <MessageSquare size={11} /> icon later to see it), then opens the
+          Add Ride form to dispatch it.
+        </span>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-square"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              await onContinue(reason)
+              setBusy(false)
+            }}
+          >
+            {busy ? 'Working…' : 'Continue'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function ReasonPopup({ row, onClose }) {
+  return (
+    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Reason`} width={380}>
+      <div className="modal-form">
+        <p className="confirm-msg">{row.skip_reason}</p>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

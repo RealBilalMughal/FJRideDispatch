@@ -43,14 +43,14 @@
   color: var(--danger);
 }
 
-.rp-route-link {
-  display: inline-flex;
-  vertical-align: middle;
-  color: var(--muted);
-  transition: color 0.15s;
-}
-.rp-route-link:hover {
+/* Always accent-highlighted, like Rides.jsx's own note icon - presence of a
+   reason is the signal, not a hover state. */
+.rp-reason-btn {
   color: var(--accent);
+  border-color: var(--accent-soft);
+}
+.rp-reason-btn:hover {
+  opacity: 0.75;
 }
 
 /* The page itself never scrolls - title/KM summary/date-bar (and the Report

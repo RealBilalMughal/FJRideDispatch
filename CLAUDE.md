@@ -960,17 +960,32 @@ keys, tables or deploy targets with any other project.
     not just `status`/`skip_reason`. Follow/No are `.rp-follow-btn`/
     `.rp-no-btn` (RidePlan.css) - a plain flat text button each, tinted
     light green / light red only on hover.
-  - **Route column** - `Origin → Destination` text plus a small `Navigation`
-    icon link (blank/no icon when either is empty, e.g. Deadhead/Return Leg)
-    opening a Google Maps directions URL built from those two plain place
-    names (`gmapsFlightRoute()`) - the plan only carries the flight's own
-    city pair, not ground coordinates for the real pickup/dropoff route, so
-    this is a rough visual reference for which cities that leg's flight
-    connects, not the vehicle's actual route (unlike the Ride page's own
-    route icon, which uses the real saved `waypoints`).
+  - **Route column** is plain `Origin → Destination` text, no icon - a
+    Google-Maps link built from just those two place names (the plan only
+    carries the flight's own city pair, not ground coordinates) turned out
+    more confusing than useful and was pulled back out.
+  - **Route map (Action column)** - once a row is **followed**, its Action
+    cell gets a `Navigation` icon link instead, built from the REAL linked
+    ride's own saved `waypoints` (`gmapsRoute()` from `src/lib/ors.js`, the
+    same helper the Ride page's own route icon uses) - the actual ground
+    route that was dispatched, not the flight's city pair. Needs
+    `ride:rides(...)` to also select `waypoints` in `fetchRows()`.
+  - **Crew Count column** - its own column right after the planned Crew
+    column: `crew_count` from the sheet (falling back to
+    `crew_matches.length` if that cell was blank).
   - **Date bar**: the native `<input type="date">` is the only date shown
     now - a separate `fmtDate()`-formatted span used to sit right next to it
     (redundant, the same date twice), removed.
+  - **"No" asks for a reason first** - clicking it opens a small `Modal`
+    (`NoReasonModal`, optional textarea) rather than navigating straight to
+    the Add Ride flow; on Continue it saves the (optional) text to
+    `ride_plan_rows.skip_reason` - the SAME column "Not happening" already
+    used, since both are just "context for why this didn't go per plan" -
+    then navigates to `/rides?planRow=<id>&plan_no=1` exactly as before.
+    Any row with a `skip_reason` (from either path) shows a small always-
+    accent `MessageSquare` icon in its Action column (`.rp-reason-btn`,
+    same "presence is the signal" convention as the Ride page's own note
+    icon) - clicking it opens `ReasonPopup`, a tiny read-only `Modal`.
   - **Actual Crew** - its own column, next to the planned Crew column: the
     linked ride's real crew names (`ride_crew` joined to `crew(name)`,
     ordered by `seq`, one extra query per refresh keyed by ride id) - blank

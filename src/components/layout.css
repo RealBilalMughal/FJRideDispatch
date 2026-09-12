@@ -52,11 +52,6 @@
   width: auto;
 }
 
-.sidebar-brand .sidebar-favicon {
-  height: 28px;
-  width: 28px;
-}
-
 .sidebar-collapse-btn {
   margin-left: auto;
   display: inline-flex;
@@ -82,46 +77,6 @@
 .sidebar.collapsed .sidebar-brand {
   padding: 0;
   justify-content: center;
-}
-
-/* the sidebar's own "Search" trigger, opening CommandPalette.jsx's overlay */
-.sidebar-search-btn {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 8px 12px 0;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--muted);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.sidebar-search-btn:hover {
-  color: var(--accent);
-}
-.sidebar-search-btn svg {
-  flex-shrink: 0;
-}
-.sidebar-search-btn kbd {
-  margin-left: auto;
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 10px;
-  font-family: inherit;
-}
-
-.sidebar.collapsed .sidebar-search-btn {
-  justify-content: center;
-  margin: 8px;
-  padding: 9px;
-}
-.sidebar.collapsed .sidebar-search-btn span,
-.sidebar.collapsed .sidebar-search-btn kbd {
-  display: none;
 }
 
 .sidebar-nav {
@@ -253,10 +208,16 @@
   display: none;
 }
 
+/* pushes itself (and the profile menu right after it) to the far right -
+   moved here from .profile-menu so this search trigger sits just to its
+   left instead of the two ending up with a gap between them. */
+.topbar-search-btn {
+  margin-left: auto;
+}
+
 /* ---------- profile menu ---------- */
 .profile-menu {
   position: relative;
-  margin-left: auto;
 }
 
 .profile-trigger {

@@ -12,7 +12,6 @@ import {
   Plane,
   Route,
   Satellite,
-  Search,
   Settings,
   ShieldCheck,
   Store,
@@ -127,7 +126,7 @@ function useSidebarBadges({ canPlan, canRides, cityId }) {
   return counts
 }
 
-export default function Sidebar({ open, onNavigate, collapsed, onToggleCollapsed, onOpenSearch }) {
+export default function Sidebar({ open, onNavigate, collapsed, onToggleCollapsed }) {
   const { can, isSuperAdmin } = useAuth()
   const { cityId } = useCity()
   const badges = useSidebarBadges({
@@ -151,11 +150,7 @@ export default function Sidebar({ open, onNavigate, collapsed, onToggleCollapsed
   return (
     <aside className={`sidebar${open ? ' open' : ''}${collapsed ? ' collapsed' : ''}`}>
       <div className="sidebar-brand">
-        {collapsed ? (
-          <img src="/favicon.png" alt="BusCaro" className="sidebar-favicon" />
-        ) : (
-          <img src="/logo.png" alt="BusCaro" className="sidebar-logo" />
-        )}
+        {!collapsed && <img src="/logo.png" alt="BusCaro" className="sidebar-logo" />}
         <button
           type="button"
           className="sidebar-collapse-btn"
@@ -165,17 +160,6 @@ export default function Sidebar({ open, onNavigate, collapsed, onToggleCollapsed
           {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
         </button>
       </div>
-
-      <button
-        type="button"
-        className="sidebar-search-btn"
-        onClick={onOpenSearch}
-        title="Search rides, crew, vehicles"
-      >
-        <Search size={15} />
-        <span>Search…</span>
-        <kbd>Ctrl K</kbd>
-      </button>
 
       <nav className="sidebar-nav">
         {NAV_SECTIONS.map((section, i) => {

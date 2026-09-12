@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronDown, IdCard, LogOut, Menu } from 'lucide-react'
+import { ChevronDown, IdCard, LogOut, Menu, Search } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { ROLE_LABEL_FALLBACK } from '../lib/permissions'
 import CityFilter from './CityFilter'
@@ -13,7 +13,7 @@ function initials(name, email) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-export default function Topbar({ onToggleSidebar }) {
+export default function Topbar({ onToggleSidebar, onOpenSearch }) {
   const { profile, roles, session, signOut } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -58,6 +58,15 @@ export default function Topbar({ onToggleSidebar }) {
       </button>
 
       <CityFilter />
+
+      <button
+        type="button"
+        className="icon-btn topbar-search-btn"
+        onClick={onOpenSearch}
+        title="Search rides, crew, vehicles (Ctrl+K)"
+      >
+        <Search size={16} />
+      </button>
 
       <div className="profile-menu" ref={menuRef}>
         <button

@@ -47,8 +47,8 @@ export default function Layout() {
       return next
     })
 
-  // Global Ctrl/Cmd+K quick search - works from any page, not just when the
-  // sidebar's own "Search" button is visible (e.g. icon-only/mobile).
+  // Global Ctrl/Cmd+K quick search - works from any page; the Topbar also
+  // carries its own visible "Search" trigger (left of the profile chip).
   const [paletteOpen, setPaletteOpen] = useState(false)
   useEffect(() => {
     const onKey = (e) => {
@@ -72,7 +72,6 @@ export default function Layout() {
         onNavigate={closeSidebar}
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
-        onOpenSearch={() => setPaletteOpen(true)}
       />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <div
@@ -81,7 +80,10 @@ export default function Layout() {
         aria-hidden="true"
       />
       <div className="app-main">
-        <Topbar onToggleSidebar={() => setSidebarOpen((v) => !v)} />
+        <Topbar
+          onToggleSidebar={() => setSidebarOpen((v) => !v)}
+          onOpenSearch={() => setPaletteOpen(true)}
+        />
         <main className="app-content">
           <Suspense fallback={<div style={{ color: 'var(--muted)', padding: 8 }}>Loading…</div>}>
             <Outlet />

@@ -33,8 +33,11 @@ const n = (v) => (v == null || v === '' ? NaN : Number(v))
 const crewPoint = (c) => ({
   kind: 'crew',
   crew_id: c.crew_id ?? c.id,
-  // origin / destination / layover labels show the STOP name, not the crew name
+  // `label` is the STOP name (what/where); `crew_name` is WHO - RouteMap
+  // shows both on the pin so a dispatcher doesn't have to cross-reference
+  // the crew list to know whose stop a pin is.
   label: c.stop_name || c.name || 'Crew stop',
+  crew_name: c.name || null,
   lat: n(c.stop_lat),
   lng: n(c.stop_lng),
 })

@@ -47,7 +47,10 @@ function cumulativeKm(pts, totalKm) {
 
 /**
  * Read-only route preview. `points` is the ordered stop list
- * [{ seq, label, lat, lng }]. `line` is the road geometry [[lat,lng], ...] from
+ * [{ seq, label, crew_name?, lat, lng }] - `label` is the stop's name,
+ * `crew_name` (when present) is shown alongside it on the pin so a
+ * dispatcher can see WHO a stop belongs to without cross-referencing the
+ * crew list. `line` is the road geometry [[lat,lng], ...] from
  * ORS - when absent it draws straight segments between the points.
  * `totalKm` (optional) labels each stop with the running distance from the
  * origin, scaled to this total. `liveMarker` (optional) is a vehicle's current
@@ -108,7 +111,8 @@ export default function RouteMap({
             >
               <Tooltip permanent direction="top" offset={[0, -14]}>
                 {badge}
-                {p.label ? ` · ${p.label}` : ''}
+                {p.crew_name ? ` · ${p.crew_name}` : ''}
+                {p.label && p.label !== p.crew_name ? ` · ${p.label}` : ''}
                 {kmLabel}
               </Tooltip>
             </Marker>

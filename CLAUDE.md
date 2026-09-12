@@ -452,7 +452,13 @@ keys, tables or deploy targets with any other project.
   time inside the single "Check-in"/"Check-out" column (muted `.secondary`
   second line, like `CrewCell`'s 2+-crew stacking) rather than a second
   column - table-only, a deliberate exception to the one-value-per-column rule.
-  Route point labels are the **stop name** (not the crew name); the Vehicle
+  Route point labels are the **stop name, plus the crew name on the map
+  pin** (`buildRoutePoints`' `crewPoint()` sets both `label` (stop name) and
+  `crew_name`; `RouteMap`'s pin tooltip shows `A · <crew name> · <stop
+  name> · N km`, skipping the stop-name part when it'd just repeat the crew
+  name - e.g. a crew record with no `stop_name` set, which falls back to the
+  crew's own name for `label` too - so a dispatcher can tell whose stop a
+  pin is without cross-referencing the crew list). The Vehicle
   column/field shows `vehicle_no` only; the Starts column is **"Ride Time"**.
 - **Shift + driver**: when a vehicle is picked, a **manual** Day/Night pill toggle
   (defaults to the row's saved `shift`, else Day - no auto-detection from the

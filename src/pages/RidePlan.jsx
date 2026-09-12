@@ -118,11 +118,11 @@ function CrewMatchCell({ row, crew }) {
 function StatusCell({ row }) {
   if (row.status === 'followed')
     return (
-      <span className={`status-text ${row.via_no ? 'bad' : 'on'}`}>
-        {row.via_no ? 'No Follow' : 'Followed'}
-        {row.ride ? ` · ${row.ride.ref_no}` : ''}
-        {row.isExtra && <span className="status-text off"> · Extra ride</span>}
-      </span>
+      <div className="crew-cell-stack">
+        <span className={`status-text ${row.via_no ? 'bad' : 'on'}`}>{row.via_no ? 'No Follow' : 'Followed'}</span>
+        {row.ride && <span className="secondary">{row.ride.ref_no}</span>}
+        {row.isExtra && <span className="status-text off">Extra ride</span>}
+      </div>
     )
   if (row.status === 'skipped')
     return (

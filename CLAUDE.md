@@ -945,6 +945,12 @@ keys, tables or deploy targets with any other project.
     happening" modal's Ride-ID-link path sets `via_no: true` too (same
     reasoning - a ride exists, but not via the primary flow); `Reopen` always
     resets it back to `false` alongside `status`/`ride_id`/`skip_reason`.
+    **`StatusCell` stacks, one per line** (`.crew-cell-stack`, the same
+    column-flex class the Crew cell uses for 2+ names): Followed/No Follow
+    on its own line, the linked ride's `ref_no` (muted `.secondary`) below
+    it, then "Extra ride" (flat muted) below that when `isExtra` - all three
+    used to run together on one `·`-joined line, which read cramped once the
+    ref_no and Extra-ride note were both present.
   - **Not happening** (any pending row) - an icon-only action (`Ban`, the
     same "circle with a line through it" icon `Rides.jsx` already uses for
     Cancel ride) rather than a text button like Follow/No, since it's the
@@ -1021,10 +1027,11 @@ keys, tables or deploy targets with any other project.
     whatever's already linked via some plan row's `ride_id`, and merges
     what's left in as synthetic, **client-side-only** rows (never written to
     `ride_plan_rows` - `id: 'extra-<ride id>'`, sorted after every real plan
-    row). Marked `isExtra: true`; the Status column appends a flat muted "·
-    Extra ride" note so it reads unmistakably as "this happened but wasn't
-    planned" (`row.ride.ref_no` still shows too, from the normal Followed
-    format). **The KM handling is the whole point**: an extra row's
+    row). Marked `isExtra: true`; the Status column's stacked `StatusCell`
+    (see the "No" bullet above) gets its extra "Extra ride" line so it reads
+    unmistakably as "this happened but wasn't planned" (the ref_no line
+    still shows too, from the normal Followed shape). **The KM handling is
+    the whole point**: an extra row's
     `planned_km` is `null` and `crew_matches` is `[]` (never real plan
     values), while its `ride`/`actualCrewNames`/`actualVehicleNo` are the
     real dispatched ride's - so it flows through `summary`/`report`'s

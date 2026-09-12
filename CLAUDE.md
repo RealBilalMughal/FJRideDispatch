@@ -1251,7 +1251,15 @@ keys, tables or deploy targets with any other project.
     followed/linked into - `ride_plan_rows.ride_id` is a nullable pointer
     FROM the plan row TO the ride (`on delete set null` runs the other way,
     if the ride itself is ever deleted), so removing plan rows has no effect
-    on the `rides` table at all.
+    on the `rides` table at all. **Verifies what actually got deleted** -
+    `doDeletePlan()` adds `.select('id')` to the delete and checks the
+    returned count against `rows` (excluding synthetic "Extra ride" entries,
+    which were never real `ride_plan_rows` to begin with) rather than
+    trusting a null `error`: an RLS policy that silently excludes some rows
+    (e.g. a city the caller can't touch) still reports no error, so a
+    delete that quietly did nothing - or less than expected - used to look
+    identical to success. Now toasts an explicit error/partial-delete
+    warning instead.
   - **The page itself never scrolls - only the table does**, in its own
     fixed-height box with its header frozen inside it (`.rp-plan-table .data-
     table-scroll`, `overflow-y: auto`, `max-height: var(--rp-table-max-h)`).

@@ -435,15 +435,29 @@ export default function RidePlan() {
 
   // Deletes this day's plan rows only (not the rides they were followed
   // into) - a plan can be re-uploaded after a correction without touching
-  // whatever has already been dispatched.
+  // whatever has already been dispatched. `.select('id')` + checking the
+  // returned count (rather than trusting a null `error`) matters here - an
+  // RLS policy that silently excludes some rows (e.g. a city the caller
+  // can't touch) still reports no error, so a delete that quietly did
+  // nothing (or did less than expected) used to look identical to success.
   const doDeletePlan = async () => {
     setDeleting(true)
+    // `rows` also holds synthetic "Extra ride" entries (see fetchRows below)
+    // that were never real ride_plan_rows to begin with - exclude them or
+    // this comparison would always look like a partial delete.
+    const expected = rows.filter((r) => !r.isExtra).length
     let q = supabase.from('ride_plan_rows').delete().eq('plan_date', planDate)
     if (cityId != null) q = q.eq('city_id', cityId)
-    const { error } = await q
+    const { data, error } = await q.select('id')
     setDeleting(false)
     if (error) return toast.error(error.message)
-    toast.success(`Deleted the plan for ${fmtDate(planDate)}`)
+    const deleted = data?.length ?? 0
+    if (deleted === 0) return toast.error('Nothing was deleted - check your permissions for this city')
+    if (deleted < expected) {
+      toast.error(`Only ${deleted} of ${expected} row(s) deleted - the rest may belong to a city you can't edit`)
+    } else {
+      toast.success(`Deleted the plan for ${fmtDate(planDate)}`)
+    }
     setDeletePlanOpen(false)
     fetchRows()
   }

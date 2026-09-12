@@ -37,6 +37,28 @@ const RIDE_SELECT = `
   ride_crew(seq, crew:crew(name))
 `
 
+const PAGE_SIZE = 1000
+
+// PostgREST caps a single response at its configured max rows (commonly
+// 1000) - a wide date range (This Month/All time) can easily hold more
+// rides/ride_plan_rows than that, and a single un-paginated query would
+// silently truncate the result, undercounting every summary card's sum.
+// `build(from, to)` must return a FRESH query each call (a Postgrest
+// builder fires once, it can't be re-awaited with a different `.range()`)
+// with `.range(from, to)` applied to it.
+async function fetchAllPages(build) {
+  let all = []
+  let offset = 0
+  for (;;) {
+    const { data, error } = await build(offset, offset + PAGE_SIZE - 1)
+    if (error) return { data: null, error }
+    all = all.concat(data || [])
+    if (!data || data.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+  return { data: all, error: null }
+}
+
 const etaOf = (startAt, durMin) =>
   startAt && durMin != null ? new Date(new Date(startAt).getTime() + durMin * 60000).toISOString() : null
 
@@ -45,7 +67,6 @@ const fmtMonth = (ym) =>
 
 const RIDE_SECTIONS = [
   { key: 'rides', label: 'Ride-wise' },
-  { key: 'km', label: 'KM-wise' },
   { key: 'deadhead', label: 'Deadhead' },
   { key: 'pickup', label: 'Pickup' },
   { key: 'dropoff', label: 'Drop Off' },
@@ -82,6 +103,7 @@ export default function Reports() {
 
   const [rows, setRows] = useState([])
   const [planRows, setPlanRows] = useState([])
+  const [extraRides, setExtraRides] = useState([])
   const [loading, setLoading] = useState(true)
 
   const isPlan = section === 'plan'
@@ -90,38 +112,85 @@ export default function Reports() {
   // fetched rows are filtered/summarised below, not what's fetched.
   useEffect(() => {
     if (!canViewRides || isPlan || !section) return
+    let alive = true
     setLoading(true)
-    let q = supabase.from('rides').select(RIDE_SELECT)
-    if (dateFrom) q = q.gte('ride_date', dateFrom)
-    if (dateTo) q = q.lte('ride_date', dateTo)
-    if (cityId != null) q = q.eq('city_id', cityId)
-    q.order('ride_date', { ascending: false })
-      .order('start_at', { ascending: true })
-      .then(({ data, error }) => {
-        if (error) toast.error('Could not load the report')
-        setRows(data ?? [])
-        setLoading(false)
-      })
+    fetchAllPages((from, to) => {
+      let q = supabase.from('rides').select(RIDE_SELECT)
+      if (dateFrom) q = q.gte('ride_date', dateFrom)
+      if (dateTo) q = q.lte('ride_date', dateTo)
+      if (cityId != null) q = q.eq('city_id', cityId)
+      return q.order('ride_date', { ascending: false }).order('start_at', { ascending: true }).range(from, to)
+    }).then(({ data, error }) => {
+      if (!alive) return
+      if (error) toast.error('Could not load the report')
+      setRows(data ?? [])
+      setLoading(false)
+    })
+    return () => {
+      alive = false
+    }
   }, [canViewRides, isPlan, section, dateFrom, dateTo, cityId])
 
   useEffect(() => {
     if (!canViewPlan || !isPlan) return
+    let alive = true
     setLoading(true)
-    let q = supabase
-      .from('ride_plan_rows')
-      .select('plan_date, block_type, planned_km, status, ride:rides(distance_km, status, count_km)')
-    if (dateFrom) q = q.gte('plan_date', dateFrom)
-    if (dateTo) q = q.lte('plan_date', dateTo)
-    if (cityId != null) q = q.eq('city_id', cityId)
-    q.then(({ data, error }) => {
-      if (error) toast.error('Could not load the report')
-      setPlanRows(data ?? [])
+    Promise.all([
+      // the plan itself
+      fetchAllPages((from, to) => {
+        let q = supabase
+          .from('ride_plan_rows')
+          .select('plan_date, block_type, planned_km, status, ride_id, ride:rides(distance_km, status, count_km)')
+        if (dateFrom) q = q.gte('plan_date', dateFrom)
+        if (dateTo) q = q.lte('plan_date', dateTo)
+        if (cityId != null) q = q.eq('city_id', cityId)
+        return q.range(from, to)
+      }),
+      // rides in this same window - to find any dispatched OUTSIDE the plan
+      // (see the "extra ride" merge below), same as Ride Plan's own page.
+      fetchAllPages((from, to) => {
+        let q = supabase
+          .from('rides')
+          .select('id, ride_date, block_type, distance_km, status, count_km')
+        if (dateFrom) q = q.gte('ride_date', dateFrom)
+        if (dateTo) q = q.lte('ride_date', dateTo)
+        if (cityId != null) q = q.eq('city_id', cityId)
+        return q.range(from, to)
+      }),
+    ]).then(([planRes, rideRes]) => {
+      if (!alive) return
+      if (planRes.error || rideRes.error) toast.error('Could not load the report')
+      setPlanRows(planRes.data ?? [])
+      setExtraRides(rideRes.data ?? [])
       setLoading(false)
     })
+    return () => {
+      alive = false
+    }
   }, [canViewPlan, isPlan, dateFrom, dateTo, cityId])
 
+  // Real plan rows + synthetic entries for rides dispatched outside the plan
+  // entirely (no ride_plan_rows row references them) - same "Extra ride"
+  // concept as Ride Plan's own page, just aggregated over a whole range here
+  // instead of one day. `planned_km: null` is the whole trick: these add to
+  // Actual KM below but never to Planned KM.
+  const planEntries = useMemo(() => {
+    const linkedIds = new Set(planRows.filter((r) => r.ride_id).map((r) => r.ride_id))
+    const extra = extraRides
+      .filter((r) => !linkedIds.has(r.id))
+      .map((r) => ({
+        plan_date: r.ride_date,
+        block_type: r.block_type,
+        planned_km: null,
+        status: 'followed',
+        ride: r,
+        isExtra: true,
+      }))
+    return [...planRows, ...extra]
+  }, [planRows, extraRides])
+
   const filteredRows = useMemo(() => {
-    if (section === 'rides' || section === 'km' || isPlan) return rows
+    if (section === 'rides' || isPlan) return rows
     return rows.filter((r) => r.block_type === section)
   }, [rows, section, isPlan])
 
@@ -141,10 +210,10 @@ export default function Reports() {
 
   const planSummary = useMemo(() => {
     const byBlock = Object.fromEntries(SUMMARY_BLOCKS.map((b) => [b, { plannedKm: 0, actualKm: 0, followed: 0, total: 0 }]))
-    for (const r of planRows) {
+    for (const r of planEntries) {
       const b = byBlock[r.block_type]
       if (!b) continue
-      b.total += 1
+      if (!r.isExtra) b.total += 1
       b.plannedKm += Number(r.planned_km) || 0
       if (r.status === 'followed') {
         b.followed += 1
@@ -161,15 +230,15 @@ export default function Reports() {
       { plannedKm: 0, actualKm: 0, followed: 0, total: 0 },
     )
     return { byBlock, total }
-  }, [planRows])
+  }, [planEntries])
 
   const planBreakdown = useMemo(() => {
     const keyOf = (d) => (planGroupBy === 'month' ? d.slice(0, 7) : d)
     const map = new Map()
-    for (const r of planRows) {
+    for (const r of planEntries) {
       const k = keyOf(r.plan_date)
       const row = map.get(k) || { key: k, plannedKm: 0, actualKm: 0, followed: 0, total: 0 }
-      row.total += 1
+      if (!r.isExtra) row.total += 1
       row.plannedKm += Number(r.planned_km) || 0
       if (r.status === 'followed') {
         row.followed += 1
@@ -178,7 +247,7 @@ export default function Reports() {
       map.set(k, row)
     }
     return [...map.values()].sort((a, b) => b.key.localeCompare(a.key))
-  }, [planRows, planGroupBy])
+  }, [planEntries, planGroupBy])
 
   const rideColumns = [
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
@@ -294,6 +363,7 @@ export default function Reports() {
         </div>
 
         <div className="rpt-panel">
+          <h2 className="rpt-panel-head">{sections.find((s) => s.key === section)?.label}</h2>
           {isPlan ? (
             <>
               <StatCards

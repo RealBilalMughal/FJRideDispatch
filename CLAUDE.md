@@ -862,33 +862,55 @@ keys, tables or deploy targets with any other project.
     Today/This Week/This Month/All time presets, or a custom range - plus
     the global topbar city filter (`useCity()`, no separate picker on this
     page). An **Export CSV** button dumps whatever's currently on screen.
-  - **Ride-wise / KM-wise / Deadhead / Pickup / Drop Off / Return Leg** (six
-    left-list items, `rides.view`) - all six share ONE query (every ride in
-    the date range + city), differing only in how the fetched rows are
-    filtered/summarised: Ride-wise and KM-wise show everything, the four
-    block-named ones filter to that `block_type`. Each shows a `StatCards`
-    row (Total rides + KM, then one card per `SUMMARY_BLOCKS` block - count
-    + KM) above a full row-level `DataTable` - the same column set every
-    report (Date, ID, Flight, Block, Crew, Count, Vehicle, Shift, Driver,
-    Ride Time, ETA, KM, Billable KM, Status) rather than a different table
-    shape per report, since underneath they're the same `rides` rows just
-    filtered differently - `rideVehicleText()`/`rideDriverText()`/
-    `billableKm()`/`crewNamesText()`/`displayCrewCount()` (all now exported
-    from `rideRoute.js` - moved there from being Rides.jsx-local consts
-    specifically so this page could reuse the exact same ad-hoc-vehicle /
-    cancelled-ride-billable-KM / crew-count business rules instead of a
-    second, driftable copy) render every cell exactly like the Rides page's
-    own table would.
+    The right panel always opens with an `.rpt-panel-head` showing the
+    selected report's own name (e.g. "Deadhead") - added after the plain
+    "Reports" page title alone left the currently-open report ambiguous.
+  - **Ride-wise / Deadhead / Pickup / Drop Off / Return Leg** (five
+    left-list items, `rides.view` - a sixth, "KM-wise", was cut: it was the
+    exact same rows/columns as Ride-wise with no distinct lens on top, so it
+    didn't earn a separate entry) - all share ONE query (every ride in the
+    date range + city, fetched via `fetchAllPages()` - see below), differing
+    only in how the fetched rows are filtered/summarised: Ride-wise shows
+    everything, the four block-named ones filter to that `block_type`. Each
+    shows a `StatCards` row (Total rides + KM, then one card per
+    `SUMMARY_BLOCKS` block - count + KM) above a full row-level `DataTable` -
+    the same column set every report (Date, ID, Flight, Block, Crew, Count,
+    Vehicle, Shift, Driver, Ride Time, ETA, KM, Billable KM, Status) rather
+    than a different table shape per report, since underneath they're the
+    same `rides` rows just filtered differently -
+    `rideVehicleText()`/`rideDriverText()`/`billableKm()`/`crewNamesText()`/
+    `displayCrewCount()` (all now exported from `rideRoute.js` - moved there
+    from being Rides.jsx-local consts specifically so this page could reuse
+    the exact same ad-hoc-vehicle / cancelled-ride-billable-KM / crew-count
+    business rules instead of a second, driftable copy) render every cell
+    exactly like the Rides page's own table would.
   - **Ride Plan vs Actual** (`ride_plan.view`) - reads `ride_plan_rows` over
     the SAME date range (`RidePlan.jsx`'s own Report panel is single-
     `plan_date`-only; this is the multi-day/month version of the same
-    Planned-vs-Actual math). A `StatCards` row (Total + per-block Planned/
-    Actual KM + followed count, identical shape to Ride Plan's own summary
-    cards) sits above a **Day/Month breakdown toggle** (`.date-tabs`, like
-    every other page's quick-filter tabs) - the detail table below is one
-    row PER DATE or PER MONTH (not per plan-row/trip - "date wise month
-    wise" was the explicit ask), each with Plan Rows / Followed / Planned
-    KM / Actual KM / Difference columns.
+    Planned-vs-Actual math) - **plus the same "Extra ride" merge Ride Plan's
+    own page does** (`planEntries` = real plan rows + a synthetic entry per
+    `rides` row in the window that no `ride_plan_rows.ride_id` references,
+    `planned_km: null`/`isExtra: true` so it only ever adds to Actual KM,
+    never Planned KM or the "Plan Rows" count) - the first cut of this
+    report queried `ride_plan_rows` alone and so under-reported Actual KM by
+    exactly whatever was dispatched outside the plan, a real discrepancy
+    against Ride Plan's own per-day numbers once a range crossed a date that
+    had any. A `StatCards` row (Total + per-block Planned/Actual KM +
+    followed count, identical shape to Ride Plan's own summary cards) sits
+    above a **Day/Month breakdown toggle** (`.date-tabs`, like every other
+    page's quick-filter tabs) - the detail table below is one row PER DATE
+    or PER MONTH (not per plan-row/trip - "date wise month wise" was the
+    explicit ask), each with Plan Rows / Followed / Planned KM / Actual KM /
+    Difference columns.
+  - **`fetchAllPages()`** (`Reports.jsx`, module-level) - every query on this
+    page (rides, `ride_plan_rows`, the plan section's extra-ride rides) loops
+    `.range(offset, offset+999)` pages until a short page comes back, rather
+    than a single un-paginated call. PostgREST caps one response at its
+    configured max rows (1000 by default) - fine for Ride Plan's own single-
+    day queries, but Reports' whole point is wide ranges (This Month, All
+    time), which could silently truncate past that cap and undercount every
+    summary card - the exact "cards ka sum ghalat hai" bug class this
+    guards against, independent of the Extra-ride fix above.
   - **`src/components/DateRangePicker.jsx`** (+ `date-range-picker.css`) -
     the "airline website" calendar range picker: a trigger button (shows the
     active preset's name, or `"01-Sep-26 – 12-Sep-26"` for a custom range)

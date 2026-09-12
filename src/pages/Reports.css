@@ -53,6 +53,15 @@
   min-width: 0;
 }
 
+.rpt-panel-head {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--heading);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
 .rpt-subbar {
   display: flex;
   align-items: center;

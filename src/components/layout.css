@@ -5,12 +5,21 @@
   background: var(--surface);
 }
 
+/* Desktop icon-only mode: overriding --sidebar-w here is what both the
+   sidebar's own width AND .app-main's margin-left read from, so the two
+   stay in lockstep with one variable instead of two separately-toggled
+   classes. */
+.app-shell.sidebar-collapsed {
+  --sidebar-w: 68px;
+}
+
 .app-main {
   flex: 1;
   min-width: 0;
   margin-left: var(--sidebar-w);
   display: flex;
   flex-direction: column;
+  transition: margin-left 0.18s ease;
 }
 
 /* ---------- sidebar (light, sectioned) ---------- */
@@ -25,6 +34,7 @@
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 40;
+  transition: width 0.18s ease;
 }
 
 .sidebar-brand {
@@ -41,6 +51,56 @@
 .sidebar-brand .sidebar-logo {
   height: 34px;
   width: auto;
+}
+
+.sidebar-collapse-btn {
+  margin-left: auto;
+}
+
+.sidebar.collapsed .sidebar-brand {
+  padding: 0;
+  justify-content: center;
+}
+
+/* the sidebar's own "Search" trigger, opening CommandPalette.jsx's overlay */
+.sidebar-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 12px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sidebar-search-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sidebar-search-btn svg {
+  flex-shrink: 0;
+}
+.sidebar-search-btn kbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: inherit;
+}
+
+.sidebar.collapsed .sidebar-search-btn {
+  justify-content: center;
+  margin: 8px;
+  padding: 9px;
+}
+.sidebar.collapsed .sidebar-search-btn span,
+.sidebar.collapsed .sidebar-search-btn kbd {
+  display: none;
 }
 
 .sidebar-nav {
@@ -70,6 +130,35 @@
   text-transform: uppercase;
   color: var(--muted);
   padding: 0 10px 6px;
+}
+
+/* today's "needs attention" count - pushed to the link's far end */
+.nav-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Icon-only mode: hide section labels and every link's text/badge (still
+   reachable via the link's own `title` tooltip), centre the icon. */
+.sidebar.collapsed .nav-section-label {
+  display: none;
+}
+.sidebar.collapsed .sidebar-nav a {
+  justify-content: center;
+  padding: 9px;
+}
+.sidebar.collapsed .sidebar-nav a span {
+  display: none;
 }
 
 .sidebar-nav a {
@@ -284,6 +373,17 @@
 }
 
 @media (max-width: 900px) {
+  /* Collapse is a desktop-only concept - the mobile sidebar is already a
+     full-width slide-in drawer (below), so force the full width back and
+     hide the toggle rather than let a desktop-collapsed session open as an
+     unusable 68px-wide drawer. */
+  .app-shell.sidebar-collapsed {
+    --sidebar-w: 246px;
+  }
+  .sidebar-collapse-btn {
+    display: none;
+  }
+
   .sidebar {
     transform: translateX(-100%);
     transition: transform 0.22s ease;

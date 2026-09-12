@@ -326,12 +326,24 @@ export default function Rides() {
 
   const today = pkToday()
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  // A ?q= from the sidebar's Cmd+K quick search seeds the search box AND
+  // switches the date range to All - the default "Today" filter would
+  // otherwise hide whatever the search was actually looking for if it
+  // isn't dated today.
+  const initialQ = searchParams.get('q') || ''
+  const [search, setSearch] = useState(initialQ)
   const [blockFilter, setBlockFilter] = useState('all')
   // date range: driven by the Today/Week/Month/All tabs, or typed directly (then no tab is "on")
-  const [datePreset, setDatePreset] = useState('today')
-  const [dateFrom, setDateFrom] = useState(today)
-  const [dateTo, setDateTo] = useState(today)
+  const [datePreset, setDatePreset] = useState(initialQ ? 'all' : 'today')
+  const [dateFrom, setDateFrom] = useState(initialQ ? '' : today)
+  const [dateTo, setDateTo] = useState(initialQ ? '' : today)
+  useEffect(() => {
+    if (!initialQ) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('q')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [flightFilter, setFlightFilter] = useState('')
   const [vehicleFilter, setVehicleFilter] = useState('')
   const [shiftFilter, setShiftFilter] = useState('')

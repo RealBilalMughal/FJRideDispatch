@@ -99,7 +99,8 @@ export default function Vehicles() {
   }, [canView])
 
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  // seeded from ?q= (the sidebar's Cmd+K quick search) when arriving here
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
   const [statusFilter, setStatusFilter] = useState('all')
   const [driverFilter, setDriverFilter] = useState('all')
   const [vendorFilter, setVendorFilter] = useState('all')

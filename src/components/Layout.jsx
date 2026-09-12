@@ -1,8 +1,9 @@
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
+import CommandPalette from './CommandPalette'
 import './layout.css'
 
 function DeactivatedScreen({ onSignOut }) {
@@ -26,14 +27,54 @@ export default function Layout() {
   const { profile, loading, signOut } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const closeSidebar = () => setSidebarOpen(false)
+  // Desktop icon-only mode - a separate concern from the mobile slide-in
+  // drawer above (`sidebarOpen`). Remembered across sessions.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebarCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleCollapsed = () =>
+    setCollapsed((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('sidebarCollapsed', next ? '1' : '0')
+      } catch {
+        /* private browsing, storage disabled, etc. - just don't persist */
+      }
+      return next
+    })
+
+  // Global Ctrl/Cmd+K quick search - works from any page, not just when the
+  // sidebar's own "Search" button is visible (e.g. icon-only/mobile).
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   if (!loading && profile && profile.is_active === false) {
     return <DeactivatedScreen onSignOut={signOut} />
   }
 
   return (
-    <div className="app-shell">
-      <Sidebar open={sidebarOpen} onNavigate={closeSidebar} />
+    <div className={`app-shell${collapsed ? ' sidebar-collapsed' : ''}`}>
+      <Sidebar
+        open={sidebarOpen}
+        onNavigate={closeSidebar}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        onOpenSearch={() => setPaletteOpen(true)}
+      />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <div
         className={`sidebar-backdrop${sidebarOpen ? ' show' : ''}`}
         onClick={closeSidebar}

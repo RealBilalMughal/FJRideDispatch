@@ -109,7 +109,8 @@ export default function Crew() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
 
-  const [search, setSearch] = useState('')
+  // seeded from ?q= (the sidebar's Cmd+K quick search) when arriving here
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
   const [designationFilter, setDesignationFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stopFilter, setStopFilter] = useState('all')

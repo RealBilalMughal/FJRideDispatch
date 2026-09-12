@@ -59,6 +59,50 @@ keys, tables or deploy targets with any other project.
   Sections: Dispatch (Ride, Ride Plan, Vehicle Board, Tracker, Reports), Roster
   (Crew, Flights), Fleet (Vendors, Drivers, Vehicles), Administration (Users,
   Role Access, Settings), Account.
+  - **Collapsible (desktop icon-only mode)** - a `ChevronsLeft`/`ChevronsRight`
+    toggle in the brand strip; `Layout.jsx` owns the `collapsed` boolean
+    (persisted to `localStorage['sidebarCollapsed']`, survives a reload) and
+    applies it as an `.app-shell.sidebar-collapsed` class that overrides
+    `--sidebar-w` to `68px` - both `.sidebar`'s own `width` and `.app-main`'s
+    `margin-left` read that one variable, so they stay in lockstep without a
+    second toggled class. Collapsed hides the logo, section labels and every
+    link's text/badge (CSS only, `.sidebar.collapsed .sidebar-nav a span`) -
+    each link's own `title` attribute (label, or `"<label> · <count>"` when
+    it carries a badge) is the only way to tell them apart, a native
+    tooltip rather than a second custom one. **Desktop-only** - the mobile
+    breakpoint (`max-width: 900px`) forces `--sidebar-w` back to `246px` and
+    hides the toggle, so a session left collapsed on desktop never opens the
+    mobile slide-in drawer as an unusable 68px strip.
+  - **Live badge counts** - `useSidebarBadges()` (`Sidebar.jsx`, module-level
+    hook) fetches two "needs attention today" counts once on mount + every
+    60s + on a city-filter change, each a `count: 'exact', head: true`
+    query (no rows returned, just the count): **Ride Plan** -> today's
+    `ride_plan_rows` still `pending`; **Vehicle Board** -> today's `rides`
+    with no `vehicle_id` and `is_adhoc_vehicle = false` (an ad-hoc ride
+    also has a null `vehicle_id` but was never waiting for a fleet
+    assignment - same exclusion Vehicle Board's own `unassigned` list
+    applies) and not cancelled. Rendered as a small pill (`.nav-badge`,
+    `margin-left: auto` inside the flex link) after the label, hidden
+    (folded into the link's tooltip instead) when collapsed. Sits at the
+    Sidebar level (mounted once for the whole session) rather than each
+    target page computing its own badge, since the count needs to be visible
+    from every OTHER page too.
+  - **Quick search (Ctrl/Cmd+K)** - a "Search…" button under the brand strip
+    (and the global `Ctrl/Cmd+K` shortcut, bound in `Layout.jsx` so it works
+    from any page, not just when the sidebar button itself is reachable)
+    opens `src/components/CommandPalette.jsx`, a centred overlay searching
+    Rides (`ref_no` exact-match when the term is numeric, else `flight_no
+    ilike`) / Crew (`name ilike`) / Vehicles (`vehicle_no ilike`) in
+    parallel, each gated on that page's own `can(page,'view')` and the
+    topbar city filter, debounced 200ms, arrow-keys + Enter to navigate the
+    combined result list. **Doesn't open a specific row itself** - picking
+    a result navigates to that entity's own list page with `?q=<term>`,
+    which Rides/Crew/Vehicles each already seed their own existing search
+    box from on mount (`useState(() => new URLSearchParams(...).get('q') ||
+    '')`) rather than the palette needing to know how to open one - Rides
+    additionally switches its date filter to All when arriving this way
+    (its default "Today" would otherwise hide a result from any other day),
+    and clears the `q` param from the URL right after reading it.
 - **No topbar** - a floating profile chip top-right (`src/components/Topbar.jsx`).
 - **Modals** all use `src/components/Modal.jsx` (closes only via X / Esc, never a
   backdrop click). **Never `window.confirm` / `alert`** - use `ConfirmDialog.jsx`

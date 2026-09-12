@@ -518,6 +518,21 @@ keys, tables or deploy targets with any other project.
   applies the same per-city formula.
 - **Optimise stop order** button (pickup/dropoff, 3+ crew): ORS `/optimization`
   reorders the crew stops for the shortest drive (`optimizeCrewOrder` in ors.js).
+- **Duplicate-crew-on-flight guard** - `RideModal`'s `addCrew()` checks, the
+  moment a crew member is picked, whether they're already on ANOTHER ride
+  for this exact flight occurrence: same `flight_id` + `ride_date` + `block_
+  type` (excluding the ride being edited). If so the add is rejected with a
+  toast naming that other ride's `ref_no` (`"<name> is already dispatched on
+  this flight - Ride <ref_no>"`) instead of silently letting a crew member
+  get picked up/dropped off twice for one flight. **Deliberately scoped to
+  the same `block_type`** - a Deadhead/Return Leg legitimately reuses the
+  same crew + `flight_id` (see the "Also create a Deadhead/Return Leg"
+  bullets and `CreateRideModal` below) on a DIFFERENT block_type, so this
+  never fires on that already-correct flow. Two queries (candidate rides on
+  that flight/date/block, then `ride_crew` filtered to those ride ids +
+  this crew) rather than one embedded-join query - matches every other
+  cross-table lookup already in this file (RidePlan.jsx's `crewByRide`, the
+  same shape) rather than introducing a new PostgREST join pattern.
 - Table: **"Create Ride"** action on dropoff rides (was "Create Return Leg")
   opens `CreateRideModal` - a mode switch (flat underline tabs, `.date-tabs`)
   between two ways to auto-create a follow-on ride from the last crew this

@@ -2415,10 +2415,39 @@ function RideModal({
   const cityCrew = crew.filter((c) => c.city_id === cityId && !crewList.some((x) => x.id === c.id))
   const cityVehicles = vehicles.filter((v) => v.city_id === cityId)
 
-  const addCrew = (id) => {
+  // A crew member already dispatched on ANOTHER ride for this exact flight
+  // occurrence (same flight_id + ride_date) and the SAME block type can't be
+  // added again - e.g. picked up twice on two different Pickup rides for the
+  // same flight. Scoped to block_type specifically so it never fires on the
+  // Deadhead/Return-Leg companion flows, which legitimately reuse the same
+  // crew + flight_id on a DIFFERENT block_type by design.
+  const addCrew = async (id) => {
     const c = crew.find((x) => x.id === id)
     if (!c) return
     if (rule.max != null && crewList.length >= rule.max) return
+    if (form.flight_id) {
+      let dq = supabase
+        .from('rides')
+        .select('id, ref_no')
+        .eq('flight_id', form.flight_id)
+        .eq('block_type', form.block_type)
+        .eq('ride_date', form.ride_date)
+      if (row?.id) dq = dq.neq('id', row.id)
+      const { data: candidates } = await dq
+      if (candidates?.length) {
+        const { data: hit } = await supabase
+          .from('ride_crew')
+          .select('ride_id')
+          .eq('crew_id', id)
+          .in('ride_id', candidates.map((r) => r.id))
+          .maybeSingle()
+        if (hit) {
+          const dupeRef = candidates.find((r) => r.id === hit.ride_id)?.ref_no
+          toast.error(`${c.name} is already dispatched on this flight - Ride ${dupeRef}`)
+          return
+        }
+      }
+    }
     setCrewList((cl) => [...cl, c])
   }
   const removeCrew = (id) => setCrewList((cl) => cl.filter((c) => c.id !== id))

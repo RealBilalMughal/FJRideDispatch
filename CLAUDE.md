@@ -93,27 +93,35 @@ keys, tables or deploy targets with any other project.
     from every OTHER page too.
 - **No topbar** - a floating profile chip top-right (`src/components/Topbar.jsx`),
   plus one more icon button just to its left:
-  - **Quick search (Ctrl/Cmd+K)** - a plain `Search` `.icon-btn` immediately
-    left of the profile chip (`.topbar-search-btn` carries the
-    `margin-left: auto` that used to sit on `.profile-menu` itself, so the
-    two end up adjacent at the topbar's right edge instead of a gap opening
-    between them) - tried living in the sidebar first, moved here since a
-    left-panel button disappears in icon-only/collapsed mode and on mobile.
-    The global `Ctrl/Cmd+K` shortcut (bound in `Layout.jsx`) works from any
-    page regardless. Opens `src/components/CommandPalette.jsx`, a centred
-    overlay searching Rides (`ref_no` exact-match when the term is numeric,
-    else `flight_no ilike`) / Crew (`name ilike`) / Vehicles (`vehicle_no
-    ilike`) in parallel, each gated on that page's own `can(page,'view')`
-    and the topbar city filter, debounced 200ms, arrow-keys + Enter to
-    navigate the combined result list. **Doesn't open a specific row
-    itself** - picking a result navigates to that entity's own list page
-    with `?q=<term>`, which Rides/Crew/Vehicles each already seed their own
-    existing search box from on mount (`useState(() => new
-    URLSearchParams(...).get('q') || '')`) rather than the palette needing
-    to know how to open one - Rides additionally switches its date filter
-    to All when arriving this way (its default "Today" would otherwise
-    hide a result from any other day), and clears the `q` param from the
-    URL right after reading it.
+  - **Quick search (Ctrl/Cmd+K)** - `src/components/TopbarSearch.jsx`, a
+    REAL search bar (placeholder "Search Anything", light `--muted`
+    placeholder colour) immediately left of the profile chip (`.topbar-
+    search` carries the `margin-left: auto` that used to sit on `.profile-
+    menu` itself, so the two end up adjacent at the topbar's right edge
+    instead of a gap opening between them) - not an icon that opens a
+    separate popup (a `CommandPalette.jsx` centred-overlay version was
+    tried and dropped: typing should search right there, not detach into
+    another surface). Typing drops results into a menu attached directly
+    below the bar (`.topbar-search-menu`, same absolute-dropdown convention
+    as `SearchSelect.jsx`, anchored `right: 0` so it opens leftward and
+    can't run off-screen from a bar already near the right edge - the same
+    fix `DateRangePicker` needed once already), closed by clicking away,
+    Esc, or picking a result. Searches Rides (`ref_no` exact-match when the
+    term is numeric, else `flight_no ilike`) / Crew (`name ilike`) /
+    Vehicles (`vehicle_no ilike`) in parallel, each gated on that page's own
+    `can(page,'view')` and the topbar city filter, debounced 200ms, arrow-
+    keys + Enter to navigate the combined result list. The global `Ctrl/
+    Cmd+K` shortcut is bound INSIDE this component (not `Layout.jsx` - it's
+    always mounted in the Topbar so there's nothing to lift the listener
+    up for) and just focuses/selects the bar's own input, never opens
+    anything separate. **Doesn't open a specific row itself** - picking a
+    result navigates to that entity's own list page with `?q=<term>`, which
+    Rides/Crew/Vehicles each already seed their own existing search box
+    from on mount (`useState(() => new URLSearchParams(...).get('q') ||
+    '')`) rather than this component needing to know how to open one -
+    Rides additionally switches its date filter to All when arriving this
+    way (its default "Today" would otherwise hide a result from any other
+    day), and clears the `q` param from the URL right after reading it.
 - **Modals** all use `src/components/Modal.jsx` (closes only via X / Esc, never a
   backdrop click). **Never `window.confirm` / `alert`** - use `ConfirmDialog.jsx`
   or `ConfirmDelete.jsx` (type-DELETE variant).
@@ -214,9 +222,11 @@ keys, tables or deploy targets with any other project.
 ## Pages
 - `Dashboard` (`/`, always visible - the landing page) - ride analytics over
   a Today / Week / **This Month** / Month / All date range (**default This
-  Month**; custom from/to inputs too - `.date-tabs` + `presetRange()`, same
-  as the Rides filter bar but with the extra `this-month` preset =
-  month-to-date, 1st → today, vs `month` = the full calendar month) and the
+  Month**; `DateRangePicker` - same component/calendar-popover the Rides
+  filter bar and Reports use, but passed its own 5-item `presets` list -
+  `presetRange()`'s extra `this-month` preset = month-to-date, 1st → today,
+  vs `month` = the full calendar month, a distinction Rides/Reports don't
+  make) and the
   global city filter. Borderless metric cards (`Dashboard.css`, an
   intentional exception to the no-cards rule; white with `--shadow-sm`, 14px
   radius, an icon chip each). Sections:
@@ -804,13 +814,15 @@ keys, tables or deploy targets with any other project.
   option value `''` at the top of their option list. Matched against the
   ride's `flight_id`/`vehicle_id`/`shift`/`driver_id` (the SELECT carries
   `driver_id` alongside the joined `driver` object for this).
-- **Date range**: always-visible **Today / Week / Month / All** tabs (flat
-  underline style, like `RoleAccess`'s mode switch) drive a `dateFrom`/`dateTo`
-  range - Week = Monday-Sunday of the current week, Month = the calendar
-  month, All = no bound. Two `<input type="date">`s next to the tabs allow a
-  custom range (typing one clears the active tab - `datePreset` becomes `''`).
-  **Today is the default on every load** (`useState('today')`), and is the
-  neutral state `activeCount`/Clear resets back to, not an empty filter.
+- **Date range**: `src/components/DateRangePicker.jsx` (see Pages -> Reports,
+  where it was built) drives a `dateFrom`/`dateTo` range - Today/This Week/
+  This Month/All time presets, or a click-to-select custom range off its own
+  two-month calendar popover. Used to be a `.date-tabs` row + two plain
+  `<input type="date">`s, replaced outright. Week = Monday-Sunday of the
+  current week, Month = the calendar month, All = no bound - same
+  `presetRange()` semantics as everywhere else. **Today is the default on
+  every load** (`useState('today')`), and is the neutral state
+  `activeCount`/Clear resets back to, not an empty filter.
 - **Summary** button (Rides header, `Sigma` icon, toggles `.rides-summary`) -
   a panel over the **currently filtered** rides: a total (count + Σ KM) and
   a per-**Duty-Sheet-date** breakdown (newest first, each date's ride count +
@@ -986,7 +998,16 @@ keys, tables or deploy targets with any other project.
     so callers can tell "This Month" and "01 Sep - 30 Sep picked by hand"
     apart even when they resolve to the same dates. Generic/reusable - takes
     no ride-specific props - so any future page needing the same picker can
-    reuse it directly instead of copying it.
+    reuse it directly instead of copying it. **Now also the Rides page's and
+    Dashboard's own date filter** (both used to be a `.date-tabs` row +
+    two plain `<input type="date">`s - replaced outright, not kept as a
+    fallback). Takes an optional `presets` prop (`[{ value, label }]`,
+    defaulting to the same Today/This Week/This Month/All time list) so a
+    page can keep its own preset set - Dashboard passes its own 5
+    (`DATE_PRESETS` there still includes "This Month" = month-to-date
+    alongside a separate "Month" = the full calendar month, a distinction
+    Rides/Reports don't make) rather than the picker forcing every caller
+    onto one fixed list.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role

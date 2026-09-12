@@ -19,6 +19,7 @@ import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { addDays, fmtTimeOnly12, pkHourWeekday, pkToday, presetRange } from '../lib/time'
 import { blockLabel, displayCrewCount } from '../lib/rideRoute'
+import DateRangePicker from '../components/DateRangePicker'
 import './Dashboard.css'
 
 const DATE_PRESETS = [
@@ -147,13 +148,6 @@ export default function Dashboard() {
     }
   }, [ready, canRides, cityId])
 
-  const applyPreset = (p) => {
-    const r = presetRange(p)
-    setPreset(p)
-    setFrom(r.from)
-    setTo(r.to)
-  }
-
   const s = useMemo(() => rollup(rows), [rows])
   const p = useMemo(() => rollup(prevRows), [prevRows])
   const hasPrev = Boolean(from && to) && prevRows.length > 0
@@ -230,35 +224,15 @@ export default function Dashboard() {
         </div>
         {canRides && (
           <div className="page-actions">
-            <div className="date-tabs">
-              {DATE_PRESETS.map((x) => (
-                <button
-                  key={x.value}
-                  type="button"
-                  className={preset === x.value ? 'on' : ''}
-                  onClick={() => applyPreset(x.value)}
-                >
-                  {x.label}
-                </button>
-              ))}
-            </div>
-            <input
-              type="date"
-              className="filter-select"
-              value={from}
-              onChange={(e) => {
-                setFrom(e.target.value)
-                setPreset('')
-              }}
-            />
-            <span className="date-range-sep">–</span>
-            <input
-              type="date"
-              className="filter-select"
-              value={to}
-              onChange={(e) => {
-                setTo(e.target.value)
-                setPreset('')
+            <DateRangePicker
+              preset={preset}
+              from={from}
+              to={to}
+              presets={DATE_PRESETS}
+              onChange={({ preset: p, from: f, to: t }) => {
+                setPreset(p)
+                setFrom(f)
+                setTo(t)
               }}
             />
           </div>

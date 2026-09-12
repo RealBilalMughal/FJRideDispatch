@@ -70,6 +70,7 @@ import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
+import DateRangePicker from '../components/DateRangePicker'
 import RouteMap from '../components/RouteMap'
 import DataTable from '../components/data/DataTable'
 import BulkDeleteBar from '../components/data/BulkDeleteBar'
@@ -127,13 +128,6 @@ const EXPORT_COLS = [
   { key: 'status', label: 'Status' },
   { key: 'cancel_reason', label: 'Cancel reason' },
   { key: 'notes', label: 'Note' },
-]
-
-const DATE_PRESETS = [
-  { value: 'today', label: 'Today' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'all', label: 'All' },
 ]
 
 const etaOf = (startAt, durMin) =>
@@ -834,36 +828,14 @@ export default function Rides() {
         }}
         inline={
           <>
-            <div className="date-tabs">
-              {DATE_PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  className={datePreset === p.value ? 'on' : ''}
-                  onClick={() => applyDatePreset(p.value)}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <input
-              type="date"
-              className="filter-select"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value)
-                setDatePreset('')
-                setPage(1)
-              }}
-            />
-            <span className="date-range-sep">–</span>
-            <input
-              type="date"
-              className="filter-select"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value)
-                setDatePreset('')
+            <DateRangePicker
+              preset={datePreset}
+              from={dateFrom}
+              to={dateTo}
+              onChange={({ preset, from, to }) => {
+                setDatePreset(preset)
+                setDateFrom(from)
+                setDateTo(to)
                 setPage(1)
               }}
             />

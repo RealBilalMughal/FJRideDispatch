@@ -208,13 +208,6 @@
   display: none;
 }
 
-/* pushes itself (and the profile menu right after it) to the far right -
-   moved here from .profile-menu so this search trigger sits just to its
-   left instead of the two ending up with a gap between them. */
-.topbar-search-btn {
-  margin-left: auto;
-}
-
 /* ---------- profile menu ---------- */
 .profile-menu {
   position: relative;

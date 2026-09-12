@@ -4,7 +4,7 @@ import { fmtDate } from '../lib/format'
 import { pkToday, presetRange } from '../lib/time'
 import './date-range-picker.css'
 
-const PRESETS = [
+const DEFAULT_PRESETS = [
   { value: 'today', label: 'Today' },
   { value: 'week', label: 'This Week' },
   { value: 'month', label: 'This Month' },
@@ -36,11 +36,17 @@ const MONTH_NAME = (y, m) =>
  * current preset/range, opening a popover with quick presets on the left and
  * a two-month click-to-select calendar on the right.
  *
- * `preset`: 'today' | 'week' | 'month' | 'all' | '' (custom range)
+ * `preset`: one of `presets`' values, or '' for a custom range
  * `from`/`to`: 'YYYY-MM-DD' (both '' for the 'all' preset)
  * `onChange({ preset, from, to })`
+ * `presets`: optional `[{ value, label }]` list for the popover's left
+ * column - each `value` must be a `presetRange()` (`lib/time.js`) key.
+ * Defaults to Today/This Week/This Month/All time (what Rides/Reports use);
+ * pass a custom list to keep an existing page's own presets (e.g.
+ * Dashboard's extra "This Month" month-to-date vs "Month" full-calendar-
+ * month distinction) while still getting this same calendar widget.
  */
-export default function DateRangePicker({ preset, from, to, onChange }) {
+export default function DateRangePicker({ preset, from, to, onChange, presets = DEFAULT_PRESETS }) {
   const [open, setOpen] = useState(false)
   const [draftFrom, setDraftFrom] = useState(null) // mid-selection start date, or null
   const [viewYear, setViewYear] = useState(() => Number((from || pkToday()).slice(0, 4)))
@@ -69,20 +75,10 @@ export default function DateRangePicker({ preset, from, to, onChange }) {
     }
   }, [open])
 
+  const presetLabel = preset ? presets.find((p) => p.value === preset)?.label : null
   const label =
-    preset === 'today'
-      ? 'Today'
-      : preset === 'week'
-        ? 'This Week'
-        : preset === 'month'
-          ? 'This Month'
-          : preset === 'all'
-            ? 'All time'
-            : from && to
-              ? from === to
-                ? fmtDate(from)
-                : `${fmtDate(from)} – ${fmtDate(to)}`
-              : 'Pick a date range'
+    presetLabel ??
+    (from && to ? (from === to ? fmtDate(from) : `${fmtDate(from)} – ${fmtDate(to)}`) : 'Pick a date range')
 
   const pickPreset = (p) => {
     const r = presetRange(p)
@@ -187,7 +183,7 @@ export default function DateRangePicker({ preset, from, to, onChange }) {
       {open && (
         <div className="drp-menu">
           <div className="drp-presets">
-            {PRESETS.map((p) => (
+            {presets.map((p) => (
               <button
                 key={p.value}
                 type="button"

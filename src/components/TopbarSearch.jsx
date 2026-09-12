@@ -6,57 +6,68 @@ import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { blockLabel } from '../lib/rideRoute'
 import { fmtDate } from '../lib/format'
-import './command-palette.css'
+import './topbar-search.css'
 
 const DEBOUNCE_MS = 200
 const LIMIT = 6
 
 /**
- * Global quick search (Ctrl/Cmd+K) - a ride/crew/vehicle by ref number,
- * flight, name or plate, from anywhere in the app. Picking a result
- * navigates to that entity's own list page with `?q=<term>` - each of
- * Rides/Crew/Vehicles seeds its own existing search box from that param
- * (Rides also switches its date filter to All, since "Today" would
- * otherwise hide a result from another day) rather than this component
- * knowing how to open a specific row itself.
+ * Inline topbar search bar - a real input (placeholder "Search Anything"),
+ * not an icon that opens a separate popup. Typing searches Rides/Crew/
+ * Vehicles in parallel and drops the results in a menu right below the bar
+ * (same attached-dropdown convention as SearchSelect.jsx), closed by
+ * clicking away, Esc, or picking a result. Global Ctrl/Cmd+K focuses the
+ * bar itself rather than opening anything separate.
  */
-export default function CommandPalette({ open, onClose }) {
+export default function TopbarSearch() {
   const { can } = useAuth()
   const { cityId } = useCity()
   const navigate = useNavigate()
   const [term, setTerm] = useState('')
+  const [openMenu, setOpenMenu] = useState(false)
   const [rides, setRides] = useState([])
   const [crewList, setCrewList] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef(null)
+  const boxRef = useRef(null)
 
   const canRides = can('rides', 'view')
   const canCrew = can('crew', 'view')
   const canVehicles = can('vehicles', 'view')
 
   useEffect(() => {
-    if (!open) return
-    setTerm('')
-    setRides([])
-    setCrewList([])
-    setVehicles([])
-    setActiveIdx(0)
-    const t = setTimeout(() => inputRef.current?.focus(), 0)
-    return () => clearTimeout(t)
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [])
 
   useEffect(() => {
-    if (!open) return
+    if (!openMenu) return
+    const onDoc = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpenMenu(false)
+    }
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        setOpenMenu(false)
+        inputRef.current?.blur()
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [openMenu])
+
+  useEffect(() => {
     const q = term.trim()
     if (!q) {
       setRides([])
@@ -109,11 +120,13 @@ export default function CommandPalette({ open, onClose }) {
       alive = false
       clearTimeout(t)
     }
-  }, [term, open, canRides, canCrew, canVehicles, cityId])
+  }, [term, canRides, canCrew, canVehicles, cityId])
 
   const goTo = (path) => {
     navigate(path)
-    onClose()
+    setOpenMenu(false)
+    setTerm('')
+    inputRef.current?.blur()
   }
 
   const groups = useMemo(
@@ -172,34 +185,33 @@ export default function CommandPalette({ open, onClose }) {
     }
   }
 
-  if (!open) return null
-
+  const showMenu = openMenu && term.trim() !== ''
   let rowIndex = -1
 
   return (
-    <div className="cmdk-backdrop" onMouseDown={onClose}>
-      <div className="cmdk-box" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="cmdk-input-row">
-          <Search size={16} />
-          <input
-            ref={inputRef}
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Search rides, crew, vehicles…"
-          />
-          <kbd>Esc</kbd>
-        </div>
+    <div className="topbar-search" ref={boxRef}>
+      <Search size={15} />
+      <input
+        ref={inputRef}
+        value={term}
+        onChange={(e) => {
+          setTerm(e.target.value)
+          setOpenMenu(true)
+        }}
+        onFocus={() => setOpenMenu(true)}
+        onKeyDown={onKeyDown}
+        placeholder="Search Anything"
+      />
+      <kbd>Ctrl K</kbd>
 
-        <div className="cmdk-results">
-          {term.trim() === '' ? (
-            <div className="cmdk-empty">Type to search across Rides, Crew and Vehicles</div>
-          ) : flat.length === 0 ? (
-            <div className="cmdk-empty">No matches</div>
+      {showMenu && (
+        <div className="topbar-search-menu">
+          {flat.length === 0 ? (
+            <div className="topbar-search-empty">No matches</div>
           ) : (
             groups.map((g) => (
-              <div className="cmdk-group" key={g.key}>
-                <div className="cmdk-group-label">{g.label}</div>
+              <div className="topbar-search-group" key={g.key}>
+                <div className="topbar-search-group-label">{g.label}</div>
                 {g.items.map((item) => {
                   rowIndex += 1
                   const idx = rowIndex
@@ -207,14 +219,14 @@ export default function CommandPalette({ open, onClose }) {
                     <button
                       key={item.id}
                       type="button"
-                      className={`cmdk-item${idx === activeIdx ? ' active' : ''}`}
+                      className={`topbar-search-item${idx === activeIdx ? ' active' : ''}`}
                       onMouseEnter={() => setActiveIdx(idx)}
                       onClick={item.go}
                     >
                       <g.icon size={15} />
-                      <span className="cmdk-item-text">
-                        <span className="cmdk-item-title">{item.title}</span>
-                        <span className="cmdk-item-sub">{item.sub}</span>
+                      <span className="topbar-search-item-text">
+                        <span className="topbar-search-item-title">{item.title}</span>
+                        <span className="topbar-search-item-sub">{item.sub}</span>
                       </span>
                     </button>
                   )
@@ -223,7 +235,7 @@ export default function CommandPalette({ open, onClose }) {
             ))
           )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

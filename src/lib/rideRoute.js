@@ -21,6 +21,26 @@ export const ZERO_COUNT_BLOCKS = new Set(['return_leg', 'deadhead'])
 export const displayCrewCount = (rideCrew, block) =>
   ZERO_COUNT_BLOCKS.has(block) ? 0 : (rideCrew || []).length
 
+// KM that counts toward totals: 0 for a cancelled ride unless count_km is
+// set - the one rule the Rides page, Dashboard and Reports all sum by.
+export const billableKm = (r) => (r.status === 'cancelled' && !r.count_km ? 0 : Number(r.distance_km) || 0)
+
+export const crewNames = (rc) =>
+  [...(rc || [])]
+    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    .map((x) => x.crew?.name)
+    .filter(Boolean)
+export const crewNamesText = (rc) => crewNames(rc).join(', ') || '—'
+
+export const vehicleText = (v) => v?.vehicle_no || '—'
+
+// A ride's Vehicle/Driver text - an ad-hoc (rented, not-in-fleet) vehicle's
+// plain-text fields taking over from the real vehicle_id/driver_id relations
+// (see the 20260912120000_ride_adhoc_vehicle.sql migration).
+export const rideVehicleText = (r) =>
+  r.is_adhoc_vehicle ? `${r.adhoc_vehicle_no || '—'} · ad-hoc` : vehicleText(r.vehicle)
+export const rideDriverText = (r) => (r.is_adhoc_vehicle ? r.adhoc_driver_name || '—' : r.driver?.name || '—')
+
 // how many crew the block needs: { min, max } (max null = unlimited)
 export function crewRule(block, deadheadMode) {
   if (block === 'pickup' || block === 'dropoff') return { min: 1, max: null }

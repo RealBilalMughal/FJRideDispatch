@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Calendar, Car, ClipboardList, IdCard, LayoutDashboard, Plane, Route, Satellite, Settings, ShieldCheck, Store, UserRound, Users2, UsersRound } from 'lucide-react'
+import { BarChart3, Calendar, Car, ClipboardList, IdCard, LayoutDashboard, Plane, Route, Satellite, Settings, ShieldCheck, Store, UserRound, Users2, UsersRound } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 // Grouped like the BlackDrivo / GraphicSpark admin left panel: labelled
@@ -16,6 +16,7 @@ const NAV_SECTIONS = [
       { to: '/ride-plan', label: 'Ride Plan', icon: ClipboardList, page: 'ride_plan' },
       { to: '/vehicle-board', label: 'Vehicle Board', icon: Calendar, page: 'rides' },
       { to: '/tracker', label: 'Tracker', icon: Satellite, page: 'rides' },
+      { to: '/reports', label: 'Reports', icon: BarChart3, page: ['rides', 'ride_plan'] },
     ],
   },
   {
@@ -53,6 +54,11 @@ export default function Sidebar({ open, onNavigate }) {
   const isVisible = (item) => {
     if (item.superAdminOnly) return isSuperAdmin
     if (item.page === 'roles') return isSuperAdmin || can('roles', 'view')
+    // Reports reuses Rides/Ride Plan's own permissions rather than a page of
+    // its own (same reasoning as Vehicle Board/Tracker reusing 'rides') -
+    // visible with EITHER, since it serves both a ride-side and a plan-side
+    // audience.
+    if (Array.isArray(item.page)) return item.page.some((p) => can(p, 'view'))
     if (item.page) return can(item.page, 'view')
     return true
   }

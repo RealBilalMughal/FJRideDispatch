@@ -1,0 +1,86 @@
+/* Left report-list + right panel - same shape as Settings/Role Access's own
+   left-list layout, kept page-scoped rather than shared across pages. */
+.rpt-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 0;
+  align-items: start;
+}
+
+.rpt-list {
+  border-right: 1px solid var(--border);
+  padding-right: 18px;
+  margin-right: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rpt-list-head {
+  padding: 4px 8px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+
+.rpt-list-item {
+  width: 100%;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rpt-list-item:hover {
+  background: var(--surface);
+  color: var(--heading);
+}
+
+.rpt-list-item.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rpt-panel {
+  min-width: 0;
+}
+
+.rpt-subbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 0 10px;
+}
+
+.rpt-subbar-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--heading);
+}
+
+@media (max-width: 860px) {
+  .rpt-layout {
+    grid-template-columns: 1fr;
+  }
+  .rpt-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 12px;
+    margin-right: 0;
+    margin-bottom: 22px;
+  }
+  .rpt-list-head {
+    display: none;
+  }
+}

@@ -10,6 +10,7 @@ const Rides = lazy(() => import('./pages/Rides'))
 const RidePlan = lazy(() => import('./pages/RidePlan'))
 const VehicleBoard = lazy(() => import('./pages/VehicleBoard'))
 const Tracker = lazy(() => import('./pages/Tracker'))
+const Reports = lazy(() => import('./pages/Reports'))
 const Crew = lazy(() => import('./pages/Crew'))
 const Flights = lazy(() => import('./pages/Flights'))
 const Vendors = lazy(() => import('./pages/Vendors'))
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="ride-plan" element={<RidePlan />} />
           <Route path="vehicle-board" element={<VehicleBoard />} />
           <Route path="tracker" element={<Tracker />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="crew" element={<Crew />} />
           <Route path="flights" element={<Flights />} />
           <Route path="vendors" element={<Vendors />} />

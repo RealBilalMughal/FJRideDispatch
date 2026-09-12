@@ -845,6 +845,67 @@ keys, tables or deploy targets with any other project.
   15s; AI Track's `/items?time=0` only returns recently-pinged vehicles, so
   fixes **accumulate** by plate and are dropped only after 60 min unseen
   (reset on a city switch).
+- `Reports` (`/reports`, sidebar label "Reports", group "Dispatch") - the
+  advanced reporting page: a left report-list + right panel shell
+  (`.rpt-layout`/`.rpt-list`/`.rpt-panel` in `Reports.css`, page-scoped copy
+  of Settings/Role Access's own left-list pattern, not shared - see the
+  Settings section). **No page of its own in `PERMISSION_PAGES`** - reuses
+  `rides`/`ride_plan`'s existing permissions instead (same reasoning as
+  Vehicle Board/Tracker reusing `rides`), since every report here is just an
+  alternate view of data those two pages already gate. The sidebar entry's
+  `page` is an ARRAY (`['rides', 'ride_plan']`, `Sidebar.jsx`'s `isVisible`
+  gained array support for this - visible with either perm, not both), and
+  the page itself computes its own left-list `sections` from whichever of
+  `can('rides','view')`/`can('ride_plan','view')` the caller has (empty-both
+  shows the same "no access" placeholder Dashboard/RidePlan use elsewhere).
+  - **Filters**: one `DateRangePicker` (see below) drives every report -
+    Today/This Week/This Month/All time presets, or a custom range - plus
+    the global topbar city filter (`useCity()`, no separate picker on this
+    page). An **Export CSV** button dumps whatever's currently on screen.
+  - **Ride-wise / KM-wise / Deadhead / Pickup / Drop Off / Return Leg** (six
+    left-list items, `rides.view`) - all six share ONE query (every ride in
+    the date range + city), differing only in how the fetched rows are
+    filtered/summarised: Ride-wise and KM-wise show everything, the four
+    block-named ones filter to that `block_type`. Each shows a `StatCards`
+    row (Total rides + KM, then one card per `SUMMARY_BLOCKS` block - count
+    + KM) above a full row-level `DataTable` - the same column set every
+    report (Date, ID, Flight, Block, Crew, Count, Vehicle, Shift, Driver,
+    Ride Time, ETA, KM, Billable KM, Status) rather than a different table
+    shape per report, since underneath they're the same `rides` rows just
+    filtered differently - `rideVehicleText()`/`rideDriverText()`/
+    `billableKm()`/`crewNamesText()`/`displayCrewCount()` (all now exported
+    from `rideRoute.js` - moved there from being Rides.jsx-local consts
+    specifically so this page could reuse the exact same ad-hoc-vehicle /
+    cancelled-ride-billable-KM / crew-count business rules instead of a
+    second, driftable copy) render every cell exactly like the Rides page's
+    own table would.
+  - **Ride Plan vs Actual** (`ride_plan.view`) - reads `ride_plan_rows` over
+    the SAME date range (`RidePlan.jsx`'s own Report panel is single-
+    `plan_date`-only; this is the multi-day/month version of the same
+    Planned-vs-Actual math). A `StatCards` row (Total + per-block Planned/
+    Actual KM + followed count, identical shape to Ride Plan's own summary
+    cards) sits above a **Day/Month breakdown toggle** (`.date-tabs`, like
+    every other page's quick-filter tabs) - the detail table below is one
+    row PER DATE or PER MONTH (not per plan-row/trip - "date wise month
+    wise" was the explicit ask), each with Plan Rows / Followed / Planned
+    KM / Actual KM / Difference columns.
+  - **`src/components/DateRangePicker.jsx`** (+ `date-range-picker.css`) -
+    the "airline website" calendar range picker: a trigger button (shows the
+    active preset's name, or `"01-Sep-26 – 12-Sep-26"` for a custom range)
+    opens a popover styled after `SearchSelect`'s own dropdown convention
+    (outside-click + Esc to close, `position: absolute` menu, same
+    `mousedown`-listener pattern) with **Today/This Week/This Month/All
+    time** presets on the left (`presetRange()` from `lib/time.js` - the
+    same helper the Rides filter bar/Dashboard use, so "This Week" here
+    means exactly what it means everywhere else) and a two-month click-to-
+    select calendar on the right (Monday-first grid, `monthCells()`; click a
+    start date, hover previews the range, click the end date to commit and
+    close - order-independent, an end clicked before the start just swaps).
+    `onChange({ preset, from, to })` - `preset` is `''` for a custom range
+    so callers can tell "This Month" and "01 Sep - 30 Sep picked by hand"
+    apart even when they resolve to the same dates. Generic/reusable - takes
+    no ride-specific props - so any future page needing the same picker can
+    reuse it directly instead of copying it.
 - `Users` (`users` perm) - list / filter / add / edit / password / activate / bulk.
   Add/edit go through the `admin-users` EF. No commission fields (GraphicSpark-only).
 - `RoleAccess` (super_admin, or `roles.view`) - By Role / By User matrix + custom-role

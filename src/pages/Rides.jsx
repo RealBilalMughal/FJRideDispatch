@@ -40,9 +40,11 @@ import {
 } from '../lib/time'
 import {
   BLOCK_TYPES,
+  billableKm,
   blockExtraKm,
   blockLabel,
   buildRoutePoints,
+  crewNamesText,
   crewRule,
   crewWaitMinutes,
   DEFAULT_CHECKIN_BUFFER_MIN,
@@ -52,7 +54,9 @@ import {
   DEFAULT_RETURN_LEG_BUFFER_MIN,
   displayCrewCount,
   primaryTimeSlot,
+  rideDriverText,
   rideTimeLabel,
+  rideVehicleText,
   routeComplete,
   statusLabel,
 } from '../lib/rideRoute'
@@ -125,10 +129,6 @@ const EXPORT_COLS = [
   { key: 'notes', label: 'Note' },
 ]
 
-// KM that counts toward totals: 0 for a cancelled ride unless count_km is set.
-const billableKm = (r) =>
-  r.status === 'cancelled' && !r.count_km ? 0 : Number(r.distance_km) || 0
-
 const DATE_PRESETS = [
   { value: 'today', label: 'Today' },
   { value: 'week', label: 'Week' },
@@ -140,23 +140,6 @@ const etaOf = (startAt, durMin) =>
   startAt && durMin != null
     ? new Date(new Date(startAt).getTime() + durMin * 60000).toISOString()
     : null
-
-const crewNames = (rc) =>
-  [...(rc || [])]
-    .sort((a, b) => a.seq - b.seq)
-    .map((x) => x.crew?.name)
-    .filter(Boolean)
-    .join(', ')
-
-const crewNamesText = (rc) => crewNames(rc) || '—'
-
-const vehicleText = (v) => v?.vehicle_no || '—'
-
-// A ride's Vehicle/Driver text, an ad-hoc (rented, not-in-fleet) vehicle's
-// plain-text fields taking over from the real vehicle_id/driver_id relations.
-const rideVehicleText = (r) =>
-  r.is_adhoc_vehicle ? `${r.adhoc_vehicle_no || '—'} · ad-hoc` : vehicleText(r.vehicle)
-const rideDriverText = (r) => (r.is_adhoc_vehicle ? r.adhoc_driver_name || '—' : r.driver?.name || '—')
 
 // one paired field in the Ride View's left column (label stacked over value)
 const RvField = ({ label, value }) => (

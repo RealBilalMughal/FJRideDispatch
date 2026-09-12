@@ -639,35 +639,49 @@ keys, tables or deploy targets with any other project.
   every ad-hoc ride reuse the same `vehicle_id`, tripping the vehicle
   double-booking logic against unrelated ad-hoc rides, and would clutter the
   permanent Fleet list with something that isn't really one vehicle) -
-  instead it's four plain columns straight on `rides`: `is_adhoc_vehicle`,
-  `adhoc_vehicle_no`, `adhoc_driver_name`, `adhoc_driver_phone` (PK mobile,
-  `PkPhoneInput`/`lib/phone.js`, optional). An **"Ad-hoc vehicle (rented, not
-  in fleet)"** checkbox on the Ride form swaps the fleet `SearchSelect` for
-  three plain fields (Vehicle No, Driver name, Driver phone) - `vehicle_id`/
-  `driver_id` stay `null`. The Shift toggle (+ Duty Sheet-previous-day
-  checkbox) still shows for an ad-hoc ride - shift is a dispatch
-  classification independent of which vehicle actually ran it - just without
-  the fleet-vehicle-derived driver line beneath it. `RideModal`'s
-  `vehicleFields()` (and `CreateRideModal`'s equivalent `sameVehicleFields()`,
-  for its Return Leg/Deadhead tabs) build this whole cluster in one place so
-  the "Also create a Deadhead"/"Also create a Return Leg" companions and
-  `CreateRideModal`'s own follow-on rides inherit the SAME ad-hoc vehicle/
-  driver as their parent, exactly like they already inherit a real
-  `vehicle_id`. `rideVehicleText()`/`rideDriverText()` (Rides.jsx) are what
-  the table/CSV export/View modal read instead of `vehicle?.vehicle_no`/
-  `driver?.name` directly, appending "· ad-hoc" so it's never confused with a
-  real fleet plate. **Deliberately invisible to the Vehicle Board** - its
-  `unassigned` list explicitly excludes `is_adhoc_vehicle` rows (they'd
-  otherwise look like real rides waiting for a fleet assignment, since they
-  also have a null `vehicle_id`), and its per-vehicle gantt (`byVehicle`,
-  keyed on `vehicle_id`) never sees them either way - it isn't a fleet asset
-  to schedule against. Ride Plan's own **Ad-hoc Car** concept
+  instead it's plain columns straight on `rides`: `is_adhoc_vehicle`,
+  `adhoc_vehicle_no` (the only one ever populated by the UI - see below),
+  plus unused-for-now `adhoc_driver_name`/`adhoc_driver_phone` (kept in the
+  schema in case per-ride driver capture is wanted later, always `null`
+  today). An **"Ad-hoc vehicle (rented, not in fleet)"** checkbox on the Ride
+  form swaps the fleet `SearchSelect` for nothing at all to fill in -
+  `vehicle_id`/`driver_id` stay `null` and **`adhoc_vehicle_no` is assigned
+  automatically**: `"Ad-Hoc 01"`, `"Ad-Hoc 02"`, ... - the next number for
+  that ride's **city + calendar date** (an effect queries `rides` for
+  `is_adhoc_vehicle = true` rows already on that `city_id`+`ride_date`, takes
+  the highest trailing number, +1 - runs once right when the box is checked
+  and stores the result straight into `form.adhoc_vehicle_no`; unchecking
+  clears it so re-checking always gets a fresh number). The point of the
+  numbering (not a free-text plate) is purely so a dispatcher can see **how
+  many ad-hoc cars a given day needed** at a glance - no vehicle/driver
+  details are tracked per ad-hoc ride, only the count. The Shift toggle (+
+  Duty Sheet-previous-day checkbox) still shows for an ad-hoc ride - shift is
+  a dispatch classification independent of which vehicle actually ran it -
+  just without the fleet-vehicle-derived driver line beneath it (there's
+  nothing to show). `RideModal`'s `vehicleFields()` (and `CreateRideModal`'s
+  equivalent `sameVehicleFields()`, for its Return Leg/Deadhead tabs) build
+  this whole cluster in one place so the "Also create a Deadhead"/"Also
+  create a Return Leg" companions and `CreateRideModal`'s own follow-on rides
+  inherit the SAME `adhoc_vehicle_no` as their parent (same physical car
+  running the next leg, not a fresh number) exactly like they already
+  inherit a real `vehicle_id`. `rideVehicleText()`/`rideDriverText()`
+  (Rides.jsx) are what the table/CSV export/View modal read instead of
+  `vehicle?.vehicle_no`/`driver?.name` directly - Vehicle shows `"Ad-Hoc 01 ·
+  ad-hoc"`, Driver falls back to `RvField`'s own `'—'` (nothing to show).
+  **Deliberately invisible to the Vehicle Board** - its `unassigned` list
+  explicitly excludes `is_adhoc_vehicle` rows (they'd otherwise look like
+  real rides waiting for a fleet assignment, since they also have a null
+  `vehicle_id`), and its per-vehicle gantt (`byVehicle`, keyed on
+  `vehicle_id`) never sees them either way - it isn't a fleet asset to
+  schedule against. Ride Plan's own **Ad-hoc Car** concept
   (`ride_plan_rows.is_adhoc_car`/`car`, a free-text plate the sheet already
   marks as "bring in a rented car", planImport skips fleet-matching for it)
   now feeds straight into this: `buildPlanInitial()` pre-ticks the Ride
-  form's Ad-hoc checkbox and pre-fills the Vehicle No from the plan row's own
-  `car` text when Follow/No opens it. Ride Plan's own Vehicle-mismatch line
-  (`RidePlan.jsx`'s `actualVehicleNo`) also reads `is_adhoc_vehicle`/
+  form's Ad-hoc checkbox when Follow/No opens it (the plan's own `car` text
+  is NOT carried over - the Ride form assigns its own "Ad-Hoc NN" the same
+  way a manually-checked one does, keeping the numbering scheme uniform
+  regardless of how the ride got there). Ride Plan's own Vehicle-mismatch
+  line (`RidePlan.jsx`'s `actualVehicleNo`) also reads `is_adhoc_vehicle`/
   `adhoc_vehicle_no` off the linked ride, so a plan row that was PLANNED for
   a real fleet car but actually DISPATCHED on an ad-hoc one still shows the
   mismatch correctly instead of silently reading as "no actual vehicle".

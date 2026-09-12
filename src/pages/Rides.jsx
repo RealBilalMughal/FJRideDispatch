@@ -27,7 +27,6 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
-import { formatPkPhone, fromStored, pkPhoneError, toStored } from '../lib/phone'
 import {
   addDays,
   fmtTime12,
@@ -67,7 +66,6 @@ import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
-import PkPhoneInput from '../components/PkPhoneInput'
 import RouteMap from '../components/RouteMap'
 import DataTable from '../components/data/DataTable'
 import BulkDeleteBar from '../components/data/BulkDeleteBar'
@@ -222,11 +220,12 @@ function buildPlanInitial(planRow, { flights, crew, viaNo = false }) {
     checkin_old: slot === 'checkin' ? toTime24(matchedFlight?.flight_time) : undefined,
     checkout_old: slot === 'checkout' ? toTime24(matchedFlight?.flight_time) : undefined,
     // The plan's own Ad-hoc Car flag (planImport skips fleet-matching for
-    // these) carries straight over into the ride's own ad-hoc vehicle -
-    // same concept, just previously two disconnected fields.
+    // these) carries straight over into the ride's own ad-hoc vehicle - same
+    // concept, just previously two disconnected fields. Leaves
+    // adhoc_vehicle_no unset - the Ride form assigns the next "Ad-Hoc NN"
+    // for that city+date itself once the modal mounts with the box checked.
     vehicle_id: planRow.is_adhoc_car ? '' : planRow.matched_vehicle_id ?? '',
     is_adhoc_vehicle: Boolean(planRow.is_adhoc_car),
-    adhoc_vehicle_no: planRow.is_adhoc_car ? planRow.car || '' : '',
     start_time: toTime24(planRow.start_time),
     notes: viaNo ? `Plan trip ${planRow.trip_id} - dispatched despite "No"` : `Plan trip ${planRow.trip_id}`,
     crewList,
@@ -1260,8 +1259,9 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
       ? new Date(row.start_at).getTime() + row.duration_min * 60000
       : null
 
-  // Same vehicle/driver info as the parent dropoff ride - including an
-  // ad-hoc (rented) vehicle's plain-text fields, not just a real vehicle_id.
+  // Same vehicle info as the parent dropoff ride - including an ad-hoc
+  // (rented) vehicle's number, not just a real vehicle_id. Same ad-hoc car
+  // doing this follow-on leg, so it keeps the same "Ad-Hoc NN", not a new one.
   const sameVehicleFields = (shift) => {
     const veh = row.is_adhoc_vehicle ? null : vehicles.find((v) => v.id === row.vehicle_id)
     const driverId = veh ? (shift === 'night' ? veh.night_driver_id : veh.driver_id) : null
@@ -1272,8 +1272,8 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
       driver_id: driverId || null,
       is_adhoc_vehicle: row.is_adhoc_vehicle,
       adhoc_vehicle_no: row.is_adhoc_vehicle ? row.adhoc_vehicle_no : null,
-      adhoc_driver_name: row.is_adhoc_vehicle ? row.adhoc_driver_name : null,
-      adhoc_driver_phone: row.is_adhoc_vehicle ? row.adhoc_driver_phone : null,
+      adhoc_driver_name: null,
+      adhoc_driver_phone: null,
     }
   }
 
@@ -2075,19 +2075,50 @@ function RideModal({
     vehicle_id: row?.vehicle_id ?? initial?.vehicle_id ?? '',
     is_adhoc_vehicle: row?.is_adhoc_vehicle ?? initial?.is_adhoc_vehicle ?? false,
     adhoc_vehicle_no: row?.adhoc_vehicle_no ?? initial?.adhoc_vehicle_no ?? '',
-    adhoc_driver_name: row?.adhoc_driver_name ?? initial?.adhoc_driver_name ?? '',
     notes: row?.notes ?? initial?.notes ?? '',
   })
   const [crewList, setCrewList] = useState(initialCrew)
-  const [adhocPhone, setAdhocPhone] = useState(fromStored(row?.adhoc_driver_phone ?? initial?.adhoc_driver_phone))
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
-  // A rented, not-in-fleet vehicle: vehicle_id/driver_id stay null, these
-  // plain-text fields carry the ride instead - see the "Ad-hoc vehicle"
-  // checkbox below and the 20260912120000_ride_adhoc_vehicle.sql migration.
+  // A rented, not-in-fleet vehicle: vehicle_id/driver_id stay null. No
+  // details to type in - `adhoc_vehicle_no` is assigned automatically below
+  // ("Ad-Hoc 01", "Ad-Hoc 02", ... reset every calendar day per city) purely
+  // so a dispatcher can see how many ad-hoc cars a day needed, at a glance.
+  // See the "Ad-hoc vehicle" checkbox below and the
+  // 20260912120000_ride_adhoc_vehicle.sql migration.
   const setAdhoc = (checked) =>
-    setForm((f) => ({ ...f, is_adhoc_vehicle: checked, vehicle_id: checked ? '' : f.vehicle_id }))
-  const adhocPhoneErr = form.is_adhoc_vehicle ? pkPhoneError(adhocPhone) : ''
+    setForm((f) => ({
+      ...f,
+      is_adhoc_vehicle: checked,
+      vehicle_id: checked ? '' : f.vehicle_id,
+      adhoc_vehicle_no: '', // force a fresh number next time this is checked
+    }))
+
+  // Assign the next "Ad-Hoc NN" for this city+date once, as soon as the box
+  // is checked and a number isn't already set (a saved edit already has one -
+  // never renumber it just because the form re-rendered).
+  useEffect(() => {
+    if (!form.is_adhoc_vehicle || form.adhoc_vehicle_no || !cityId || !form.ride_date) return
+    let alive = true
+    supabase
+      .from('rides')
+      .select('adhoc_vehicle_no')
+      .eq('city_id', cityId)
+      .eq('ride_date', form.ride_date)
+      .eq('is_adhoc_vehicle', true)
+      .then(({ data }) => {
+        if (!alive) return
+        const nums = (data ?? [])
+          .map((r) => Number(String(r.adhoc_vehicle_no ?? '').match(/(\d+)\s*$/)?.[1]))
+          .filter(Number.isFinite)
+        const next = (nums.length ? Math.max(...nums) : 0) + 1
+        set('adhoc_vehicle_no', `Ad-Hoc ${String(next).padStart(2, '0')}`)
+      })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.is_adhoc_vehicle, form.adhoc_vehicle_no, cityId, form.ride_date])
 
   const selVehicle = form.is_adhoc_vehicle ? null : vehicles.find((v) => v.id === form.vehicle_id)
   const driverId = selVehicle
@@ -2097,17 +2128,18 @@ function RideModal({
     : null
   const driverName = driverId ? drivers.find((d) => d.id === driverId)?.name || '—' : ''
   const hasVehicle = form.is_adhoc_vehicle || Boolean(form.vehicle_id)
-  // The vehicle_id/shift/driver_id (+ ad-hoc text fields) shared by the main
+  // The vehicle_id/shift/driver_id (+ ad-hoc vehicle no) shared by the main
   // ride and its "also create a Deadhead/Return Leg" companions - same
-  // vehicle info goes on all of them.
+  // vehicle info goes on all of them (no separate driver name/phone to carry -
+  // an ad-hoc car's driver isn't tracked, only that a vehicle was ad-hoc).
   const vehicleFields = () => ({
     vehicle_id: form.is_adhoc_vehicle ? null : form.vehicle_id || null,
     shift: hasVehicle ? shift : null,
     driver_id: driverId || null,
     is_adhoc_vehicle: form.is_adhoc_vehicle,
-    adhoc_vehicle_no: form.is_adhoc_vehicle ? form.adhoc_vehicle_no.trim() || null : null,
-    adhoc_driver_name: form.is_adhoc_vehicle ? form.adhoc_driver_name.trim() || null : null,
-    adhoc_driver_phone: form.is_adhoc_vehicle ? toStored(adhocPhone) : null,
+    adhoc_vehicle_no: form.is_adhoc_vehicle ? form.adhoc_vehicle_no || null : null,
+    adhoc_driver_name: null,
+    adhoc_driver_phone: null,
   })
   const dutySheetDate =
     shift === 'night' && dutySheetPrevDay ? addDays(form.ride_date, -1) : form.ride_date
@@ -2427,11 +2459,8 @@ function RideModal({
     if (rule.max != null && crewList.length > rule.max)
       return setErr(`This block takes exactly ${rule.max} crew`)
     if (!routeReady) return setErr('Route is incomplete — check the crew stops and airport have coordinates')
-    if (form.is_adhoc_vehicle && !form.adhoc_vehicle_no.trim())
-      return setErr('Enter the ad-hoc vehicle number')
-    if (form.is_adhoc_vehicle && !form.adhoc_driver_name.trim())
-      return setErr("Enter the ad-hoc driver's name")
-    if (form.is_adhoc_vehicle && adhocPhoneErr) return setErr(adhocPhoneErr)
+    if (form.is_adhoc_vehicle && !form.adhoc_vehicle_no)
+      return setErr('Still assigning an ad-hoc number — try again in a moment')
     if (hasVehicle && !startAt) return setErr('Set the ride start time for the vehicle')
     if (isAdd && alsoDeadhead && form.block_type === 'pickup' && !startAt)
       return setErr('Set the Pickup Time — the deadhead is timed to arrive just before it')
@@ -2716,14 +2745,7 @@ function RideModal({
 
             <div className="rv-grid">
               <RvField label="Vehicle" value={row.is_adhoc_vehicle ? `${row.adhoc_vehicle_no || '—'} · ad-hoc` : row.vehicle?.vehicle_no} />
-              <RvField
-                label="Driver"
-                value={
-                  row.is_adhoc_vehicle
-                    ? `${row.adhoc_driver_name || '—'}${row.adhoc_driver_phone ? ' · ' + formatPkPhone(row.adhoc_driver_phone) : ''}`
-                    : row.driver?.name
-                }
-              />
+              <RvField label="Driver" value={row.is_adhoc_vehicle ? null : row.driver?.name} />
               <RvField label={rideTimeLabel(row.block_type)} value={row.start_at ? fmtTimeOnly12(row.start_at) : '—'} />
               <RvField label="ETA" value={fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'} />
             </div>
@@ -3091,45 +3113,15 @@ function RideModal({
             Ad-hoc vehicle (rented, not in fleet)
           </label>
           <span className="field-hint">
-            Every fleet vehicle busy? Bring in an outside car for this ride - it won&rsquo;t show on the
-            Vehicle Board (it isn&rsquo;t a fleet asset to schedule against) or take a permanent Vehicles
-            entry.
+            {form.is_adhoc_vehicle
+              ? form.adhoc_vehicle_no
+                ? `Logged as ${form.adhoc_vehicle_no} for ${fmtDate(form.ride_date)} - numbered automatically, nothing else to fill in. Won't show on the Vehicle Board.`
+                : 'Assigning a number…'
+              : "Every fleet vehicle busy? Bring in an outside car - it's numbered automatically, no vehicle/driver details needed, and it won't show on the Vehicle Board or take a permanent Vehicles entry."}
           </span>
         </div>
 
-        {form.is_adhoc_vehicle ? (
-          <>
-            <div className="field">
-              <label htmlFor="r-adhoc-no">Vehicle No</label>
-              <input
-                id="r-adhoc-no"
-                className="input"
-                value={form.adhoc_vehicle_no}
-                onChange={(e) => set('adhoc_vehicle_no', e.target.value)}
-                placeholder="e.g. LEA-1234"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="r-adhoc-driver">Driver name</label>
-              <input
-                id="r-adhoc-driver"
-                className="input"
-                value={form.adhoc_driver_name}
-                onChange={(e) => set('adhoc_driver_name', e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="r-adhoc-phone">Driver phone (optional)</label>
-              <PkPhoneInput
-                id="r-adhoc-phone"
-                value={adhocPhone}
-                onChange={setAdhocPhone}
-                invalid={Boolean(adhocPhoneErr)}
-              />
-              {adhocPhoneErr && <span className="field-error">{adhocPhoneErr}</span>}
-            </div>
-          </>
-        ) : (
+        {!form.is_adhoc_vehicle && (
           <div className="field">
             <label>Assign vehicle</label>
             <SearchSelect

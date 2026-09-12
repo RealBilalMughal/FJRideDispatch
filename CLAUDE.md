@@ -1000,10 +1000,17 @@ keys, tables or deploy targets with any other project.
     vehicle (looked up against this page's own `vehicles` array by the
     ride's `vehicle_id`) as a second flat red line under the planned `car`
     whenever they differ and the row is followed.
-  - **Actual Crew Count** - its own column right after Actual Crew: just
-    `actualCrewNames.length` as a number (`—` for a pending/No row) - the
+  - **Actual Crew Count** - its own column right after Actual Crew: the
     count-only counterpart to the (names-list) Actual Crew column, same as
     the planned side already splits into Crew (names) + Crew Count (number).
+    `—` for a pending/No row; otherwise `displayCrewCount(actualCrewNames,
+    block_type)` from `rideRoute.js` - the SAME helper the Ride page/
+    Dashboard use, which forces **0 for Deadhead/Return Leg**
+    (`ZERO_COUNT_BLOCKS`) even though those blocks still get one real
+    `ride_crew` row (so the Actual Crew names column still shows who it
+    was) - they're an empty repositioning, not a real passenger movement,
+    so their crew *count* reads 0 everywhere else in the app and this
+    column follows the same rule.
   - **Extra ride rows** - a ride dispatched straight on the Rides page (or
     any path other than Follow/No) has no `ride_plan_rows` row pointing at
     it at all, so it wouldn't show up on this page even though it happened

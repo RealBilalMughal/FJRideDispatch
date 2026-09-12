@@ -7,7 +7,7 @@ import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { addDays, fmtTime12, pkToday } from '../lib/time'
-import { blockLabel } from '../lib/rideRoute'
+import { blockLabel, displayCrewCount } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanRows } from '../lib/planImport'
@@ -266,7 +266,12 @@ export default function RidePlan() {
       const actualVehicleNo = r.ride?.vehicle_id
         ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
         : null
-      return { ...r, actualCrewNames: names, actualCrewCount: names?.length ?? null, actualVehicleNo }
+      return {
+        ...r,
+        actualCrewNames: names,
+        actualCrewCount: names ? displayCrewCount(names, r.block_type) : null,
+        actualVehicleNo,
+      }
     })
 
     // Synthetic rows, client-side only (never written to ride_plan_rows) -
@@ -300,7 +305,7 @@ export default function RidePlan() {
         via_no: false,
         ride: r,
         actualCrewNames: names,
-        actualCrewCount: names.length,
+        actualCrewCount: displayCrewCount(names, r.block_type),
         actualVehicleNo,
       }
     })

@@ -33,11 +33,16 @@
   color: var(--accent);
 }
 
+/* Anchored to the trigger's RIGHT edge, opening leftward - the trigger
+   normally sits in a right-aligned toolbar (e.g. Reports' page-actions), so
+   a menu anchored to the LEFT edge (opening rightward, off a button that's
+   already near the right edge of the viewport) ran off-screen. */
 .drp-menu {
   position: absolute;
   z-index: 1000;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
+  max-width: calc(100vw - 32px);
   display: flex;
   background: var(--bg);
   border: 1px solid var(--border);

@@ -282,8 +282,12 @@ keys, tables or deploy targets with any other project.
 - **OpenRouteService** (`src/lib/ors.js`, `VITE_ORS_API_KEY`): `routeInfo(coords)`
   -> road km + duration + geometry (`{ distanceKm, durationMin, line }`, `line`
   = `[[lat,lng], ...]`) via `/v2/directions/driving-car/geojson` (`radiuses: -1`
-  so airport/stop points snap to the nearest road). `gmapsRoute()` builds a
-  keyless Google Maps directions URL for the "open route" action.
+  so airport/stop points snap to the nearest road, `preference: 'fastest'`
+  so it prefers motorways/highways the way a real driver - and Google Maps -
+  would, rather than ORS's own default `'recommended'`, which weighs road
+  quality/distance and can pick a shorter non-highway route that then reads
+  as "less KM than Google Maps says" for the same trip). `gmapsRoute()`
+  builds a keyless Google Maps directions URL for the "open route" action.
   **Credit protection** (the ORS free tier is small): `routeInfo()` keeps a
   **session cache** keyed on the coords rounded to ~1 m - the same ordered
   route only ever hits the API once per page load (in-flight requests are

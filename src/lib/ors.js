@@ -21,7 +21,16 @@ async function fetchRoute(clean) {
       headers: { Authorization: KEY, 'Content-Type': 'application/json' },
       // radiuses -1 => snap each point to the nearest road (airports / stops
       // often sit a few hundred metres off the road network).
-      body: JSON.stringify({ coordinates: clean, radiuses: clean.map(() => -1) }),
+      // preference 'fastest' (ORS defaults to 'recommended' when omitted,
+      // which favours road quality/distance and can route onto slower local
+      // roads even where a highway is available) - biases toward
+      // motorways/highways the way a real driver (and Google Maps) would,
+      // which is also usually the longer-but-faster route in km terms.
+      body: JSON.stringify({
+        coordinates: clean,
+        radiuses: clean.map(() => -1),
+        preference: 'fastest',
+      }),
     })
     if (!res.ok) return null
     const data = await res.json()

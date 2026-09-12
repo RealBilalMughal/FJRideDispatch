@@ -550,10 +550,11 @@ export default function RidePlan() {
     {
       key: 'car',
       header: 'Vehicle',
+      width: 140,
       render: (r) => {
-        if (r.isExtra) return r.actualVehicleNo || '—'
+        if (r.isExtra) return <span className="rp-cell-wrap">{r.actualVehicleNo || '—'}</span>
         return (
-          <>
+          <div className="rp-cell-wrap">
             <div>
               {r.car || '—'}
               {r.is_adhoc_car && <span className="status-text off"> · ad-hoc</span>}
@@ -562,7 +563,7 @@ export default function RidePlan() {
             {r.status === 'followed' && r.actualVehicleNo && r.actualVehicleNo !== r.car && (
               <div className="status-text bad">Actual: {r.actualVehicleNo}</div>
             )}
-          </>
+          </div>
         )
       },
     },

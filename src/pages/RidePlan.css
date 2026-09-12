@@ -81,14 +81,26 @@
 
 /* table-layout: fixed makes the columns' explicit `width` (RidePlan.jsx's
    columns array) actually stick - under the default `auto` layout the
-   browser was handing Route/Time/Crew/Crew C's leftover space anyway
-   (their content is short - "LHE -> KHI", a time range, 1-2 names), which
-   read as a lot of empty padding in those columns. Columns with no width
-   set (Vehicle, Status, Action, ...) split whatever's left. */
+   browser was handing Route/Time/Crew/Crew C/Vehicle's leftover space
+   anyway (their content is short - "LHE -> KHI", a time range, 1-2 names,
+   a plate number), which read as a lot of empty padding in those columns.
+   Columns with no width set (Status, Action, ...) split whatever's left. */
 .rp-plan-table .data-table {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
+}
+
+/* A fixed-width column's cell content is still `.status-text`'s own
+   `white-space: nowrap` (data.css) by default - fine for short labels, but
+   the Vehicle column's "Actual: <car/ad-hoc no>" mismatch line can run
+   longer than its narrow column under table-layout: fixed, and nowrap text
+   that overflows a table cell doesn't push the layout, it visually spills
+   on top of the next column instead. Let it wrap within the cell instead. */
+.rp-plan-table .rp-cell-wrap,
+.rp-plan-table .rp-cell-wrap .status-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .rp-plan-table .data-table thead th {

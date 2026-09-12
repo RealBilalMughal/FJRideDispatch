@@ -48,12 +48,15 @@ keys, tables or deploy targets with any other project.
   with a heading + a `1px var(--border)` hairline. Modals are the only floating
   panels. (The one deliberate exception: the **Dashboard**'s metric cards -
   a dashboard genuinely reads better as scannable cards. Nowhere else.)
-- **Left sidebar: LIGHT**, sectioned with uppercase labels + `#e6e6e6` brand strip.
+- **Left sidebar: LIGHT**, sectioned with uppercase labels + `#e6e6e6` brand strip
+  (the `public/logo.png` BusCaro lockup - same file the Login page uses - at a
+  fixed 34px height; the earlier "FJ" mark + "Ride Dispatch" text pairing was
+  dropped since the real logo already carries its own mark + wordmark).
   Active nav = accent text + a 3px accent bar on the left edge (no filled pill).
   lucide icons at `size={17}`. `src/components/Sidebar.jsx` + `layout.css`.
-  Sections: Dispatch (Ride, Vehicle Board, Tracker), Roster (Crew, Flights), Fleet
-  (Vendors, Drivers, Vehicles), Administration (Users, Role Access, Settings),
-  Account.
+  Sections: Dispatch (Ride, Ride Plan, Vehicle Board, Tracker, Reports), Roster
+  (Crew, Flights), Fleet (Vendors, Drivers, Vehicles), Administration (Users,
+  Role Access, Settings), Account.
 - **No topbar** - a floating profile chip top-right (`src/components/Topbar.jsx`).
 - **Modals** all use `src/components/Modal.jsx` (closes only via X / Esc, never a
   backdrop click). **Never `window.confirm` / `alert`** - use `ConfirmDialog.jsx`

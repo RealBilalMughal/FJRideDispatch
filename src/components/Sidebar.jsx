@@ -66,8 +66,7 @@ export default function Sidebar({ open, onNavigate }) {
   return (
     <aside className={`sidebar${open ? ' open' : ''}`}>
       <div className="sidebar-brand">
-        <span className="brand-mark">FJ</span>
-        <span className="brand-name">Ride Dispatch</span>
+        <img src="/logo.png" alt="BusCaro" className="sidebar-logo" />
       </div>
 
       <nav className="sidebar-nav">

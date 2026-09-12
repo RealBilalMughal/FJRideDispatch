@@ -215,7 +215,9 @@ export default function RidePlan() {
     setLoading(true)
     let q = supabase
       .from('ride_plan_rows')
-      .select('*, ride:rides(id, ref_no, distance_km, status, count_km, vehicle_id, waypoints)')
+      .select(
+        '*, ride:rides(id, ref_no, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints)',
+      )
       .eq('plan_date', planDate)
       .order('seq')
     if (cityId != null) q = q.eq('city_id', cityId)
@@ -233,7 +235,7 @@ export default function RidePlan() {
     let rq = supabase
       .from('rides')
       .select(
-        'id, ref_no, distance_km, status, count_km, vehicle_id, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
+        'id, ref_no, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
       )
       .eq('ride_date', planDate)
     if (cityId != null) rq = rq.eq('city_id', cityId)
@@ -263,9 +265,11 @@ export default function RidePlan() {
 
     const planRows = list.map((r) => {
       const names = r.ride?.id ? crewByRide.get(r.ride.id) || [] : null
-      const actualVehicleNo = r.ride?.vehicle_id
-        ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
-        : null
+      const actualVehicleNo = r.ride?.is_adhoc_vehicle
+        ? `${r.ride.adhoc_vehicle_no || '—'} · ad-hoc`
+        : r.ride?.vehicle_id
+          ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
+          : null
       return {
         ...r,
         actualCrewNames: names,
@@ -282,7 +286,11 @@ export default function RidePlan() {
     // distance only ever lands in Actual, never Planned.
     const extraRows = extraRides.map((r) => {
       const names = crewByRide.get(r.id) || []
-      const actualVehicleNo = r.vehicle_id ? vehicles.find((v) => v.id === r.vehicle_id)?.vehicle_no ?? null : null
+      const actualVehicleNo = r.is_adhoc_vehicle
+        ? `${r.adhoc_vehicle_no || '—'} · ad-hoc`
+        : r.vehicle_id
+          ? vehicles.find((v) => v.id === r.vehicle_id)?.vehicle_no ?? null
+          : null
       return {
         id: `extra-${r.id}`,
         isExtra: true,

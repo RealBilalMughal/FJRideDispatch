@@ -17,7 +17,7 @@ import './VehicleBoard.css'
 
 const RIDE_SELECT = `
   id, ref_no, block_type, ride_date, start_at, end_at, distance_km, duration_min,
-  origin_label, dest_label, waypoints, route_geometry, vehicle_id, city_id, shift, driver_id, status,
+  origin_label, dest_label, waypoints, route_geometry, vehicle_id, is_adhoc_vehicle, city_id, shift, driver_id, status,
   vehicle:vehicles(ref_no, vehicle_no),
   ride_crew(seq, crew:crew(name))
 `
@@ -94,7 +94,10 @@ export default function VehicleBoard() {
   const unassigned = useMemo(
     () =>
       rides
-        .filter((r) => !r.vehicle_id && r.status !== 'cancelled')
+        // an ad-hoc (rented) vehicle ride also has no vehicle_id, but it isn't
+        // waiting for a fleet assignment - it's deliberately outside the fleet
+        // entirely, so it's excluded here rather than showing up needing one.
+        .filter((r) => !r.vehicle_id && !r.is_adhoc_vehicle && r.status !== 'cancelled')
         .sort((a, b) => (a.start_at || '').localeCompare(b.start_at || '')),
     [rides],
   )
@@ -177,6 +180,7 @@ export default function VehicleBoard() {
   }
 
   const rows = vehicles.map((v) => ({ v, rides: byVehicle.get(v.id) || [] }))
+  const onVehiclesCount = rows.reduce((n, r) => n + r.rides.length, 0)
 
   return (
     <div className="page">
@@ -184,7 +188,7 @@ export default function VehicleBoard() {
         <div>
           <h1 className="page-title">Vehicle Board</h1>
           <p className="page-subtitle">
-            {fmtDate(date)} · {cityName} · {rides.length - unassigned.length} on vehicles
+            {fmtDate(date)} · {cityName} · {onVehiclesCount} on vehicles
             {unassigned.length ? ` · ${unassigned.length} unassigned` : ''}
           </p>
         </div>

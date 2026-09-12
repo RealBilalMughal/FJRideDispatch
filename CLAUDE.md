@@ -90,7 +90,8 @@ keys, tables or deploy targets with any other project.
   `20260908140100_ride_track_cron.sql`, `20260908150000_ride_notifications.sql`,
   `20260910120000_ride_cancel.sql`, `20260911120000_crew_phone_unique.sql`,
   `20260911140000_ride_plan.sql`, `20260911160000_ride_plan_seq.sql`,
-  `20260911180000_ride_plan_via_no.sql` (all APPLIED).
+  `20260911180000_ride_plan_via_no.sql`, `20260912120000_ride_adhoc_vehicle.sql`
+  (all APPLIED).
 
 ## City scoping (a permission dimension)
 - `cities` (Lahore / Karachi / Islamabad, extendable), `role_cities (role, city_id)`,
@@ -632,6 +633,44 @@ keys, tables or deploy targets with any other project.
   and its own reconciliation effect still catches this the same way regardless of
   whether the Return Leg arrived via this checkbox or `CreateRideModal`,
   since both produce the identical `return_of_ride_id`-linked shape.
+- **Ad-hoc vehicle** (migration `20260912120000_ride_adhoc_vehicle.sql`) - a
+  rented, not-in-fleet car brought in for one ride when every real fleet
+  vehicle is busy. NOT a fake row in the Vehicles table (that would make
+  every ad-hoc ride reuse the same `vehicle_id`, tripping the vehicle
+  double-booking logic against unrelated ad-hoc rides, and would clutter the
+  permanent Fleet list with something that isn't really one vehicle) -
+  instead it's four plain columns straight on `rides`: `is_adhoc_vehicle`,
+  `adhoc_vehicle_no`, `adhoc_driver_name`, `adhoc_driver_phone` (PK mobile,
+  `PkPhoneInput`/`lib/phone.js`, optional). An **"Ad-hoc vehicle (rented, not
+  in fleet)"** checkbox on the Ride form swaps the fleet `SearchSelect` for
+  three plain fields (Vehicle No, Driver name, Driver phone) - `vehicle_id`/
+  `driver_id` stay `null`. The Shift toggle (+ Duty Sheet-previous-day
+  checkbox) still shows for an ad-hoc ride - shift is a dispatch
+  classification independent of which vehicle actually ran it - just without
+  the fleet-vehicle-derived driver line beneath it. `RideModal`'s
+  `vehicleFields()` (and `CreateRideModal`'s equivalent `sameVehicleFields()`,
+  for its Return Leg/Deadhead tabs) build this whole cluster in one place so
+  the "Also create a Deadhead"/"Also create a Return Leg" companions and
+  `CreateRideModal`'s own follow-on rides inherit the SAME ad-hoc vehicle/
+  driver as their parent, exactly like they already inherit a real
+  `vehicle_id`. `rideVehicleText()`/`rideDriverText()` (Rides.jsx) are what
+  the table/CSV export/View modal read instead of `vehicle?.vehicle_no`/
+  `driver?.name` directly, appending "· ad-hoc" so it's never confused with a
+  real fleet plate. **Deliberately invisible to the Vehicle Board** - its
+  `unassigned` list explicitly excludes `is_adhoc_vehicle` rows (they'd
+  otherwise look like real rides waiting for a fleet assignment, since they
+  also have a null `vehicle_id`), and its per-vehicle gantt (`byVehicle`,
+  keyed on `vehicle_id`) never sees them either way - it isn't a fleet asset
+  to schedule against. Ride Plan's own **Ad-hoc Car** concept
+  (`ride_plan_rows.is_adhoc_car`/`car`, a free-text plate the sheet already
+  marks as "bring in a rented car", planImport skips fleet-matching for it)
+  now feeds straight into this: `buildPlanInitial()` pre-ticks the Ride
+  form's Ad-hoc checkbox and pre-fills the Vehicle No from the plan row's own
+  `car` text when Follow/No opens it. Ride Plan's own Vehicle-mismatch line
+  (`RidePlan.jsx`'s `actualVehicleNo`) also reads `is_adhoc_vehicle`/
+  `adhoc_vehicle_no` off the linked ride, so a plan row that was PLANNED for
+  a real fleet car but actually DISPATCHED on an ad-hoc one still shows the
+  mismatch correctly instead of silently reading as "no actual vehicle".
 - Airports seeded for the 3 cities (`LHE Airport`, `KHI Airport`, `ISB Airport`);
   edit per-city on the **Settings** page (see Pages -> Settings), or directly
   on `cities.airport_*`.
@@ -678,9 +717,15 @@ keys, tables or deploy targets with any other project.
 - **Vehicle Board** (`/vehicle-board`, gated on `rides` view) - day gantt of each
   vehicle's booked rides (bars by `start_at`/`end_at`, coloured by block, click ->
   ride detail). The board's ride query now loads **all** the day's rides (not
-  just vehicle-assigned ones). **Bulk vehicle assign** (needs `rides.edit`):
-  an **Unassigned** strip above the grid holds the day's rides with no
-  `vehicle_id` as draggable chips - drag a chip onto a vehicle's track to
+  just vehicle-assigned ones). An **ad-hoc-vehicle ride never appears here at
+  all** (not on any vehicle's track, not in Unassigned either, even though it
+  also has a null `vehicle_id`) - see the Ride section's "Ad-hoc vehicle"
+  bullet; the header's own "N on vehicles" count is summed off `byVehicle`
+  rather than `rides.length - unassigned.length` for the same reason (that
+  subtraction would silently count ad-hoc rides as "on vehicles"). **Bulk
+  vehicle assign** (needs `rides.edit`):
+  an **Unassigned** strip above the grid holds the day's non-ad-hoc rides with
+  no `vehicle_id` as draggable chips - drag a chip onto a vehicle's track to
   assign (`vehicle_id` + `shift` (kept, else `'day'`) + that vehicle's day
   `driver_id`), drag an assigned bar back to the strip to unassign. A clash
   with an existing ride in that window warns (toast) but still applies -

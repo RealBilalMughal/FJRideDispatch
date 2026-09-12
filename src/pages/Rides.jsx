@@ -27,6 +27,7 @@ import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
+import { formatPkPhone, fromStored, pkPhoneError, toStored } from '../lib/phone'
 import {
   addDays,
   fmtTime12,
@@ -66,6 +67,7 @@ import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
+import PkPhoneInput from '../components/PkPhoneInput'
 import RouteMap from '../components/RouteMap'
 import DataTable from '../components/data/DataTable'
 import BulkDeleteBar from '../components/data/BulkDeleteBar'
@@ -86,7 +88,8 @@ const NOTIFY_ENABLED = false
 const SELECT = `
   id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
   ride_date, duty_sheet_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
-  vehicle_id, driver_id, airport_name, airport_lat, airport_lng,
+  vehicle_id, driver_id, is_adhoc_vehicle, adhoc_vehicle_no, adhoc_driver_name, adhoc_driver_phone,
+  airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
   waypoints, route_geometry, distance_km, extra_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
   cancel_reason, cancelled_at, count_km,
@@ -151,6 +154,12 @@ const crewNamesText = (rc) => crewNames(rc) || '—'
 
 const vehicleText = (v) => v?.vehicle_no || '—'
 
+// A ride's Vehicle/Driver text, an ad-hoc (rented, not-in-fleet) vehicle's
+// plain-text fields taking over from the real vehicle_id/driver_id relations.
+const rideVehicleText = (r) =>
+  r.is_adhoc_vehicle ? `${r.adhoc_vehicle_no || '—'} · ad-hoc` : vehicleText(r.vehicle)
+const rideDriverText = (r) => (r.is_adhoc_vehicle ? r.adhoc_driver_name || '—' : r.driver?.name || '—')
+
 // one paired field in the Ride View's left column (label stacked over value)
 const RvField = ({ label, value }) => (
   <div className="rv-field">
@@ -212,7 +221,12 @@ function buildPlanInitial(planRow, { flights, crew, viaNo = false }) {
     flight_code: matchedFlight?.flight_code ?? '',
     checkin_old: slot === 'checkin' ? toTime24(matchedFlight?.flight_time) : undefined,
     checkout_old: slot === 'checkout' ? toTime24(matchedFlight?.flight_time) : undefined,
-    vehicle_id: planRow.matched_vehicle_id ?? '',
+    // The plan's own Ad-hoc Car flag (planImport skips fleet-matching for
+    // these) carries straight over into the ride's own ad-hoc vehicle -
+    // same concept, just previously two disconnected fields.
+    vehicle_id: planRow.is_adhoc_car ? '' : planRow.matched_vehicle_id ?? '',
+    is_adhoc_vehicle: Boolean(planRow.is_adhoc_car),
+    adhoc_vehicle_no: planRow.is_adhoc_car ? planRow.car || '' : '',
     start_time: toTime24(planRow.start_time),
     notes: viaNo ? `Plan trip ${planRow.trip_id} - dispatched despite "No"` : `Plan trip ${planRow.trip_id}`,
     crewList,
@@ -439,7 +453,7 @@ export default function Rides() {
           city_name: r.city?.name ?? '',
           crew_text: crewNamesText(r.ride_crew),
           crew_count: displayCrewCount(r.ride_crew, r.block_type),
-          vehicle_text: vehicleText(r.vehicle),
+          vehicle_text: rideVehicleText(r),
           display_ref: suffix ? `${rootRefNo(r)}-${suffix}` : String(r.ref_no),
           follow_on: followOnByParent.get(r.id) ?? null,
           // pre-duty_sheet_date rows (existing data) fall back to their own ride_date
@@ -463,7 +477,7 @@ export default function Rides() {
     if (driverFilter && r.driver_id !== driverFilter) return false
     if (
       s &&
-      !`${r.display_ref} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''}`
+      !`${r.display_ref} ${r.flight_no ?? ''} ${r.flight_code ?? ''} ${r.crew_text} ${r.vehicle?.vehicle_no ?? ''} ${r.adhoc_vehicle_no ?? ''}`
         .toLowerCase()
         .includes(s)
     )
@@ -573,9 +587,9 @@ export default function Rides() {
       crew_count: r.crew_count,
       origin: r.origin_label ?? '',
       dest: r.dest_label ?? '',
-      vehicle: r.vehicle?.vehicle_no ?? '',
+      vehicle: r.is_adhoc_vehicle ? (r.adhoc_vehicle_no ?? '') + ' (ad-hoc)' : (r.vehicle?.vehicle_no ?? ''),
       shift: shiftLabel(r.shift),
-      driver: r.driver?.name ?? '',
+      driver: rideDriverText(r),
       starts: r.start_at ? fmtTimeOnly12(r.start_at) : '',
       eta: fmtTimeOnly12(etaOf(r.start_at, r.duration_min)),
       km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
@@ -641,7 +655,7 @@ export default function Rides() {
     { key: 'dest', header: 'Destination', render: (r) => r.dest_label || '—' },
     { key: 'veh', header: 'Vehicle', render: (r) => r.vehicle_text },
     { key: 'shift', header: 'Shift', render: (r) => shiftLabel(r.shift) },
-    { key: 'rdriver', header: 'Driver', render: (r) => r.driver?.name || '—' },
+    { key: 'rdriver', header: 'Driver', render: (r) => rideDriverText(r) },
     {
       key: 'starts',
       header: 'Ride Time',
@@ -1246,10 +1260,21 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
       ? new Date(row.start_at).getTime() + row.duration_min * 60000
       : null
 
-  const sameVehicleShiftDriver = (shift) => {
-    const veh = vehicles.find((v) => v.id === row.vehicle_id)
+  // Same vehicle/driver info as the parent dropoff ride - including an
+  // ad-hoc (rented) vehicle's plain-text fields, not just a real vehicle_id.
+  const sameVehicleFields = (shift) => {
+    const veh = row.is_adhoc_vehicle ? null : vehicles.find((v) => v.id === row.vehicle_id)
     const driverId = veh ? (shift === 'night' ? veh.night_driver_id : veh.driver_id) : null
-    return { driverId }
+    const hasV = row.is_adhoc_vehicle || Boolean(row.vehicle_id)
+    return {
+      vehicle_id: row.is_adhoc_vehicle ? null : row.vehicle_id,
+      shift: hasV ? shift : null,
+      driver_id: driverId || null,
+      is_adhoc_vehicle: row.is_adhoc_vehicle,
+      adhoc_vehicle_no: row.is_adhoc_vehicle ? row.adhoc_vehicle_no : null,
+      adhoc_driver_name: row.is_adhoc_vehicle ? row.adhoc_driver_name : null,
+      adhoc_driver_phone: row.is_adhoc_vehicle ? row.adhoc_driver_phone : null,
+    }
   }
 
   const startAtFrom = (bufferMin) =>
@@ -1272,7 +1297,6 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
       const dur = (info?.durationMin ?? 30) + BUFFER_MIN
       const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
       const shift = row.shift || 'day'
-      const { driverId } = sameVehicleShiftDriver(shift)
       const legRideDate = start_at ? isoToLocalDate(start_at) : row.ride_date
 
       // the return leg carries no passenger - it's the vehicle running empty
@@ -1290,9 +1314,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
           block_type: 'return_leg',
           ride_date: legRideDate,
           duty_sheet_date: legRideDate,
-          vehicle_id: row.vehicle_id,
-          shift: row.vehicle_id ? shift : null,
-          driver_id: driverId || null,
+          ...sameVehicleFields(shift),
           airport_name: airport.name,
           airport_lat: airport.lat,
           airport_lng: airport.lng,
@@ -1396,7 +1418,6 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
       const dur = (info?.durationMin ?? 30) + BUFFER_MIN
       const end_at = start_at ? new Date(new Date(start_at).getTime() + dur * 60000).toISOString() : null
       const shift = row.shift || 'day'
-      const { driverId } = sameVehicleShiftDriver(shift)
       const ft = toTime24(flight.flight_time)
       const legRideDate = start_at ? isoToLocalDate(start_at) : row.ride_date
 
@@ -1415,9 +1436,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
           checkin_new: flightSlot === 'checkin' ? ft || null : null,
           checkout_old: flightSlot === 'checkout' ? ft || null : null,
           checkout_new: flightSlot === 'checkout' ? ft || null : null,
-          vehicle_id: row.vehicle_id,
-          shift: row.vehicle_id ? shift : null,
-          driver_id: driverId || null,
+          ...sameVehicleFields(shift),
           airport_name: airport.name,
           airport_lat: airport.lat,
           airport_lng: airport.lng,
@@ -1483,9 +1502,7 @@ function CreateRideModal({ row, flights, crew, vehicles, allowedCities, createdB
             duty_sheet_date: pRideDate,
             checkin_old: pCheckinOld,
             checkin_new: pCheckinNewVal,
-            vehicle_id: row.vehicle_id,
-            shift: row.vehicle_id ? shift : null,
-            driver_id: driverId || null,
+            ...sameVehicleFields(shift),
             airport_name: airport.name,
             airport_lat: airport.lat,
             airport_lng: airport.lng,
@@ -2056,18 +2073,42 @@ function RideModal({
     checkout_new: toTime24(row?.checkout_new ?? initial?.checkout_new),
     start_time: row?.start_at ? isoToLocalTime(row.start_at) : (initial?.start_time ?? ''),
     vehicle_id: row?.vehicle_id ?? initial?.vehicle_id ?? '',
+    is_adhoc_vehicle: row?.is_adhoc_vehicle ?? initial?.is_adhoc_vehicle ?? false,
+    adhoc_vehicle_no: row?.adhoc_vehicle_no ?? initial?.adhoc_vehicle_no ?? '',
+    adhoc_driver_name: row?.adhoc_driver_name ?? initial?.adhoc_driver_name ?? '',
     notes: row?.notes ?? initial?.notes ?? '',
   })
   const [crewList, setCrewList] = useState(initialCrew)
+  const [adhocPhone, setAdhocPhone] = useState(fromStored(row?.adhoc_driver_phone ?? initial?.adhoc_driver_phone))
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
-  const selVehicle = vehicles.find((v) => v.id === form.vehicle_id)
+  // A rented, not-in-fleet vehicle: vehicle_id/driver_id stay null, these
+  // plain-text fields carry the ride instead - see the "Ad-hoc vehicle"
+  // checkbox below and the 20260912120000_ride_adhoc_vehicle.sql migration.
+  const setAdhoc = (checked) =>
+    setForm((f) => ({ ...f, is_adhoc_vehicle: checked, vehicle_id: checked ? '' : f.vehicle_id }))
+  const adhocPhoneErr = form.is_adhoc_vehicle ? pkPhoneError(adhocPhone) : ''
+
+  const selVehicle = form.is_adhoc_vehicle ? null : vehicles.find((v) => v.id === form.vehicle_id)
   const driverId = selVehicle
     ? shift === 'night'
       ? selVehicle.night_driver_id
       : selVehicle.driver_id
     : null
   const driverName = driverId ? drivers.find((d) => d.id === driverId)?.name || '—' : ''
+  const hasVehicle = form.is_adhoc_vehicle || Boolean(form.vehicle_id)
+  // The vehicle_id/shift/driver_id (+ ad-hoc text fields) shared by the main
+  // ride and its "also create a Deadhead/Return Leg" companions - same
+  // vehicle info goes on all of them.
+  const vehicleFields = () => ({
+    vehicle_id: form.is_adhoc_vehicle ? null : form.vehicle_id || null,
+    shift: hasVehicle ? shift : null,
+    driver_id: driverId || null,
+    is_adhoc_vehicle: form.is_adhoc_vehicle,
+    adhoc_vehicle_no: form.is_adhoc_vehicle ? form.adhoc_vehicle_no.trim() || null : null,
+    adhoc_driver_name: form.is_adhoc_vehicle ? form.adhoc_driver_name.trim() || null : null,
+    adhoc_driver_phone: form.is_adhoc_vehicle ? toStored(adhocPhone) : null,
+  })
   const dutySheetDate =
     shift === 'night' && dutySheetPrevDay ? addDays(form.ride_date, -1) : form.ride_date
 
@@ -2386,7 +2427,12 @@ function RideModal({
     if (rule.max != null && crewList.length > rule.max)
       return setErr(`This block takes exactly ${rule.max} crew`)
     if (!routeReady) return setErr('Route is incomplete — check the crew stops and airport have coordinates')
-    if (form.vehicle_id && !startAt) return setErr('Set the ride start time for the vehicle')
+    if (form.is_adhoc_vehicle && !form.adhoc_vehicle_no.trim())
+      return setErr('Enter the ad-hoc vehicle number')
+    if (form.is_adhoc_vehicle && !form.adhoc_driver_name.trim())
+      return setErr("Enter the ad-hoc driver's name")
+    if (form.is_adhoc_vehicle && adhocPhoneErr) return setErr(adhocPhoneErr)
+    if (hasVehicle && !startAt) return setErr('Set the ride start time for the vehicle')
     if (isAdd && alsoDeadhead && form.block_type === 'pickup' && !startAt)
       return setErr('Set the Pickup Time — the deadhead is timed to arrive just before it')
     if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && !etaAt)
@@ -2410,9 +2456,7 @@ function RideModal({
       checkout_new: form.checkout_new || form.checkout_old || null,
       start_at: startAt,
       end_at: endAt,
-      vehicle_id: form.vehicle_id || null,
-      shift: form.vehicle_id ? shift : null,
-      driver_id: driverId || null,
+      ...vehicleFields(),
       airport_name: airport.name || null,
       airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
       airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
@@ -2491,9 +2535,7 @@ function RideModal({
             deadhead_mode: 'airport',
             ride_date: form.ride_date,
             duty_sheet_date: dutySheetDate,
-            vehicle_id: form.vehicle_id || null,
-            shift: form.vehicle_id ? shift : null,
-            driver_id: driverId || null,
+            ...vehicleFields(),
             airport_name: airport.name || null,
             airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
             airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
@@ -2553,9 +2595,7 @@ function RideModal({
             block_type: 'return_leg',
             ride_date: form.ride_date,
             duty_sheet_date: dutySheetDate,
-            vehicle_id: form.vehicle_id || null,
-            shift: form.vehicle_id ? shift : null,
-            driver_id: driverId || null,
+            ...vehicleFields(),
             airport_name: airport.name || null,
             airport_lat: Number.isFinite(airport.lat) ? airport.lat : null,
             airport_lng: Number.isFinite(airport.lng) ? airport.lng : null,
@@ -2675,8 +2715,15 @@ function RideModal({
             </div>
 
             <div className="rv-grid">
-              <RvField label="Vehicle" value={row.vehicle?.vehicle_no} />
-              <RvField label="Driver" value={row.driver?.name} />
+              <RvField label="Vehicle" value={row.is_adhoc_vehicle ? `${row.adhoc_vehicle_no || '—'} · ad-hoc` : row.vehicle?.vehicle_no} />
+              <RvField
+                label="Driver"
+                value={
+                  row.is_adhoc_vehicle
+                    ? `${row.adhoc_driver_name || '—'}${row.adhoc_driver_phone ? ' · ' + formatPkPhone(row.adhoc_driver_phone) : ''}`
+                    : row.driver?.name
+                }
+              />
               <RvField label={rideTimeLabel(row.block_type)} value={row.start_at ? fmtTimeOnly12(row.start_at) : '—'} />
               <RvField label="ETA" value={fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'} />
             </div>
@@ -3035,24 +3082,74 @@ function RideModal({
 
         {/* vehicle + window */}
         <div className="field">
-          <label>Assign vehicle</label>
-          <SearchSelect
-            value={form.vehicle_id}
-            onChange={(v) => set('vehicle_id', v)}
-            options={[{ value: '', label: 'No vehicle yet' }, ...vehicleOpts]}
-            placeholder={cityId ? 'Search a vehicle…' : 'Pick a flight first'}
-            disabled={!cityId}
-          />
-          {conflict && (
-            <span className="field-error">
-              Busy on Ride {conflict.ref_no} till {fmtTimeOnly12(conflict.end_at)}
-            </span>
-          )}
+          <label className="check-line">
+            <input
+              type="checkbox"
+              checked={form.is_adhoc_vehicle}
+              onChange={(e) => setAdhoc(e.target.checked)}
+            />
+            Ad-hoc vehicle (rented, not in fleet)
+          </label>
+          <span className="field-hint">
+            Every fleet vehicle busy? Bring in an outside car for this ride - it won&rsquo;t show on the
+            Vehicle Board (it isn&rsquo;t a fleet asset to schedule against) or take a permanent Vehicles
+            entry.
+          </span>
         </div>
 
-        {form.vehicle_id && (
+        {form.is_adhoc_vehicle ? (
+          <>
+            <div className="field">
+              <label htmlFor="r-adhoc-no">Vehicle No</label>
+              <input
+                id="r-adhoc-no"
+                className="input"
+                value={form.adhoc_vehicle_no}
+                onChange={(e) => set('adhoc_vehicle_no', e.target.value)}
+                placeholder="e.g. LEA-1234"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="r-adhoc-driver">Driver name</label>
+              <input
+                id="r-adhoc-driver"
+                className="input"
+                value={form.adhoc_driver_name}
+                onChange={(e) => set('adhoc_driver_name', e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="r-adhoc-phone">Driver phone (optional)</label>
+              <PkPhoneInput
+                id="r-adhoc-phone"
+                value={adhocPhone}
+                onChange={setAdhocPhone}
+                invalid={Boolean(adhocPhoneErr)}
+              />
+              {adhocPhoneErr && <span className="field-error">{adhocPhoneErr}</span>}
+            </div>
+          </>
+        ) : (
           <div className="field">
-            <label>Shift &amp; Driver</label>
+            <label>Assign vehicle</label>
+            <SearchSelect
+              value={form.vehicle_id}
+              onChange={(v) => set('vehicle_id', v)}
+              options={[{ value: '', label: 'No vehicle yet' }, ...vehicleOpts]}
+              placeholder={cityId ? 'Search a vehicle…' : 'Pick a flight first'}
+              disabled={!cityId}
+            />
+            {conflict && (
+              <span className="field-error">
+                Busy on Ride {conflict.ref_no} till {fmtTimeOnly12(conflict.end_at)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {hasVehicle && (
+          <div className="field">
+            <label>Shift{form.is_adhoc_vehicle ? '' : ' & Driver'}</label>
             <div className="shift-picker">
               <div className="shift-toggle">
                 {['day', 'night'].map((s) => (
@@ -3079,12 +3176,16 @@ function RideModal({
                   Duty Sheet: previous day
                 </label>
               )}
-              <div className={`shift-driver${driverName ? '' : ' empty'}`}>
-                <span className="primary">{driverName || `No ${shiftLabel(shift).toLowerCase()} driver`}</span>
-              </div>
+              {!form.is_adhoc_vehicle && (
+                <div className={`shift-driver${driverName ? '' : ' empty'}`}>
+                  <span className="primary">{driverName || `No ${shiftLabel(shift).toLowerCase()} driver`}</span>
+                </div>
+              )}
             </div>
             <span className="field-hint">
-              Pick which driver covers this ride. Duty Sheet: {fmtDate(dutySheetDate)}
+              {form.is_adhoc_vehicle
+                ? `Duty Sheet: ${fmtDate(dutySheetDate)}`
+                : `Pick which driver covers this ride. Duty Sheet: ${fmtDate(dutySheetDate)}`}
             </span>
           </div>
         )}

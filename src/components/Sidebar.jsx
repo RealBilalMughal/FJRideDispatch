@@ -151,10 +151,14 @@ export default function Sidebar({ open, onNavigate, collapsed, onToggleCollapsed
   return (
     <aside className={`sidebar${open ? ' open' : ''}${collapsed ? ' collapsed' : ''}`}>
       <div className="sidebar-brand">
-        {!collapsed && <img src="/logo.png" alt="BusCaro" className="sidebar-logo" />}
+        {collapsed ? (
+          <img src="/favicon.png" alt="BusCaro" className="sidebar-favicon" />
+        ) : (
+          <img src="/logo.png" alt="BusCaro" className="sidebar-logo" />
+        )}
         <button
           type="button"
-          className="icon-btn sidebar-collapse-btn"
+          className="sidebar-collapse-btn"
           onClick={onToggleCollapsed}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >

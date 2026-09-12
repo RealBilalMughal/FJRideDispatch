@@ -65,14 +65,20 @@ keys, tables or deploy targets with any other project.
     applies it as an `.app-shell.sidebar-collapsed` class that overrides
     `--sidebar-w` to `68px` - both `.sidebar`'s own `width` and `.app-main`'s
     `margin-left` read that one variable, so they stay in lockstep without a
-    second toggled class. Collapsed hides the logo, section labels and every
-    link's text/badge (CSS only, `.sidebar.collapsed .sidebar-nav a span`) -
-    each link's own `title` attribute (label, or `"<label> · <count>"` when
-    it carries a badge) is the only way to tell them apart, a native
-    tooltip rather than a second custom one. **Desktop-only** - the mobile
-    breakpoint (`max-width: 900px`) forces `--sidebar-w` back to `246px` and
-    hides the toggle, so a session left collapsed on desktop never opens the
-    mobile slide-in drawer as an unusable 68px strip.
+    second toggled class. Collapsed swaps the `logo.png` lockup for
+    `public/favicon.png` (the app's own favicon, square - fits the narrow
+    strip where the wide logo wouldn't) rather than hiding the brand
+    entirely, and hides section labels and every link's text/badge (CSS
+    only, `.sidebar.collapsed .sidebar-nav a span`) - each link's own
+    `title` attribute (label, or `"<label> · <count>"` when it carries a
+    badge) is the only way to tell them apart, a native tooltip rather than
+    a second custom one. The toggle button itself is borderless (no
+    `.icon-btn`, just `color`/hover-`color`) to match the sidebar's
+    otherwise line-free brand strip (no `border-bottom` under the logo, no
+    border on the Search button below it - see the Search bullet). **Desktop
+    -only** - the mobile breakpoint (`max-width: 900px`) forces `--sidebar-w`
+    back to `246px` and hides the toggle, so a session left collapsed on
+    desktop never opens the mobile slide-in drawer as an unusable 68px strip.
   - **Live badge counts** - `useSidebarBadges()` (`Sidebar.jsx`, module-level
     hook) fetches two "needs attention today" counts once on mount + every
     60s + on a city-filter change, each a `count: 'exact', head: true`
@@ -87,10 +93,12 @@ keys, tables or deploy targets with any other project.
     Sidebar level (mounted once for the whole session) rather than each
     target page computing its own badge, since the count needs to be visible
     from every OTHER page too.
-  - **Quick search (Ctrl/Cmd+K)** - a "Search…" button under the brand strip
-    (and the global `Ctrl/Cmd+K` shortcut, bound in `Layout.jsx` so it works
-    from any page, not just when the sidebar button itself is reachable)
-    opens `src/components/CommandPalette.jsx`, a centred overlay searching
+  - **Quick search (Ctrl/Cmd+K)** - a borderless "Search…" button (flat,
+    like the brand strip above it - `.sidebar-search-btn` has no `border`)
+    under the brand strip (and the global `Ctrl/Cmd+K` shortcut, bound in
+    `Layout.jsx` so it works from any page, not just when the sidebar
+    button itself is reachable) opens `src/components/CommandPalette.jsx`,
+    a centred overlay searching
     Rides (`ref_no` exact-match when the term is numeric, else `flight_no
     ilike`) / Crew (`name ilike`) / Vehicles (`vehicle_no ilike`) in
     parallel, each gated on that page's own `can(page,'view')` and the

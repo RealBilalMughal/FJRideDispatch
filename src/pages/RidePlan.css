@@ -43,6 +43,16 @@
   color: var(--danger);
 }
 
+.rp-route-link {
+  display: inline-flex;
+  vertical-align: middle;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.rp-route-link:hover {
+  color: var(--accent);
+}
+
 /* The page itself never scrolls - title/KM summary/date-bar (and the Report
    panel, if open) stay put in normal flow; `position: sticky` here is just a
    safety net in case the table-height calc below is ever a few px short on

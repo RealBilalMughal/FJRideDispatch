@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, Navigation, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -64,6 +64,15 @@ const billableKm = (ride) => {
   if (ride.status === 'cancelled' && !ride.count_km) return 0
   return ride.distance_km
 }
+
+// The plan only carries the flight's own city pair (e.g. "LHE"/"KHI"), not
+// ground coordinates for the actual pickup/dropoff route - Google Maps still
+// resolves IATA-style codes as places, so this is a rough visual reference
+// (which cities this leg's flight connects), not the vehicle's real route.
+const gmapsFlightRoute = (origin, destination) =>
+  origin && destination
+    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`
+    : null
 
 const tierText = (tier) =>
   tier === 'employee_no' || tier === 'exact_name' ? '' : tier === 'fuzzy' ? ' · fuzzy match' : ' · unmatched'
@@ -400,7 +409,18 @@ export default function RidePlan() {
     {
       key: 'route',
       header: 'Route',
-      render: (r) => (r.origin && r.destination ? `${r.origin} → ${r.destination}` : '—'),
+      render: (r) => {
+        const gm = gmapsFlightRoute(r.origin, r.destination)
+        if (!gm) return '—'
+        return (
+          <>
+            {r.origin} → {r.destination}{' '}
+            <a href={gm} target="_blank" rel="noreferrer" title="Open in Google Maps" className="rp-route-link">
+              <Navigation size={13} />
+            </a>
+          </>
+        )
+      },
     },
     {
       key: 'time',
@@ -596,7 +616,6 @@ export default function RidePlan() {
             value={planDate}
             onChange={(e) => setPlanDate(e.target.value)}
           />
-          <span className="secondary">{fmtDate(planDate)}</span>
           <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, 1))}>
             <ChevronRight size={16} />
           </button>

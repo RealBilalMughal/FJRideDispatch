@@ -951,6 +951,17 @@ keys, tables or deploy targets with any other project.
     not just `status`/`skip_reason`. Follow/No are `.rp-follow-btn`/
     `.rp-no-btn` (RidePlan.css) - a plain flat text button each, tinted
     light green / light red only on hover.
+  - **Route column** - `Origin → Destination` text plus a small `Navigation`
+    icon link (blank/no icon when either is empty, e.g. Deadhead/Return Leg)
+    opening a Google Maps directions URL built from those two plain place
+    names (`gmapsFlightRoute()`) - the plan only carries the flight's own
+    city pair, not ground coordinates for the real pickup/dropoff route, so
+    this is a rough visual reference for which cities that leg's flight
+    connects, not the vehicle's actual route (unlike the Ride page's own
+    route icon, which uses the real saved `waypoints`).
+  - **Date bar**: the native `<input type="date">` is the only date shown
+    now - a separate `fmtDate()`-formatted span used to sit right next to it
+    (redundant, the same date twice), removed.
   - **Actual Crew** - its own column, next to the planned Crew column: the
     linked ride's real crew names (`ride_crew` joined to `crew(name)`,
     ordered by `seq`, one extra query per refresh keyed by ride id) - blank

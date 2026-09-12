@@ -2843,133 +2843,150 @@ function RideModal({
   }))
 
   return (
-    <Modal open onClose={onClose} title={title} width={620}>
-      <form className="modal-form" onSubmit={submit}>
-        {err && <div className="modal-error">{err}</div>}
+    <Modal
+      open
+      onClose={onClose}
+      title={title}
+      width="min(1600px, 97vw)"
+      size="full"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" form="ride-form" className="btn btn-square" disabled={busy || Boolean(conflict)}>
+            {busy ? 'Saving…' : isAdd ? 'Create ride' : 'Save'}
+          </button>
+        </>
+      }
+    >
+      <form id="ride-form" className="ride-view ride-view--split" onSubmit={submit}>
+        <div className="ride-view-info modal-form">
+          {err && <div className="modal-error">{err}</div>}
 
-        <div className="field">
-          <label>Flight</label>
-          <SearchSelect
-            value={form.flight_id}
-            onChange={pickFlight}
-            options={flightOpts}
-            placeholder="Search a flight…"
-          />
-        </div>
-
-        <div className="field-row">
           <div className="field">
-            <label htmlFor="r-code">Flight code</label>
-            <input id="r-code" className="input" value={form.flight_code} disabled />
+            <label>Flight</label>
+            <SearchSelect
+              value={form.flight_id}
+              onChange={pickFlight}
+              options={flightOpts}
+              placeholder="Search a flight…"
+            />
           </div>
-          <div className="field">
-            <label htmlFor="r-block">Block type</label>
-            <select
-              id="r-block"
-              className="select"
-              value={form.block_type}
-              onChange={(e) => pickBlock(e.target.value)}
-            >
-              <option value="" disabled>
-                Select…
-              </option>
-              {BLOCK_TYPES.map((b) => (
-                <option key={b.value} value={b.value}>
-                  {b.label}
+
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="r-code">Flight code</label>
+              <input id="r-code" className="input" value={form.flight_code} disabled />
+            </div>
+            <div className="field">
+              <label htmlFor="r-block">Block type</label>
+              <select
+                id="r-block"
+                className="select"
+                value={form.block_type}
+                onChange={(e) => pickBlock(e.target.value)}
+              >
+                <option value="" disabled>
+                  Select…
                 </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {form.block_type === 'deadhead' && (
-          <div className="field">
-            <label>Deadhead route</label>
-            <div className="radio-row">
-              <label className="check-line">
-                <input
-                  type="radio"
-                  name="dhmode"
-                  checked={form.deadhead_mode === 'airport'}
-                  onChange={() => {
-                    set('deadhead_mode', 'airport')
-                    setCrewList((cl) => cl.slice(0, 1))
-                  }}
-                />
-                Airport → crew
-              </label>
-              <label className="check-line">
-                <input
-                  type="radio"
-                  name="dhmode"
-                  checked={form.deadhead_mode === 'crew'}
-                  onChange={() => set('deadhead_mode', 'crew')}
-                />
-                Crew → crew (2 crew)
-              </label>
+                {BLOCK_TYPES.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        )}
 
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="r-date">Ride date</label>
-            <input
-              id="r-date"
-              type="date"
-              className="input"
-              value={form.ride_date}
-              onChange={(e) => set('ride_date', e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Airport (from city)</label>
-            <input
-              className="input"
-              value={airport.name || `${cityNameOf(allowedCities, cityId)} airport not set`}
-              disabled
-            />
-          </div>
-        </div>
+          {form.block_type === 'deadhead' && (
+            <div className="field">
+              <label>Deadhead route</label>
+              <div className="radio-row">
+                <label className="check-line">
+                  <input
+                    type="radio"
+                    name="dhmode"
+                    checked={form.deadhead_mode === 'airport'}
+                    onChange={() => {
+                      set('deadhead_mode', 'airport')
+                      setCrewList((cl) => cl.slice(0, 1))
+                    }}
+                  />
+                  Airport → crew
+                </label>
+                <label className="check-line">
+                  <input
+                    type="radio"
+                    name="dhmode"
+                    checked={form.deadhead_mode === 'crew'}
+                    onChange={() => set('deadhead_mode', 'crew')}
+                  />
+                  Crew → crew (2 crew)
+                </label>
+              </div>
+            </div>
+          )}
 
-        {form.block_type === 'pickup' && (
           <div className="field-row">
             <div className="field">
-              <label htmlFor="r-cio">Check-in</label>
-              <input id="r-cio" type="time" className="input" value={form.checkin_old} disabled />
-              <span className="field-hint">Scheduled, from the flight</span>
+              <label htmlFor="r-date">Ride date</label>
+              <input
+                id="r-date"
+                type="date"
+                className="input"
+                value={form.ride_date}
+                onChange={(e) => set('ride_date', e.target.value)}
+              />
             </div>
             <div className="field">
-              <label htmlFor="r-cin">Actual</label>
+              <label>Airport (from city)</label>
               <input
-                id="r-cin"
-                type="time"
                 className="input"
-                value={form.checkin_new}
-                onChange={(e) => set('checkin_new', e.target.value)}
+                value={airport.name || `${cityNameOf(allowedCities, cityId)} airport not set`}
+                disabled
               />
             </div>
           </div>
-        )}
-        {form.block_type === 'dropoff' && (
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="r-coo">Check-out</label>
-              <input id="r-coo" type="time" className="input" value={form.checkout_old} disabled />
-              <span className="field-hint">Scheduled, from the flight</span>
+
+          {form.block_type === 'pickup' && (
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="r-cio">Check-in</label>
+                <input id="r-cio" type="time" className="input" value={form.checkin_old} disabled />
+                <span className="field-hint">From the flight</span>
+              </div>
+              <div className="field">
+                <label htmlFor="r-cin">Actual</label>
+                <input
+                  id="r-cin"
+                  type="time"
+                  className="input"
+                  value={form.checkin_new}
+                  onChange={(e) => set('checkin_new', e.target.value)}
+                />
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="r-con">Actual</label>
-              <input
-                id="r-con"
-                type="time"
-                className="input"
-                value={form.checkout_new}
-                onChange={(e) => set('checkout_new', e.target.value)}
-              />
+          )}
+          {form.block_type === 'dropoff' && (
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="r-coo">Check-out</label>
+                <input id="r-coo" type="time" className="input" value={form.checkout_old} disabled />
+                <span className="field-hint">From the flight</span>
+              </div>
+              <div className="field">
+                <label htmlFor="r-con">Actual</label>
+                <input
+                  id="r-con"
+                  type="time"
+                  className="input"
+                  value={form.checkout_new}
+                  onChange={(e) => set('checkout_new', e.target.value)}
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* crew */}
         <div className="field">
@@ -3042,12 +3059,10 @@ function RideModal({
               {alsoDeadhead && (
                 <span className="field-hint">
                   {!startAt
-                    ? 'Set the Pickup Time first — the deadhead is timed off it.'
+                    ? 'Set the Pickup Time first.'
                     : dhDriveMin == null
-                      ? 'Working out the Airport → crew drive…'
-                      : `Deadhead Ride Time ${fmtTimeOnly12(dhStartAt)} — leave the airport by then, ` +
-                        `${dhDriveMin} min drive, reach ${crewList[0].stop_name || crewList[0].name} ` +
-                        `${fmtTimeOnly12(dhArriveAt)} (${deadheadBufferMin} min before the ${fmtTimeOnly12(startAt)} pickup).`}
+                      ? 'Working out the drive…'
+                      : `Leaves ${fmtTimeOnly12(dhStartAt)} → ${crewList[0].stop_name || crewList[0].name} ${fmtTimeOnly12(dhArriveAt)} (${deadheadBufferMin} min before pickup)`}
                 </span>
               )}
             </>
@@ -3066,40 +3081,13 @@ function RideModal({
               {alsoReturnLeg && (
                 <span className="field-hint">
                   {!etaAt
-                    ? 'Set the Drop Time first — the return leg is timed off its arrival.'
+                    ? 'Set the Drop Time first.'
                     : rlDriveMin == null
-                      ? 'Working out the crew → Airport drive…'
-                      : `Return Leg Ride Time ${fmtTimeOnly12(rlStartAt)} — leave ` +
-                        `${crewList[crewList.length - 1].stop_name || crewList[crewList.length - 1].name} then, ` +
-                        `${rlDriveMin} min drive, reach the airport ${fmtTimeOnly12(rlArriveAt)} ` +
-                        `(${returnLegBufferMin} min after the ${fmtTimeOnly12(etaAt)} drop-off arrival).`}
+                      ? 'Working out the drive…'
+                      : `Leaves ${crewList[crewList.length - 1].stop_name || crewList[crewList.length - 1].name} ${fmtTimeOnly12(rlStartAt)} → Airport ${fmtTimeOnly12(rlArriveAt)} (${returnLegBufferMin} min after drop-off)`}
                 </span>
               )}
             </>
-          )}
-        </div>
-
-        {/* route preview */}
-        <div className="field">
-          <label>
-            Route{' '}
-            {km != null && (
-              <span className="ride-km-badge">
-                {Number(km).toFixed(2)} km{durMin != null ? ` · ${durMin} min` : ''}
-                {extraKm > 0 && roadKm != null
-                  ? ` — ${Number(roadKm).toFixed(2)} route + ${extraKm} extra`
-                  : ''}
-                {crewWaitMin > 0 ? ` · ${roadMin ?? '—'} min drive + ${crewWaitMin} min crew wait` : ''}
-              </span>
-            )}
-          </label>
-          <RouteMap points={routePoints} line={routeData?.line} height={200} />
-          {routePoints.length >= 2 && (
-            <span className="field-hint">
-              {origin?.label} → {routePoints.slice(1, -1).map((p) => p.label).join(' → ') || ''}
-              {routePoints.length > 2 ? ' → ' : ''}
-              {dest?.label}
-            </span>
           )}
         </div>
 
@@ -3116,9 +3104,9 @@ function RideModal({
           <span className="field-hint">
             {form.is_adhoc_vehicle
               ? form.adhoc_vehicle_no
-                ? `Logged as ${form.adhoc_vehicle_no} for ${fmtDate(form.ride_date)} - numbered automatically, nothing else to fill in. Won't show on the Vehicle Board.`
+                ? `${form.adhoc_vehicle_no} - auto-numbered, nothing else to fill in`
                 : 'Assigning a number…'
-              : "Every fleet vehicle busy? Bring in an outside car - it's numbered automatically, no vehicle/driver details needed, and it won't show on the Vehicle Board or take a permanent Vehicles entry."}
+              : 'Fleet busy? Add an outside car - auto-numbered, no details needed'}
           </span>
         </div>
 
@@ -3175,11 +3163,7 @@ function RideModal({
                 </div>
               )}
             </div>
-            <span className="field-hint">
-              {form.is_adhoc_vehicle
-                ? `Duty Sheet: ${fmtDate(dutySheetDate)}`
-                : `Pick which driver covers this ride. Duty Sheet: ${fmtDate(dutySheetDate)}`}
-            </span>
+            <span className="field-hint">Duty Sheet: {fmtDate(dutySheetDate)}</span>
           </div>
         )}
 
@@ -3198,9 +3182,9 @@ function RideModal({
             />
             <span className="field-hint">
               {form.block_type === 'pickup'
-                ? `Auto: at the airport ${cityBuffers.checkin} min before check-in`
+                ? `Auto: ${cityBuffers.checkin} min before check-in`
                 : form.block_type === 'dropoff'
-                  ? `Auto: check-out + ${cityBuffers.checkout} min buffer`
+                  ? `Auto: check-out + ${cityBuffers.checkout} min`
                   : 'Set the departure time'}
             </span>
           </div>
@@ -3212,9 +3196,7 @@ function RideModal({
               disabled
             />
             <span className="field-hint">
-              {durMin != null
-                ? `Ride start + ${durMin} min${crewWaitMin > 0 ? ` (incl. ${crewWaitMin} min crew wait)` : ' drive'}`
-                : 'Ride start + trip time'}
+              {durMin != null ? `+ ${durMin} min${crewWaitMin > 0 ? ` (incl. ${crewWaitMin} crew wait)` : ''}` : 'Start + trip time'}
             </span>
           </div>
         </div>
@@ -3229,14 +3211,31 @@ function RideModal({
             autoComplete="off"
           />
         </div>
+        </div>
 
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-square" disabled={busy || Boolean(conflict)}>
-            {busy ? 'Saving…' : isAdd ? 'Create ride' : 'Save'}
-          </button>
+        <div className="ride-view-map">
+          <div className="field">
+            <label>
+              Route{' '}
+              {km != null && (
+                <span className="ride-km-badge">
+                  {Number(km).toFixed(2)} km{durMin != null ? ` · ${durMin} min` : ''}
+                  {extraKm > 0 && roadKm != null
+                    ? ` — ${Number(roadKm).toFixed(2)} route + ${extraKm} extra`
+                    : ''}
+                  {crewWaitMin > 0 ? ` · ${roadMin ?? '—'} min drive + ${crewWaitMin} min crew wait` : ''}
+                </span>
+              )}
+            </label>
+          </div>
+          <RouteMap points={routePoints} line={routeData?.line} height="calc(100vh - 260px)" />
+          {routePoints.length >= 2 && (
+            <span className="field-hint">
+              {origin?.label} → {routePoints.slice(1, -1).map((p) => p.label).join(' → ') || ''}
+              {routePoints.length > 2 ? ' → ' : ''}
+              {dest?.label}
+            </span>
+          )}
         </div>
       </form>
     </Modal>

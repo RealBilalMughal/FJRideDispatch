@@ -332,7 +332,25 @@ keys, tables or deploy targets with any other project.
   Check-out|Actual, then Crew (`.rv-crew` - count badge by the label, names
   stacked when >1), Vehicle|Driver, Ride/Pickup/Drop Time|ETA; Origin /
   Destination / Distance / Shift / Status / Notes stay single `.view-row`s
-  below. Renders a pulsing coloured dot on the same `RouteMap` via its
+  below. **The Add/Edit Ride form shares this exact shell** - same
+  `size="full"`/`width`/pinned-`footer` Modal, same `.ride-view.ride-view--
+  split` two-column layout (`.ride-view-info` reused with `.modal-form`
+  added alongside it for the usual `.field`/`.field-row` spacing, so it's
+  still real inputs, not read-only `RvField`s) - left column has every form
+  field (Flight, Flight code/Block, Date/Airport, Check-in|out, Crew +
+  Also-create-Deadhead/Return-Leg, Ad-hoc/Assign-vehicle, Shift, Ride
+  Time|ETA, Notes), right column is just the live `RouteMap` preview + the
+  KM/duration badge that used to sit inline above a small 200px map. The
+  Cancel/Create-ride/Save buttons moved into the Modal's `footer` (a
+  `<button type="submit" form="ride-form">` referencing the `<form
+  id="ride-form">` by HTML id, same association trick as any `form`
+  attribute - it doesn't need to be a DOM descendant). Every field-hint
+  under an input was **shortened** (e.g. "Scheduled, from the flight" ->
+  "From the flight", the Also-create-Deadhead/Return-Leg preview lines
+  compressed to `Leaves <time> → <stop> <time> (<buffer> min before/after
+  ...)`, the ad-hoc hint to a single short line) - same information, less
+  reading before a dispatcher can act. Renders a pulsing coloured dot on the
+  same `RouteMap` via its
   `liveMarker` prop (bounds-fit includes the live point). `RouteMap` also now
   colours the stop pins by role - **origin green / mid amber / destination
   red** - and labels each with the running distance from the origin (rough

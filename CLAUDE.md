@@ -1000,6 +1000,34 @@ keys, tables or deploy targets with any other project.
     vehicle (looked up against this page's own `vehicles` array by the
     ride's `vehicle_id`) as a second flat red line under the planned `car`
     whenever they differ and the row is followed.
+  - **Actual Crew Count** - its own column right after Actual Crew: just
+    `actualCrewNames.length` as a number (`—` for a pending/No row) - the
+    count-only counterpart to the (names-list) Actual Crew column, same as
+    the planned side already splits into Crew (names) + Crew Count (number).
+  - **Extra ride rows** - a ride dispatched straight on the Rides page (or
+    any path other than Follow/No) has no `ride_plan_rows` row pointing at
+    it at all, so it wouldn't show up on this page even though it happened
+    on this same date - `fetchRows()` also queries `rides` for
+    `ride_date = <this plan's date>` (+ `city_id` when filtered), excludes
+    whatever's already linked via some plan row's `ride_id`, and merges
+    what's left in as synthetic, **client-side-only** rows (never written to
+    `ride_plan_rows` - `id: 'extra-<ride id>'`, sorted after every real plan
+    row). Marked `isExtra: true`; the Status column appends a flat muted "·
+    Extra ride" note so it reads unmistakably as "this happened but wasn't
+    planned" (`row.ride.ref_no` still shows too, from the normal Followed
+    format). **The KM handling is the whole point**: an extra row's
+    `planned_km` is `null` and `crew_matches` is `[]` (never real plan
+    values), while its `ride`/`actualCrewNames`/`actualVehicleNo` are the
+    real dispatched ride's - so it flows through `summary`/`report`'s
+    existing per-block reduce untouched: `plannedKm += 0`, `actualKm +=
+    billableKm(ride)`. Its own KM/Crew Count/Vehicle/Difference columns all
+    show `—` (nothing was planned to compare against) while Actual KM,
+    Actual Crew(+Count), Vehicle (shown plain, not as an "Actual: X"
+    mismatch line) and the route map link render exactly like a followed
+    plan row's. Never touched by Follow/No/Not-happening/Reopen or the
+    Deadhead/Return-Leg reconciliation effect (all gated on `status ===
+    'pending'`, which an extra row never is) and untouched by Delete plan
+    (that only deletes `ride_plan_rows`, and these were never one).
   - **Difference** - a table column right after Actual KM: that row's own
     `billableKm(ride) - planned_km`, flat red when positive (ran over), flat
     green otherwise - the Report panel's per-block delta, but per-row. The

@@ -72,11 +72,25 @@ const tierClass = (tier) => (tier === 'unmatched' ? 'bad' : tier === 'fuzzy' ? '
 
 // A followed Pickup/Dropoff whose dispatched ride ended up with a different
 // crew count than the plan (e.g. plan had 2, only 1 was actually added).
+// Never applies to a synthetic "extra ride" row - there was no plan to
+// mismatch against.
 const hasCrewMismatch = (row) =>
+  !row.isExtra &&
   row.status === 'followed' &&
   (row.block_type === 'pickup' || row.block_type === 'dropoff') &&
   row.actualCrewCount != null &&
   row.actualCrewCount !== (row.crew_matches || []).length
+
+// ISO timestamp -> "HH:MM" (24h, browser-local) - matches the plain 24h
+// strings `ride_plan_rows.start_time`/`end_time` already carry, so a
+// synthetic extra-ride row can reuse the same "time" column render as a
+// real plan row.
+const isoHHMM = (iso) => {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 function CrewMatchCell({ row, crew }) {
   const matches = row.crew_matches
@@ -107,6 +121,7 @@ function StatusCell({ row }) {
       <span className={`status-text ${row.via_no ? 'bad' : 'on'}`}>
         {row.via_no ? 'No Follow' : 'Followed'}
         {row.ride ? ` · ${row.ride.ref_no}` : ''}
+        {row.isExtra && <span className="status-text off"> · Extra ride</span>}
       </span>
     )
   if (row.status === 'skipped')
@@ -208,11 +223,30 @@ export default function RidePlan() {
     if (error) toast.error('Could not load the plan')
     const list = data ?? []
 
+    // Rides dispatched on this same date that no plan row links to - e.g.
+    // added straight on the Rides page, outside the Follow/No flow entirely.
+    // A Follow-created ride always gets `ride_date = plan_date` (see the
+    // planPrefill build in Rides.jsx), so matching on ride_date here finds
+    // exactly this plan's would-be rides, no plan_date column needed on
+    // `rides` itself.
+    const linkedRideIds = new Set(list.filter((r) => r.ride_id).map((r) => r.ride_id))
+    let rq = supabase
+      .from('rides')
+      .select(
+        'id, ref_no, distance_km, status, count_km, vehicle_id, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
+      )
+      .eq('ride_date', planDate)
+    if (cityId != null) rq = rq.eq('city_id', cityId)
+    const { data: dayRides } = await rq
+    const extraRides = (dayRides ?? []).filter((r) => !linkedRideIds.has(r.id))
+
     // The linked ride's REAL crew (names, for their own column) and vehicle
     // (for the planned-vs-actual check below) - fetched client-side rather
     // than relying on a PostgREST count-aggregate embed that may not be
-    // available.
-    const rideIds = [...new Set(list.filter((r) => r.ride?.id).map((r) => r.ride.id))]
+    // available. Covers both plan-row-linked rides and the extra ones above.
+    const rideIds = [
+      ...new Set([...list.filter((r) => r.ride?.id).map((r) => r.ride.id), ...extraRides.map((r) => r.id)]),
+    ]
     let crewByRide = new Map()
     if (rideIds.length) {
       const { data: rc } = await supabase
@@ -226,15 +260,52 @@ export default function RidePlan() {
         return m.set(x.ride_id, arr)
       }, new Map())
     }
-    setRows(
-      list.map((r) => {
-        const names = r.ride?.id ? crewByRide.get(r.ride.id) || [] : null
-        const actualVehicleNo = r.ride?.vehicle_id
-          ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
-          : null
-        return { ...r, actualCrewNames: names, actualCrewCount: names?.length ?? null, actualVehicleNo }
-      }),
-    )
+
+    const planRows = list.map((r) => {
+      const names = r.ride?.id ? crewByRide.get(r.ride.id) || [] : null
+      const actualVehicleNo = r.ride?.vehicle_id
+        ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
+        : null
+      return { ...r, actualCrewNames: names, actualCrewCount: names?.length ?? null, actualVehicleNo }
+    })
+
+    // Synthetic rows, client-side only (never written to ride_plan_rows) -
+    // `planned_km: null` and `crew_matches: []` are the whole trick: every KM/
+    // crew total downstream (top summary, Report panel) sums real plan rows'
+    // `planned_km` plus these rows' 0, while `actualKm` still sums their
+    // linked ride's billable KM same as any followed row - so an extra ride's
+    // distance only ever lands in Actual, never Planned.
+    const extraRows = extraRides.map((r) => {
+      const names = crewByRide.get(r.id) || []
+      const actualVehicleNo = r.vehicle_id ? vehicles.find((v) => v.id === r.vehicle_id)?.vehicle_no ?? null : null
+      return {
+        id: `extra-${r.id}`,
+        isExtra: true,
+        seq: Number.MAX_SAFE_INTEGER,
+        trip_id: null,
+        block_type: r.block_type,
+        flight_no: r.flight_no,
+        origin: r.origin_label,
+        destination: r.dest_label,
+        start_time: isoHHMM(r.start_at),
+        end_time: isoHHMM(r.end_at),
+        planned_km: null,
+        crew_matches: [],
+        crew_count: null,
+        car: null,
+        is_adhoc_car: false,
+        matched_vehicle_id: null,
+        status: 'followed',
+        skip_reason: null,
+        via_no: false,
+        ride: r,
+        actualCrewNames: names,
+        actualCrewCount: names.length,
+        actualVehicleNo,
+      }
+    })
+
+    setRows([...planRows, ...extraRows])
     setLoading(false)
   }, [canView, planDate, cityId, vehicles])
 
@@ -415,7 +486,7 @@ export default function RidePlan() {
   const totalDelta = summary.total.actualKm - summary.total.plannedKm
 
   const columns = [
-    { key: 'trip', header: 'Trip', render: (r) => r.trip_id },
+    { key: 'trip', header: 'Trip', render: (r) => (r.isExtra ? r.ride?.ref_no ?? '—' : r.trip_id) },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
     { key: 'flight', header: 'Flight', render: (r) => r.flight_no || '—' },
     {
@@ -434,7 +505,7 @@ export default function RidePlan() {
       key: 'crewCount',
       header: 'Crew Count',
       align: 'right',
-      render: (r) => r.crew_count ?? r.crew_matches?.length ?? '—',
+      render: (r) => (r.isExtra ? '—' : r.crew_count ?? r.crew_matches?.length ?? '—'),
     },
     {
       key: 'actualCrew',
@@ -455,20 +526,29 @@ export default function RidePlan() {
         ),
     },
     {
+      key: 'actualCrewCount',
+      header: 'Actual Crew Count',
+      align: 'right',
+      render: (r) => (r.status === 'followed' ? r.actualCrewCount ?? '—' : '—'),
+    },
+    {
       key: 'car',
       header: 'Vehicle',
-      render: (r) => (
-        <>
-          <div>
-            {r.car || '—'}
-            {r.is_adhoc_car && <span className="status-text off"> · ad-hoc</span>}
-            {!r.is_adhoc_car && r.car && !r.matched_vehicle_id && <span className="status-text bad"> · not in fleet</span>}
-          </div>
-          {r.status === 'followed' && r.actualVehicleNo && r.actualVehicleNo !== r.car && (
-            <div className="status-text bad">Actual: {r.actualVehicleNo}</div>
-          )}
-        </>
-      ),
+      render: (r) => {
+        if (r.isExtra) return r.actualVehicleNo || '—'
+        return (
+          <>
+            <div>
+              {r.car || '—'}
+              {r.is_adhoc_car && <span className="status-text off"> · ad-hoc</span>}
+              {!r.is_adhoc_car && r.car && !r.matched_vehicle_id && <span className="status-text bad"> · not in fleet</span>}
+            </div>
+            {r.status === 'followed' && r.actualVehicleNo && r.actualVehicleNo !== r.car && (
+              <div className="status-text bad">Actual: {r.actualVehicleNo}</div>
+            )}
+          </>
+        )
+      },
     },
     { key: 'status', header: 'Status', render: (r) => <StatusCell row={r} /> },
     {
@@ -482,6 +562,7 @@ export default function RidePlan() {
       header: 'Difference',
       align: 'right',
       render: (r) => {
+        if (r.isExtra) return <span className="secondary">—</span>
         if (r.status !== 'followed' || !r.ride) return '—'
         const d = (Number(billableKm(r.ride)) || 0) - (Number(r.planned_km) || 0)
         return <span className={`status-text ${d > 0 ? 'bad' : 'on'}`}>{d.toFixed(2)}</span>

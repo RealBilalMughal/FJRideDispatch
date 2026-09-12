@@ -2094,6 +2094,32 @@ function RideModal({
       adhoc_vehicle_no: '', // force a fresh number next time this is checked
     }))
 
+  const selVehicle = form.is_adhoc_vehicle ? null : vehicles.find((v) => v.id === form.vehicle_id)
+  const driverId = selVehicle
+    ? shift === 'night'
+      ? selVehicle.night_driver_id
+      : selVehicle.driver_id
+    : null
+  const driverName = driverId ? drivers.find((d) => d.id === driverId)?.name || '—' : ''
+  const hasVehicle = form.is_adhoc_vehicle || Boolean(form.vehicle_id)
+  // The vehicle_id/shift/driver_id (+ ad-hoc vehicle no) shared by the main
+  // ride and its "also create a Deadhead/Return Leg" companions - same
+  // vehicle info goes on all of them (no separate driver name/phone to carry -
+  // an ad-hoc car's driver isn't tracked, only that a vehicle was ad-hoc).
+  const vehicleFields = () => ({
+    vehicle_id: form.is_adhoc_vehicle ? null : form.vehicle_id || null,
+    shift: hasVehicle ? shift : null,
+    driver_id: driverId || null,
+    is_adhoc_vehicle: form.is_adhoc_vehicle,
+    adhoc_vehicle_no: form.is_adhoc_vehicle ? form.adhoc_vehicle_no || null : null,
+    adhoc_driver_name: null,
+    adhoc_driver_phone: null,
+  })
+  const dutySheetDate =
+    shift === 'night' && dutySheetPrevDay ? addDays(form.ride_date, -1) : form.ride_date
+
+  const cityId = Number(form.city_id) || null
+
   // Assign the next "Ad-Hoc NN" for this city+date once, as soon as the box
   // is checked and a number isn't already set (a saved edit already has one -
   // never renumber it just because the form re-rendered).
@@ -2120,31 +2146,6 @@ function RideModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.is_adhoc_vehicle, form.adhoc_vehicle_no, cityId, form.ride_date])
 
-  const selVehicle = form.is_adhoc_vehicle ? null : vehicles.find((v) => v.id === form.vehicle_id)
-  const driverId = selVehicle
-    ? shift === 'night'
-      ? selVehicle.night_driver_id
-      : selVehicle.driver_id
-    : null
-  const driverName = driverId ? drivers.find((d) => d.id === driverId)?.name || '—' : ''
-  const hasVehicle = form.is_adhoc_vehicle || Boolean(form.vehicle_id)
-  // The vehicle_id/shift/driver_id (+ ad-hoc vehicle no) shared by the main
-  // ride and its "also create a Deadhead/Return Leg" companions - same
-  // vehicle info goes on all of them (no separate driver name/phone to carry -
-  // an ad-hoc car's driver isn't tracked, only that a vehicle was ad-hoc).
-  const vehicleFields = () => ({
-    vehicle_id: form.is_adhoc_vehicle ? null : form.vehicle_id || null,
-    shift: hasVehicle ? shift : null,
-    driver_id: driverId || null,
-    is_adhoc_vehicle: form.is_adhoc_vehicle,
-    adhoc_vehicle_no: form.is_adhoc_vehicle ? form.adhoc_vehicle_no || null : null,
-    adhoc_driver_name: null,
-    adhoc_driver_phone: null,
-  })
-  const dutySheetDate =
-    shift === 'night' && dutySheetPrevDay ? addDays(form.ride_date, -1) : form.ride_date
-
-  const cityId = Number(form.city_id) || null
   const airport = useMemo(() => {
     const c = allowedCities.find((x) => x.id === cityId)
     return { name: c?.airport_name || '', lat: Number(c?.airport_lat), lng: Number(c?.airport_lng) }

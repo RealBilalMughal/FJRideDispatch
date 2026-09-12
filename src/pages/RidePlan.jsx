@@ -497,19 +497,22 @@ export default function RidePlan() {
     {
       key: 'route',
       header: 'Route',
+      width: 100,
       render: (r) => (r.origin && r.destination ? `${r.origin} → ${r.destination}` : '—'),
     },
     {
       key: 'time',
       header: 'Time',
+      width: 140,
       render: (r) => `${fmtTime12(r.start_time) || '—'}${r.end_time ? ` – ${fmtTime12(r.end_time)}` : ''}`,
     },
     { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
-    { key: 'crew', header: 'Crew', render: (r) => <CrewMatchCell row={r} crew={crew} /> },
+    { key: 'crew', header: 'Crew', width: 190, render: (r) => <CrewMatchCell row={r} crew={crew} /> },
     {
       key: 'crewCount',
       header: 'Crew C',
       align: 'right',
+      width: 55,
       render: (r) => (r.isExtra ? '—' : r.crew_count ?? r.crew_matches?.length ?? '—'),
     },
     {

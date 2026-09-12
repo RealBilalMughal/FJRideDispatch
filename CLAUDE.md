@@ -1082,7 +1082,13 @@ keys, tables or deploy targets with any other project.
     (white), which would visibly recolour those sections; the table also
     gets `border-collapse: separate` (data.css's shared `collapse` default
     has a real cross-browser bug where `position: sticky` on a `<th>`
-    silently does nothing).
+    silently does nothing) and **`table-layout: fixed`** - under the shared
+    `data.css` default (`auto`), the browser was handing short-content
+    columns (Route "LHE → KHI", Time, Crew, Crew C) a chunk of the table's
+    leftover width, reading as excess empty padding in exactly those
+    columns; explicit `width` on those four in `RidePlan.jsx`'s `columns`
+    array now actually sticks (under `auto` a `width` is only ever a hint),
+    and every other column (no `width` set) shares whatever's left.
   - **Report** (`Sigma` toggle, like the Rides Summary panel) - a second,
     more detailed panel below the date bar: per block type, for the selected
     `plan_date`, followed-row count, Σ planned KM, Σ actual KM (**followed

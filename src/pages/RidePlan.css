@@ -79,9 +79,16 @@
   max-height: var(--rp-table-max-h, none);
 }
 
+/* table-layout: fixed makes the columns' explicit `width` (RidePlan.jsx's
+   columns array) actually stick - under the default `auto` layout the
+   browser was handing Route/Time/Crew/Crew C's leftover space anyway
+   (their content is short - "LHE -> KHI", a time range, 1-2 names), which
+   read as a lot of empty padding in those columns. Columns with no width
+   set (Vehicle, Status, Action, ...) split whatever's left. */
 .rp-plan-table .data-table {
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 
 .rp-plan-table .data-table thead th {

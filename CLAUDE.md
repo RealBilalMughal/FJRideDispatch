@@ -381,7 +381,16 @@ keys, tables or deploy targets with any other project.
   **Still session-only**: per-stop arrival timestamps (the live card's "Seen
   at stops" list) - a possible follow-up is persisting those + an "on-time %"
   report.
-- **Notify** (WhatsApp / SMS, provider-agnostic) - a `Send` row action (and a
+- **Notify** (WhatsApp / SMS, provider-agnostic) - **hidden from the UI for
+  now** (`Rides.jsx`'s `const NOTIFY_ENABLED = false` gates both the row
+  action and the Ride View footer button; Settings' `notify` entry is
+  commented out of `SECTIONS` too) - no WhatsApp Business API / SMS gateway
+  is wired up behind the webhook yet, so there's nothing for the button to
+  usefully do. The backend (Edge Function, `ride_notifications` table,
+  `cities.notify_webhook_url`/`notify_template`, `NotificationsPanel`) is
+  untouched - flip `NOTIFY_ENABLED` back to `true` and un-comment the
+  Settings section when a provider is actually connected. Design: a `Send`
+  row action (and a
   footer button in the Ride View), shown when the ride has a vehicle and the
   caller has `rides.edit`. Calls the **`notify-ride` Edge Function** with
   `{ ride_id }`; it renders the city's message template

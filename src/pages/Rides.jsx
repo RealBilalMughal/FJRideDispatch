@@ -76,6 +76,12 @@ import './Rides.css'
 
 const PAGE_SIZE = 15
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
+// WhatsApp/SMS Notify - hidden from the UI until a real webhook provider
+// (WhatsApp Business API / SMS gateway) is actually set up. The backend
+// (notify-ride Edge Function, ride_notifications table, Settings ->
+// Notifications) is untouched - flip this back on when ready, no other
+// changes needed.
+const NOTIFY_ENABLED = false
 
 const SELECT = `
   id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
@@ -700,7 +706,7 @@ export default function Rides() {
             <button title="View" onClick={() => setDetail({ row: r, edit: false })}>
               <Eye size={13} />
             </button>
-            {canEdit && r.vehicle_id && r.status !== 'cancelled' && (
+            {NOTIFY_ENABLED && canEdit && r.vehicle_id && r.status !== 'cancelled' && (
               <button title="Notify driver + crew" onClick={() => setNotifyFor(r)}>
                 <Send size={13} />
               </button>
@@ -2618,7 +2624,7 @@ function RideModal({
             <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
               Close
             </button>
-            {canEdit && row.vehicle_id && (
+            {NOTIFY_ENABLED && canEdit && row.vehicle_id && (
               <button
                 type="button"
                 className="btn btn-ghost btn-square"

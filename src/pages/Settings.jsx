@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Pencil, Ruler, Satellite, Send, Shield, Timer } from 'lucide-react'
+import { MapPinned, Pencil, Ruler, Satellite, Shield, Timer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -27,7 +27,9 @@ const SECTIONS = [
   { key: 'buffer', label: 'Ride Buffer Time', icon: Timer },
   { key: 'blockkm', label: 'Block KM Buffer', icon: Ruler },
   { key: 'tracker', label: 'Live Tracker', icon: Satellite },
-  { key: 'notify', label: 'Notifications', icon: Send },
+  // 'notify' hidden until a real WhatsApp/SMS provider is set up (see
+  // Rides.jsx's NOTIFY_ENABLED) - NotificationsPanel/cities.notify_* are
+  // untouched, just not reachable from this list right now.
 ]
 
 export default function Settings() {

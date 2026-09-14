@@ -218,9 +218,9 @@ export default function DriverOdometer() {
 
   const [todayDone, setTodayDone] = useState(false)
   useEffect(() => {
-    if (!vehicle?.id) { setTodayDone(false); return }
-    checkExisting(vehicle.id, logDate, profile?.id).then(setTodayDone)
-  }, [vehicle?.id, logDate])
+    if (!vehicle?.id || !profile?.id) { setTodayDone(false); return }
+    checkExisting(vehicle.id, logDate, profile.id).then(setTodayDone)
+  }, [vehicle?.id, logDate, profile?.id])
 
   return (
     <div className="drv-wrap">
@@ -375,8 +375,8 @@ export default function DriverOdometer() {
 
         </form>
 
-        {/* Backup link — only in normal mode */}
-        {mode === 'normal' && vehicle && !todayDone && (
+        {/* Backup link — always available in normal mode if vehicle is assigned */}
+        {mode === 'normal' && vehicle && (
           <button type="button" className="drv-backup-link" onClick={enterBackup}>
             Using a backup vehicle today?
           </button>

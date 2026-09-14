@@ -6,6 +6,7 @@ import {
   Plus,
   RefreshCw,
   Shield,
+  Trash2,
   UserCheck,
   UserX,
   Users as UsersIcon,
@@ -83,6 +84,7 @@ export default function Users() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [showDrivers, setShowDrivers] = useState(false)
 
   const [selected, setSelected] = useState(new Set())
   const [bulkAction, setBulkAction] = useState('')
@@ -91,6 +93,8 @@ export default function Users() {
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState(null)
   const [pwUser, setPwUser] = useState(null)
+  const [deleteUser, setDeleteUser] = useState(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const fetchRows = useCallback(async () => {
     const { data, error } = await supabase
@@ -121,6 +125,9 @@ export default function Users() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return rows.filter((u) => {
+      // hide driver-only accounts unless explicitly shown or filtered to driver role
+      const isDriverOnly = u.roles.length > 0 && u.roles.every((r) => r === 'driver')
+      if (isDriverOnly && !showDrivers && roleFilter !== 'driver') return false
       if (roleFilter !== 'all' && !u.roles.includes(roleFilter)) return false
       if (statusFilter === 'active' && !u.is_active) return false
       if (statusFilter === 'deactivated' && u.is_active) return false
@@ -131,10 +138,10 @@ export default function Users() {
         return false
       return true
     })
-  }, [rows, search, roleFilter, statusFilter])
+  }, [rows, search, roleFilter, statusFilter, showDrivers])
 
   const activeFilters =
-    (roleFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0)
+    (roleFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (showDrivers ? 1 : 0)
 
   const onSearch = (v) => {
     setSearch(v)
@@ -198,9 +205,25 @@ export default function Users() {
     }
   }
 
+  const doDelete = async () => {
+    if (!deleteUser) return
+    setDeleteBusy(true)
+    try {
+      await adminUsers.deleteUser(deleteUser.id)
+      toast.success(`${deleteUser.full_name || 'User'} deleted`)
+      setDeleteUser(null)
+      fetchRows()
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   const clearFilters = () => {
     setRoleFilter('all')
     setStatusFilter('all')
+    setShowDrivers(false)
     setSearch('')
     setPage(1)
   }
@@ -297,6 +320,11 @@ export default function Users() {
               <KeyRound size={13} />
             </button>
           )}
+          {canDeactivate && mayTouch(u) && (
+            <button title="Delete user" className="danger" onClick={() => setDeleteUser(u)}>
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       ),
     },
@@ -358,6 +386,14 @@ export default function Users() {
               <option value="active">Active</option>
               <option value="deactivated">Deactivated</option>
             </select>
+            <label className="check-line" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+              <input
+                type="checkbox"
+                checked={showDrivers}
+                onChange={(e) => { setShowDrivers(e.target.checked); setPage(1) }}
+              />
+              Show drivers
+            </label>
           </>
         }
       />
@@ -422,6 +458,35 @@ export default function Users() {
           onClose={() => setPwUser(null)}
           onDone={() => setPwUser(null)}
         />
+      )}
+
+      {deleteUser && (
+        <Modal open onClose={() => !deleteBusy && setDeleteUser(null)} title="Delete user" width={400}>
+          <div className="modal-form">
+            <p>
+              Permanently delete <strong>{deleteUser.full_name || deleteUser.email}</strong>? This
+              removes their login and all profile data and cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-square"
+                onClick={() => setDeleteUser(null)}
+                disabled={deleteBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-square"
+                onClick={doDelete}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   )

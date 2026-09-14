@@ -25,6 +25,7 @@ export const adminUsers = {
   setPassword: (user_id, password) => invoke({ action: 'set_password', user_id, password }),
   setActive: (user_ids, active) =>
     invoke({ action: 'set_active', user_ids: [].concat(user_ids), active }),
+  deleteUser: (user_id) => invoke({ action: 'delete_user', user_id }),
 }
 
 export function generatePassword(len = 12) {

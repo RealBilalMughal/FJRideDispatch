@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Download, Eye, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound } from 'lucide-react'
+import { Download, Eye, KeyRound, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { adminUsers, generatePassword } from '../lib/adminUsers'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { useEntityRows } from '../lib/useEntityRows'
 import { useSelection } from '../lib/useSelection'
 import { fmtDate } from '../lib/format'
 import { pkToday } from '../lib/time'
-import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
+import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toAuthEmail, toLocal, toStored } from '../lib/phone'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -22,7 +23,7 @@ import StatCards from '../components/data/StatCards'
 
 const PAGE_SIZE = 15
 const SELECT =
-  'id, ref_no, name, contact, city_id, vendor_id, is_active, created_at, city:cities(name), vendor:vendors(ref_no, name)'
+  'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, city:cities(name), vendor:vendors(ref_no, name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -62,7 +63,7 @@ export default function Drivers() {
     label: 'drivers',
   })
 
-  // vendors for the picker (all accessible, filtered by city in the form)
+  // vendors for the picker
   const [vendors, setVendors] = useState([])
   useEffect(() => {
     if (!canView) return
@@ -73,14 +74,33 @@ export default function Drivers() {
       .then(({ data }) => setVendors((data ?? []).filter((v) => v.is_active)))
   }, [canView])
 
+  // vehicle map: driver_id → vehicle_no (day or night assignment)
+  const [vehicleMap, setVehicleMap] = useState({})
+  useEffect(() => {
+    if (!canView) return
+    supabase
+      .from('vehicles')
+      .select('vehicle_no, driver_id, night_driver_id')
+      .eq('is_active', true)
+      .then(({ data }) => {
+        const m = {}
+        ;(data ?? []).forEach((v) => {
+          if (v.driver_id) m[v.driver_id] = v.vehicle_no
+          if (v.night_driver_id) m[v.night_driver_id] = v.vehicle_no
+        })
+        setVehicleMap(m)
+      })
+  }, [canView])
+
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [vendorFilter, setVendorFilter] = useState('all')
   const [addOpen, setAddOpen] = useState(false)
   const [detail, setDetail] = useState(null)
+  const [pwTarget, setPwTarget] = useState(null) // { id (driver), profile_id, name }
   const [importOpen, setImportOpen] = useState(false)
-  const [pending, setPending] = useState(null) // { ids, label }
+  const [pending, setPending] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
 
@@ -90,8 +110,9 @@ export default function Drivers() {
         ...r,
         city_name: r.city?.name ?? '',
         vendor_text: vendorLabel(r.vendor),
+        vehicle_no: vehicleMap[r.id] ?? null,
       })),
-    [rows],
+    [rows, vehicleMap],
   )
 
   const filtered = useMemo(() => {
@@ -173,6 +194,7 @@ export default function Drivers() {
     { key: 'ref', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
     { key: 'name', header: 'Name', render: (r) => <span className="primary">{r.name}</span> },
     { key: 'phone', header: 'Phone', render: (r) => (r.contact ? formatPkPhone(r.contact) : '—') },
+    { key: 'vehicle', header: 'Vehicle', render: (r) => r.vehicle_no || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
     { key: 'vendor', header: 'Vendor', render: (r) => r.vendor_text },
     {
@@ -207,6 +229,11 @@ export default function Drivers() {
           {canEdit && (
             <button title="Edit" onClick={() => setDetail({ row: r, edit: true })}>
               <Pencil size={13} />
+            </button>
+          )}
+          {canEdit && r.profile_id && (
+            <button title="Change password" onClick={() => setPwTarget(r)}>
+              <KeyRound size={13} />
             </button>
           )}
           {canDelete && (
@@ -261,42 +288,26 @@ export default function Drivers() {
 
       <FilterBar
         search={search}
-        onSearch={(v) => {
-          setSearch(v)
-          setPage(1)
-        }}
+        onSearch={(v) => { setSearch(v); setPage(1) }}
         searchPlaceholder="Search ID, name, phone or vendor..."
         activeCount={(statusFilter !== 'all' ? 1 : 0) + (vendorFilter !== 'all' ? 1 : 0)}
-        onClear={() => {
-          setStatusFilter('all')
-          setVendorFilter('all')
-          setSearch('')
-          setPage(1)
-        }}
+        onClear={() => { setStatusFilter('all'); setVendorFilter('all'); setSearch(''); setPage(1) }}
         inline={
           <>
             <select
               className="filter-select"
               value={vendorFilter}
-              onChange={(e) => {
-                setVendorFilter(e.target.value)
-                setPage(1)
-              }}
+              onChange={(e) => { setVendorFilter(e.target.value); setPage(1) }}
             >
               <option value="all">All vendors</option>
               {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
+                <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
             <select
               className="filter-select"
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value)
-                setPage(1)
-              }}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
             >
               <option value="all">All status</option>
               <option value="active">Active</option>
@@ -337,11 +348,9 @@ export default function Drivers() {
           allowedCities={allowedCities}
           defaultCityId={cityId}
           createdBy={profile?.id}
+          vehicleMap={vehicleMap}
           onClose={() => setAddOpen(false)}
-          onDone={() => {
-            setAddOpen(false)
-            fetchRows()
-          }}
+          onDone={() => { setAddOpen(false); fetchRows() }}
         />
       )}
       {detail && (
@@ -351,11 +360,17 @@ export default function Drivers() {
           canEdit={canEdit}
           vendors={vendors}
           allowedCities={allowedCities}
+          vehicleMap={vehicleMap}
+          onChangePw={(r) => { setDetail(null); setPwTarget(r) }}
           onClose={() => setDetail(null)}
-          onDone={() => {
-            setDetail(null)
-            fetchRows()
-          }}
+          onDone={() => { setDetail(null); fetchRows() }}
+        />
+      )}
+      {pwTarget && (
+        <DriverPwModal
+          driver={pwTarget}
+          onClose={() => setPwTarget(null)}
+          onDone={() => setPwTarget(null)}
         />
       )}
       {importOpen && (
@@ -364,10 +379,7 @@ export default function Drivers() {
           allowedCities={allowedCities}
           createdBy={profile?.id}
           onClose={() => setImportOpen(false)}
-          onDone={(n) => {
-            setImportOpen(false)
-            if (n) fetchRows()
-          }}
+          onDone={(n) => { setImportOpen(false); if (n) fetchRows() }}
         />
       )}
 
@@ -383,7 +395,8 @@ export default function Drivers() {
   )
 }
 
-function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowedCities, defaultCityId, createdBy, onClose, onDone }) {
+// ── Driver Add / View / Edit modal ────────────────────────────────────────
+function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowedCities, defaultCityId, createdBy, vehicleMap, onChangePw, onClose, onDone }) {
   const isAdd = !row
   const [editing, setEditing] = useState(isAdd || startInEdit)
   const [form, setForm] = useState({
@@ -391,6 +404,7 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
     phone: fromStored(row?.contact),
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
     vendor_id: row?.vendor_id ?? '',
+    password: '',
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -398,14 +412,12 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
   const phoneErr = pkPhoneError(form.phone)
   const title = isAdd ? 'Add Driver' : editing ? `Edit ${row.name}` : `${row.name} · ID ${row.ref_no}`
 
-  // vendors in the chosen city
   const cityVendors = useMemo(
     () => vendors.filter((v) => !form.city_id || v.city_id === Number(form.city_id)),
     [vendors, form.city_id],
   )
   const vendorOptions = cityVendors.map((v) => ({ value: v.id, label: `(${v.ref_no}) ${v.name}` }))
 
-  // clear vendor if it no longer belongs to the selected city
   useEffect(() => {
     if (form.vendor_id && !cityVendors.some((v) => v.id === form.vendor_id)) {
       set('vendor_id', '')
@@ -419,25 +431,57 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
     if (!form.name.trim()) return setErr('Driver name is required')
     if (!form.city_id) return setErr('Pick a city')
     if (!form.vendor_id) return setErr('Pick a vendor')
-    if (form.phone && !isValidPkMobile(form.phone)) return setErr(phoneErr || 'Invalid phone')
+    if (!form.phone) return setErr('Phone number is required')
+    if (!isValidPkMobile(form.phone)) return setErr(phoneErr || 'Invalid phone')
+    if (isAdd && form.password.length < 8) return setErr('Password must be at least 8 characters')
     setBusy(true)
+
     const payload = {
       name: form.name.trim(),
       contact: toStored(form.phone),
       city_id: Number(form.city_id),
       vendor_id: form.vendor_id,
     }
-    const res = isAdd
-      ? await supabase.from('drivers').insert({ ...payload, created_by: createdBy ?? null })
-      : await supabase.from('drivers').update(payload).eq('id', row.id)
-    setBusy(false)
-    if (res.error) return setErr(res.error.message)
-    toast.success(isAdd ? 'Driver added' : 'Driver updated')
-    onDone()
+
+    if (isAdd) {
+      // 1. insert driver
+      const { data: inserted, error: insErr } = await supabase
+        .from('drivers')
+        .insert({ ...payload, created_by: createdBy ?? null })
+        .select('id')
+        .single()
+      if (insErr) { setErr(insErr.message); setBusy(false); return }
+
+      // 2. create auth account (phone login)
+      try {
+        const result = await adminUsers.create({
+          full_name: form.name.trim(),
+          email: toAuthEmail(form.phone),
+          phone: toStored(form.phone),
+          roles: ['driver'],
+          password: form.password,
+        })
+        // 3. link profile_id back to driver record
+        await supabase.from('drivers').update({ profile_id: result.id }).eq('id', inserted.id)
+      } catch (authErr) {
+        toast.error(`Driver saved but login account not created: ${authErr.message}`)
+      }
+
+      toast.success('Driver added')
+      onDone()
+    } else {
+      const { error } = await supabase.from('drivers').update(payload).eq('id', row.id)
+      setBusy(false)
+      if (error) return setErr(error.message)
+      toast.success('Driver updated')
+      onDone()
+    }
   }
 
+  // ── View mode ──
   if (!editing) {
     const cityName = allowedCities.find((c) => c.id === row.city_id)?.name || row.city_name || '—'
+    const vehicleNo = vehicleMap?.[row.id] ?? null
     return (
       <Modal open onClose={onClose} title={title} width={440}>
         <div className="modal-form">
@@ -448,6 +492,10 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
           <div className="view-row">
             <span className="view-label">Phone</span>
             <span className="view-value">{row.contact ? formatPkPhone(row.contact) : '—'}</span>
+          </div>
+          <div className="view-row">
+            <span className="view-label">Vehicle</span>
+            <span className="view-value">{vehicleNo || '—'}</span>
           </div>
           <div className="view-row">
             <span className="view-label">City</span>
@@ -461,10 +509,25 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
             <span className="view-label">Status</span>
             <span className="view-value">{row.is_active ? 'Active' : 'Inactive'}</span>
           </div>
+          <div className="view-row">
+            <span className="view-label">Login</span>
+            <span className="view-value">
+              {row.profile_id ? (
+                <span className="status-text on">Account linked</span>
+              ) : (
+                <span className="status-text off">No account</span>
+              )}
+            </span>
+          </div>
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
               Close
             </button>
+            {canEdit && row.profile_id && onChangePw && (
+              <button type="button" className="btn btn-ghost btn-square" onClick={() => onChangePw(row)}>
+                <KeyRound size={13} /> Change Password
+              </button>
+            )}
             {canEdit && (
               <button type="button" className="btn btn-square" onClick={() => setEditing(true)}>
                 <Pencil size={13} /> Edit
@@ -476,6 +539,7 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
     )
   }
 
+  // ── Add / Edit form ──
   return (
     <Modal open onClose={onClose} title={title} width={440}>
       <form className="modal-form" onSubmit={submit}>
@@ -485,7 +549,7 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
           <input id="d-name" className="input" value={form.name} onChange={(e) => set('name', e.target.value)} autoComplete="off" />
         </div>
         <div className="field">
-          <label htmlFor="d-phone">Contact</label>
+          <label htmlFor="d-phone">Phone {isAdd && <span style={{ color: 'var(--danger)', fontSize: 12 }}>*</span>}</label>
           <PkPhoneInput
             id="d-phone"
             value={form.phone}
@@ -493,17 +557,14 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
             invalid={Boolean(form.phone) && Boolean(phoneErr)}
           />
           {form.phone && phoneErr && <span className="field-error">{phoneErr}</span>}
+          {isAdd && <span className="field-hint">Driver logs in with this phone number.</span>}
         </div>
         <div className="field">
           <label htmlFor="d-city">City</label>
           <select id="d-city" className="select" value={form.city_id} onChange={(e) => set('city_id', e.target.value)}>
-            <option value="" disabled>
-              Select a city
-            </option>
+            <option value="" disabled>Select a city</option>
             {allowedCities.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </div>
@@ -520,6 +581,30 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
             <span className="field-hint">No vendors in this city yet — add one on the Vendors page.</span>
           )}
         </div>
+        {isAdd && (
+          <div className="field">
+            <label htmlFor="d-pw">Login password</label>
+            <div className="pw-field">
+              <input
+                id="d-pw"
+                type="text"
+                className="input"
+                value={form.password}
+                onChange={(e) => set('password', e.target.value)}
+                placeholder="Min 8 characters"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm"
+                onClick={() => set('password', generatePassword())}
+              >
+                Generate
+              </button>
+            </div>
+            <span className="field-hint">Driver signs in with their phone number + this password.</span>
+          </div>
+        )}
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
             Cancel
@@ -533,6 +618,67 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
   )
 }
 
+// ── Change driver password ────────────────────────────────────────────────
+function DriverPwModal({ driver, onClose, onDone }) {
+  const [password, setPassword] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setErr('')
+    if (password.length < 8) return setErr('Password must be at least 8 characters')
+    setBusy(true)
+    try {
+      await adminUsers.setPassword(driver.profile_id, password)
+      toast.success(`Password changed for ${driver.name}`)
+      onDone()
+    } catch (e2) {
+      setErr(e2.message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Change password — ${driver.name}`} width={400}>
+      <form className="modal-form" onSubmit={submit}>
+        {err && <div className="modal-error">{err}</div>}
+        <div className="field">
+          <label htmlFor="dp-pw">New password</label>
+          <div className="pw-field">
+            <input
+              id="dp-pw"
+              type="text"
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Min 8 characters"
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-square btn-sm"
+              onClick={() => setPassword(generatePassword())}
+            >
+              Generate
+            </button>
+          </div>
+          <span className="field-hint">Driver signs in with phone {driver.contact ? formatPkPhone(driver.contact) : ''} + this password.</span>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-square" disabled={busy}>
+            {busy ? 'Saving…' : 'Change password'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// ── Import ────────────────────────────────────────────────────────────────
 function ImportDrivers({ vendors, allowedCities, createdBy, onClose, onDone }) {
   const [parsed, setParsed] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -554,10 +700,7 @@ function ImportDrivers({ vendors, allowedCities, createdBy, onClose, onDone }) {
       ['name', 'city', 'vendor'],
       ['name', 'phone', 'contact', 'city', 'vendor'],
     )
-    if (!hc.ok) {
-      setErr(hc.error)
-      return
-    }
+    if (!hc.ok) { setErr(hc.error); return }
     const ok = []
     const skipped = []
     records.forEach((r, i) => {
@@ -620,9 +763,7 @@ function ImportDrivers({ vendors, allowedCities, createdBy, onClose, onDone }) {
                 <b>{parsed.skipped.length}</b> skipped
                 <ul className="import-skip-list">
                   {parsed.skipped.slice(0, 10).map((s) => (
-                    <li key={s.line}>
-                      Row {s.line}: {s.reason}
-                    </li>
+                    <li key={s.line}>Row {s.line}: {s.reason}</li>
                   ))}
                 </ul>
               </>

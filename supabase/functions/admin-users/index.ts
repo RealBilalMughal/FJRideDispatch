@@ -263,6 +263,23 @@ Deno.serve(async (req) => {
       return json({ ok: true, count: ids.length })
     }
 
+    // ───────────────────────────────────────── delete_user ──
+    if (action === 'delete_user') {
+      if (!(await can('users', 'delete'))) return json({ error: 'Not allowed' }, 403)
+
+      const userId = String(body.user_id ?? '')
+      if (!userId) return json({ error: 'user_id is required' }, 400)
+      if (userId === caller.id) return json({ error: 'You cannot delete your own account' }, 400)
+
+      if (!isSuper && (await rolesOf([userId])).some((r) => PRIVILEGED.includes(r))) {
+        return json({ error: 'Only a Super Admin can delete Admin accounts' }, 403)
+      }
+
+      const { error } = await admin.auth.admin.deleteUser(userId)
+      if (error) return json({ error: error.message }, 400)
+      return json({ ok: true })
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400)
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500)

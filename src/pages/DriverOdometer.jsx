@@ -10,9 +10,9 @@ import './DriverOdometer.css'
 export default function DriverOdometer() {
   const { profile, signOut } = useAuth()
 
-  // vehicle list (all active vehicles in driver's allowed cities)
-  const [vehicles, setVehicles] = useState([])
-  const [vehicleId, setVehicleId] = useState('')
+  // assigned vehicle (locked — driver cannot change)
+  const [vehicle, setVehicle] = useState(null) // { id, vehicle_no, city_id }
+  const [vehicleLoading, setVehicleLoading] = useState(true)
 
   // form
   const [logDate, setLogDate] = useState(pkToday())
@@ -28,17 +28,31 @@ export default function DriverOdometer() {
   const fileRef = useRef(null)
 
   useEffect(() => {
-    supabase
-      .from('vehicles')
-      .select('id, vehicle_no, city_id')
-      .eq('is_active', true)
-      .order('vehicle_no')
-      .then(({ data }) => {
-        const v = data ?? []
-        setVehicles(v)
-        if (v.length === 1) setVehicleId(v[0].id)
-      })
-  }, [])
+    const load = async () => {
+      setVehicleLoading(true)
+      // find the driver record that matches this user's phone
+      const { data: driverRows } = await supabase
+        .from('drivers')
+        .select('id')
+        .eq('contact', profile?.phone ?? '')
+        .limit(1)
+      const driverId = driverRows?.[0]?.id
+
+      if (driverId) {
+        // find vehicles assigned to this driver (day or night slot)
+        const { data: vData } = await supabase
+          .from('vehicles')
+          .select('id, vehicle_no, city_id, driver_id, night_driver_id')
+          .eq('is_active', true)
+          .or(`driver_id.eq.${driverId},night_driver_id.eq.${driverId}`)
+          .limit(1)
+          .maybeSingle()
+        if (vData) setVehicle(vData)
+      }
+      setVehicleLoading(false)
+    }
+    load()
+  }, [profile?.phone])
 
   // sync prevDay → logDate
   useEffect(() => {
@@ -52,18 +66,18 @@ export default function DriverOdometer() {
     if (pkHour >= 23) setPrevDay(true)
   }, [])
 
-  // fetch recent readings when vehicle changes
+  // fetch recent readings when vehicle is resolved
   useEffect(() => {
-    if (!vehicleId) { setRecent([]); return }
+    if (!vehicle?.id) { setRecent([]); return }
     const since = addDays(pkToday(), -7)
     supabase
       .from('vehicle_odometer_logs')
       .select('id, log_date, km_reading, daily_km, is_verified')
-      .eq('vehicle_id', vehicleId)
+      .eq('vehicle_id', vehicle.id)
       .gte('log_date', since)
       .order('log_date', { ascending: false })
       .then(({ data }) => setRecent(data ?? []))
-  }, [vehicleId])
+  }, [vehicle?.id])
 
   const onFileChange = (e) => {
     const file = e.target.files?.[0]
@@ -83,20 +97,17 @@ export default function DriverOdometer() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     const km = parseFloat(kmReading)
-    if (!vehicleId) { toast.error('Select a vehicle'); return }
+    if (!vehicle?.id) { toast.error('No vehicle assigned to your account'); return }
     if (!Number.isFinite(km) || km < 0) { toast.error('Enter a valid KM reading'); return }
+    if (!imageFile) { toast.error('Photo is required'); return }
 
     setSaving(true)
-
-    // find city_id for selected vehicle
-    const vehicle = vehicles.find(v => v.id === vehicleId)
-    const cityId = vehicle?.city_id
 
     // check if reading already exists for this vehicle+date
     const { data: existing } = await supabase
       .from('vehicle_odometer_logs')
       .select('id')
-      .eq('vehicle_id', vehicleId)
+      .eq('vehicle_id', vehicle.id)
       .eq('log_date', logDate)
       .maybeSingle()
 
@@ -106,29 +117,28 @@ export default function DriverOdometer() {
       return
     }
 
-    // upload image if any
+    // upload image (required)
     let imageUrl = null
-    if (imageFile) {
-      const ext = imageFile.name.split('.').pop()
-      const path = `${vehicleId}/${logDate}_${Date.now()}.${ext}`
-      const { error: uploadErr } = await supabase.storage
-        .from('odometer-images')
-        .upload(path, imageFile, { upsert: true })
-      if (uploadErr) {
-        toast.error('Image upload failed — saving reading without photo')
-      } else {
-        const { data: { publicUrl } } = supabase.storage
-          .from('odometer-images')
-          .getPublicUrl(path)
-        imageUrl = publicUrl
-      }
+    const ext = imageFile.name.split('.').pop()
+    const path = `${vehicle.id}/${logDate}_${Date.now()}.${ext}`
+    const { error: uploadErr } = await supabase.storage
+      .from('odometer-images')
+      .upload(path, imageFile, { upsert: true })
+    if (uploadErr) {
+      toast.error('Image upload failed. Please try again.')
+      setSaving(false)
+      return
     }
+    const { data: { publicUrl } } = supabase.storage
+      .from('odometer-images')
+      .getPublicUrl(path)
+    imageUrl = publicUrl
 
     // compute daily_km: today's reading - previous reading
     const { data: prev } = await supabase
       .from('vehicle_odometer_logs')
       .select('km_reading, log_date')
-      .eq('vehicle_id', vehicleId)
+      .eq('vehicle_id', vehicle.id)
       .lt('log_date', logDate)
       .order('log_date', { ascending: false })
       .limit(1)
@@ -139,9 +149,9 @@ export default function DriverOdometer() {
     const { error } = await supabase
       .from('vehicle_odometer_logs')
       .insert({
-        vehicle_id: vehicleId,
+        vehicle_id: vehicle.id,
         log_date: logDate,
-        city_id: cityId,
+        city_id: vehicle.city_id,
         km_reading: km,
         daily_km: dailyKm,
         image_url: imageUrl,
@@ -169,12 +179,13 @@ export default function DriverOdometer() {
     const { data: updated } = await supabase
       .from('vehicle_odometer_logs')
       .select('id, log_date, km_reading, daily_km, is_verified')
-      .eq('vehicle_id', vehicleId)
+      .eq('vehicle_id', vehicle.id)
       .gte('log_date', since)
       .order('log_date', { ascending: false })
     setRecent(updated ?? [])
   }
 
+  const vehicleId = vehicle?.id
   // today already recorded?
   const todayDone = recent.some(r => r.log_date === logDate)
 
@@ -192,20 +203,18 @@ export default function DriverOdometer() {
         <p className="drv-sub">Record today's odometer reading for your vehicle.</p>
 
         <form className="drv-form" onSubmit={handleSubmit}>
-          {/* Vehicle */}
+          {/* Vehicle — locked to the assigned vehicle, not selectable */}
           <div className="field">
             <label>Vehicle</label>
-            <select
-              className="input"
-              value={vehicleId}
-              onChange={e => setVehicleId(e.target.value)}
-              required
-            >
-              <option value="">Select vehicle…</option>
-              {vehicles.map(v => (
-                <option key={v.id} value={v.id}>{v.vehicle_no}</option>
-              ))}
-            </select>
+            {vehicleLoading ? (
+              <div className="input drv-vehicle-locked drv-vehicle-loading">Loading…</div>
+            ) : vehicle ? (
+              <div className="input drv-vehicle-locked">{vehicle.vehicle_no}</div>
+            ) : (
+              <div className="drv-no-vehicle">
+                No vehicle is assigned to your account. Please contact your supervisor.
+              </div>
+            )}
           </div>
 
           {/* Date */}
@@ -247,9 +256,9 @@ export default function DriverOdometer() {
             </div>
           </div>
 
-          {/* Photo upload */}
+          {/* Photo upload — required */}
           <div className="field">
-            <label>Photo <span className="field-hint">(optional but recommended)</span></label>
+            <label>Photo <span className="drv-required">*</span></label>
             <div
               className={`drv-upload${imagePreview ? ' has-image' : ''}`}
               onClick={() => fileRef.current?.click()}
@@ -296,7 +305,7 @@ export default function DriverOdometer() {
             />
           </div>
 
-          <button type="submit" className="btn drv-submit" disabled={saving || todayDone}>
+          <button type="submit" className="btn drv-submit" disabled={saving || todayDone || !vehicle}>
             {saving ? 'Saving…' : todayDone ? `Already recorded for ${fmtDate(logDate)}` : 'Submit Reading'}
           </button>
         </form>
@@ -304,7 +313,7 @@ export default function DriverOdometer() {
         {/* Recent readings */}
         {recent.length > 0 && (
           <div className="drv-recent">
-            <h2>Last 7 Days — {vehicles.find(v => v.id === vehicleId)?.vehicle_no}</h2>
+            <h2>Last 7 Days — {vehicle?.vehicle_no}</h2>
             <table className="drv-recent-table">
               <thead>
                 <tr>

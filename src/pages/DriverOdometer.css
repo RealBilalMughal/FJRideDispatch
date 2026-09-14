@@ -205,17 +205,11 @@
 }
 
 /* ── backup link ──────────────────────────────────────────────── */
-.drv-backup-link {
-  border: 0; background: none;
-  color: var(--muted);
-  font: inherit; font-size: 13px;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  margin-top: 14px;
-  align-self: center;
+.drv-backup-btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 10px;
 }
-.drv-backup-link:hover { color: var(--accent); }
 
 /* ── backup section labels ────────────────────────────────────── */
 .drv-section-label {

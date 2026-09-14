@@ -375,9 +375,9 @@ export default function DriverOdometer() {
 
         </form>
 
-        {/* Backup link — always available in normal mode if vehicle is assigned */}
+        {/* Backup button */}
         {mode === 'normal' && vehicle && (
-          <button type="button" className="drv-backup-link" onClick={enterBackup}>
+          <button type="button" className="btn btn-ghost drv-backup-btn" onClick={enterBackup}>
             Using a backup vehicle today?
           </button>
         )}

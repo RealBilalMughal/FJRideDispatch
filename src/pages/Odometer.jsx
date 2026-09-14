@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { CheckCircle2, Circle, Download, Eye, Pencil, Trash2 } from 'lucide-react'
+import { CheckCircle2, Circle, Download, Eye, Gauge, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -35,7 +35,6 @@ const EXPORT_COLS = [
   { key: 'daily_km', label: 'Daily KM' },
   { key: 'is_verified', label: 'Verified' },
   { key: 'verified_by_name', label: 'Verified By' },
-  { key: 'verified_at', label: 'Verified At' },
   { key: 'notes', label: 'Notes' },
 ]
 
@@ -49,14 +48,13 @@ function toExportRow(r) {
     daily_km: r.daily_km ?? '',
     is_verified: r.is_verified ? 'Yes' : 'No',
     verified_by_name: r.verifier?.name ?? '',
-    verified_at: r.verified_at ? fmtDate(r.verified_at) : '',
     notes: r.notes ?? '',
   }
 }
 
 export default function Odometer() {
-  const { can, profile } = useAuth()
-  const { cityId, allowedCities } = useCity()
+  const { can, isSuperAdmin, profile } = useAuth()
+  const { cityId } = useCity()
 
   const canView = can('odometer', 'view')
   const canEdit = can('odometer', 'edit')
@@ -108,10 +106,10 @@ export default function Odometer() {
     let filtered = data ?? []
     if (search.trim()) {
       const s = search.toLowerCase()
-      filtered = filtered.filter(r =>
+      filtered = filtered.filter((r) =>
         r.vehicle?.vehicle_no?.toLowerCase().includes(s) ||
         r.recorder?.name?.toLowerCase().includes(s) ||
-        String(r.ref_no).includes(s)
+        String(r.ref_no).includes(s),
       )
     }
 
@@ -121,11 +119,11 @@ export default function Odometer() {
   }
 
   useEffect(() => { setPage(1) }, [search, dateRange, filterVehicle, filterVerified, cityId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchRows() }, [page, search, dateRange, filterVehicle, filterVerified, cityId, canView])
 
   // selection
-  const { selected, toggle, toggleAll, clearSelection } = useSelection()
-  const allIds = rows.map(r => r.id)
+  const { selected, toggle, toggleAll, clear } = useSelection()
 
   // export
   const handleExport = async () => {
@@ -137,7 +135,8 @@ export default function Odometer() {
     if (filterVerified === 'yes') q = q.eq('is_verified', true)
     if (filterVerified === 'no') q = q.eq('is_verified', false)
     const { data } = await q
-    downloadCsv(toCsv(EXPORT_COLS, (data ?? []).map(toExportRow)), `odometer-${pkToday()}.csv`)
+    downloadCsv(`odometer-${pkToday()}.csv`, toCsv(EXPORT_COLS, (data ?? []).map(toExportRow)))
+    toast.success(`Exported ${(data ?? []).length} row(s)`)
   }
 
   // view / edit modal
@@ -166,7 +165,6 @@ export default function Odometer() {
       km_reading: km,
       notes: editNotes.trim() || null,
       is_verified: nowVerified,
-      updated_at: new Date().toISOString(),
     }
     if (nowVerified && !wasVerified) {
       patch.verified_by = profile.id
@@ -175,12 +173,7 @@ export default function Odometer() {
       patch.verified_by = null
       patch.verified_at = null
     }
-
-    const { error } = await supabase
-      .from('vehicle_odometer_logs')
-      .update(patch)
-      .eq('id', viewRow.id)
-
+    const { error } = await supabase.from('vehicle_odometer_logs').update(patch).eq('id', viewRow.id)
     setSaving(false)
     if (error) { toast.error('Save failed'); return }
     toast.success('Reading updated')
@@ -195,78 +188,95 @@ export default function Odometer() {
     const { error } = await supabase.from('vehicle_odometer_logs').delete().in('id', ids)
     if (error) { toast.error('Delete failed'); return }
     toast.success(`${ids.length} reading${ids.length > 1 ? 's' : ''} deleted`)
-    clearSelection()
+    clear()
     setPending(null)
     fetchRows()
   }
 
   // stat cards
-  const stats = useMemo(() => {
-    const total_rows = rows.length
-    const verified = rows.filter(r => r.is_verified).length
-    const today_rows = rows.filter(r => r.log_date === pkToday()).length
+  const statItems = useMemo(() => {
+    const verified = rows.filter((r) => r.is_verified).length
     const totalDailyKm = rows.reduce((s, r) => s + (r.daily_km ?? 0), 0)
     return [
-      { label: 'Total Readings', value: total_rows },
-      { label: 'Today', value: today_rows },
-      { label: 'Total Daily KM', value: totalDailyKm.toFixed(1), hint: 'sum of all daily KM' },
-      { label: 'Verified', value: verified, hint: `${total_rows - verified} pending` },
+      { key: 'total', label: 'Total Readings', value: total, icon: Gauge },
+      { key: 'daily_km', label: 'Total Daily KM', value: totalDailyKm.toFixed(1) },
+      { key: 'verified', label: 'Verified', value: verified },
+      { key: 'pending', label: 'Pending', value: rows.length - verified },
     ]
-  }, [rows])
+  }, [rows, total])
 
-  const activeCount = (filterVehicle ? 1 : 0) + (filterVerified ? 1 : 0) +
-    (dateRange.preset !== 'today' ? 1 : 0)
+  const activeCount =
+    (filterVehicle ? 1 : 0) + (filterVerified ? 1 : 0) + (dateRange.preset !== 'today' ? 1 : 0)
 
   const columns = [
-    { key: 'ref_no', header: 'ID', width: 60, render: r => r.ref_no },
-    { key: 'log_date', header: 'Date', width: 110, render: r => fmtDate(r.log_date) },
-    { key: 'vehicle', header: 'Vehicle', render: r => r.vehicle?.vehicle_no ?? '—' },
-    { key: 'recorder', header: 'Recorded By', render: r => r.recorder?.name ?? '—' },
-    { key: 'km_reading', header: 'KM Reading', width: 110, align: 'right', render: r => r.km_reading.toLocaleString() },
-    { key: 'daily_km', header: 'Daily KM', width: 100, align: 'right', render: r =>
-      r.daily_km != null ? r.daily_km.toLocaleString() : <span className="muted">—</span>
+    { key: 'ref_no', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
+    { key: 'log_date', header: 'Date', render: (r) => fmtDate(r.log_date) },
+    { key: 'vehicle', header: 'Vehicle', render: (r) => r.vehicle?.vehicle_no ?? '—' },
+    { key: 'recorder', header: 'Recorded By', render: (r) => r.recorder?.name ?? '—' },
+    {
+      key: 'km_reading', header: 'KM Reading', align: 'right',
+      render: (r) => r.km_reading.toLocaleString(),
     },
-    { key: 'verified', header: 'Status', width: 110, render: r =>
-      r.is_verified
-        ? <span className="status-text status-active"><CheckCircle2 size={13} /> Verified</span>
-        : <span className="status-text status-pending"><Circle size={13} /> Pending</span>
+    {
+      key: 'daily_km', header: 'Daily KM', align: 'right',
+      render: (r) => r.daily_km != null ? r.daily_km.toLocaleString() : '—',
     },
-    { key: 'actions', header: 'Action', width: 90, render: r => (
-      <div className="row-actions">
-        <button type="button" className="icon-btn" title="View" onClick={() => openView(r)}><Eye size={14} /></button>
-        {canDelete && (
-          <button type="button" className="icon-btn" title="Delete"
-            onClick={() => setPending({ ids: [r.id], label: `reading ${r.ref_no}` })}>
-            <Trash2 size={14} />
+    {
+      key: 'verified', header: 'Status',
+      render: (r) =>
+        r.is_verified
+          ? <span className="status-text on"><CheckCircle2 size={12} /> Verified</span>
+          : <span className="status-text off"><Circle size={12} /> Pending</span>,
+    },
+    {
+      key: 'actions', header: '', align: 'right',
+      render: (r) => (
+        <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" title="View / Edit" onClick={() => openView(r)}>
+            <Eye size={13} />
           </button>
-        )}
-      </div>
-    )},
+          {canDelete && (
+            <button
+              type="button"
+              title="Delete"
+              className="danger"
+              onClick={() => setPending({ ids: [r.id], label: `reading ${r.ref_no}` })}
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      ),
+    },
   ]
 
   if (!canView) {
-    return <div className="page"><p className="muted">No access to Odometer readings.</p></div>
+    return (
+      <div className="page">
+        <p className="muted">No access to Odometer readings.</p>
+      </div>
+    )
   }
 
   return (
     <div className="page">
-      <div className="page-head">
+      <div className="page-header">
         <div>
-          <h1>Odometer Readings</h1>
-          <p className="sub">Daily KM log per vehicle</p>
+          <h1 className="page-title">Odometer Readings</h1>
+          <p className="page-subtitle">Daily KM log per vehicle</p>
         </div>
-        <div className="page-head-actions">
-          <button type="button" className="btn btn-outline" onClick={handleExport}>
-            <Download size={15} /> Export CSV
+        <div className="page-actions">
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={handleExport}>
+            <Download size={14} /> Export
           </button>
         </div>
       </div>
 
-      <StatCards cards={stats} />
+      <StatCards items={statItems} />
 
       <FilterBar
         search={search}
-        onSearch={setSearch}
+        onSearch={(v) => { setSearch(v); setPage(1) }}
         searchPlaceholder="Search vehicle or recorder…"
         activeCount={activeCount}
         onClear={() => {
@@ -274,27 +284,25 @@ export default function Odometer() {
           setDateRange({ preset: 'today', from: pkToday(), to: pkToday() })
           setFilterVehicle(null)
           setFilterVerified('')
+          setPage(1)
         }}
         inline={
-          <DateRangePicker
-            value={dateRange}
-            onChange={r => setDateRange(r)}
-          />
+          <DateRangePicker value={dateRange} onChange={(r) => { setDateRange(r); setPage(1) }} />
         }
         advanced={
           <div className="filter-grid">
             <div className="field">
               <label>Vehicle</label>
               <SearchSelect
-                options={[{ value: '', label: 'All Vehicles' }, ...vehicles.map(v => ({ value: v.id, label: v.vehicle_no }))]}
+                options={[{ value: '', label: 'All vehicles' }, ...vehicles.map((v) => ({ value: v.id, label: v.vehicle_no }))]}
                 value={filterVehicle ?? ''}
-                onChange={v => setFilterVehicle(v || null)}
-                placeholder="All Vehicles"
+                onChange={(v) => setFilterVehicle(v || null)}
+                placeholder="All vehicles"
               />
             </div>
             <div className="field">
-              <label>Verification</label>
-              <select className="input" value={filterVerified} onChange={e => setFilterVerified(e.target.value)}>
+              <label>Status</label>
+              <select className="select" value={filterVerified} onChange={(e) => setFilterVerified(e.target.value)}>
                 <option value="">All</option>
                 <option value="no">Pending</option>
                 <option value="yes">Verified</option>
@@ -307,45 +315,48 @@ export default function Odometer() {
       {selected.size > 0 && canDelete && (
         <BulkDeleteBar
           count={selected.size}
+          busy={false}
           onDelete={() => setPending({ ids: [...selected], label: `${selected.size} readings` })}
-          onClear={clearSelection}
+          onClear={clear}
         />
       )}
 
       <DataTable
         columns={columns}
         rows={rows}
-        rowKey={r => r.id}
+        rowKey={(r) => r.id}
         loading={loading}
         emptyLabel="No odometer readings found"
         selectable={canDelete}
         selected={selected}
         onToggle={toggle}
-        onToggleAll={() => selected.size === allIds.length ? clearSelection() : allIds.forEach(id => !selected.has(id) && toggle(id))}
+        onToggleAll={() => toggleAll(rows)}
+        title="Readings"
+        subtitle={`${total} total`}
       />
 
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
 
       {/* View / Edit modal */}
-      <Modal
-        open={Boolean(viewRow)}
-        onClose={closeView}
-        title={`Reading — ${viewRow?.vehicle?.vehicle_no ?? ''}`}
-        width={560}
-        footer={
-          canEdit ? (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className="btn btn-outline" onClick={closeView}>Cancel</button>
-              <button type="button" className="btn" onClick={saveView} disabled={saving}>
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </div>
-          ) : (
-            <button type="button" className="btn btn-outline" onClick={closeView}>Close</button>
-          )
-        }
-      >
-        {viewRow && (
+      {viewRow && (
+        <Modal
+          open
+          onClose={closeView}
+          title={`Reading — ${viewRow.vehicle?.vehicle_no ?? ''} · ${fmtDate(viewRow.log_date)}`}
+          width={560}
+          footer={
+            canEdit ? (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" className="btn btn-ghost btn-square" onClick={closeView}>Cancel</button>
+                <button type="button" className="btn btn-square" onClick={saveView} disabled={saving}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="btn btn-ghost btn-square" onClick={closeView}>Close</button>
+            )
+          }
+        >
           <div className="odo-view">
             {viewRow.image_url && (
               <div className="odo-view-img">
@@ -371,7 +382,7 @@ export default function Odometer() {
                 <div className="view-row">
                   <span className="view-label">Daily KM</span>
                   <span className="view-value">
-                    {viewRow.daily_km != null ? `${viewRow.daily_km.toLocaleString()} km` : '— (no previous reading)'}
+                    {viewRow.daily_km != null ? `${viewRow.daily_km.toLocaleString()} km` : '— (no previous)'}
                   </span>
                 </div>
               </div>
@@ -384,7 +395,7 @@ export default function Odometer() {
                     min="0"
                     step="0.1"
                     value={editKm}
-                    onChange={e => setEditKm(e.target.value)}
+                    onChange={(e) => setEditKm(e.target.value)}
                   />
                 ) : (
                   <div className="view-value">{viewRow.km_reading.toLocaleString()} km</div>
@@ -395,15 +406,15 @@ export default function Odometer() {
                   <input
                     type="checkbox"
                     checked={editVerified}
-                    onChange={e => setEditVerified(e.target.checked)}
+                    onChange={(e) => setEditVerified(e.target.checked)}
                   />
                   Mark as verified
                 </label>
               )}
-              {!canEdit && viewRow.is_verified && (
+              {viewRow.is_verified && viewRow.verifier && (
                 <div className="view-row">
                   <span className="view-label">Verified By</span>
-                  <span className="view-value">{viewRow.verifier?.name ?? '—'}</span>
+                  <span className="view-value">{viewRow.verifier.name}</span>
                 </div>
               )}
               <div className="field">
@@ -413,7 +424,7 @@ export default function Odometer() {
                     className="input"
                     rows={2}
                     value={editNotes}
-                    onChange={e => setEditNotes(e.target.value)}
+                    onChange={(e) => setEditNotes(e.target.value)}
                     placeholder="Optional notes…"
                   />
                 ) : (
@@ -422,14 +433,16 @@ export default function Odometer() {
               </div>
             </div>
           </div>
-        )}
-      </Modal>
+        </Modal>
+      )}
 
       <ConfirmDelete
         open={Boolean(pending)}
-        label={pending?.label}
+        title="Delete reading"
+        message={pending ? `Permanently delete ${pending.label}? This cannot be undone.` : ''}
+        busy={false}
         onConfirm={doDelete}
-        onCancel={() => setPending(null)}
+        onClose={() => setPending(null)}
       />
     </div>
   )

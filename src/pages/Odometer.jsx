@@ -22,9 +22,9 @@ import './Odometer.css'
 const PAGE_SIZE = 20
 const SELECT =
   'id, ref_no, log_date, km_reading, daily_km, image_url, is_verified, notes, city_id, vehicle_id, verified_at, created_at, ' +
-  'vehicle:vehicles(id, ref_no, vehicle_no), ' +
-  'recorder:profiles!recorded_by(id, name), ' +
-  'verifier:profiles!verified_by(id, name)'
+  'vehicle:vehicles(id, vehicle_no), ' +
+  'recorder:profiles!vehicle_odometer_logs_recorded_by_fkey(id, name), ' +
+  'verifier:profiles!vehicle_odometer_logs_verified_by_fkey(id, name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -101,7 +101,7 @@ export default function Odometer() {
     if (filterVerified === 'no') q = q.eq('is_verified', false)
 
     const { data, count, error } = await q
-    if (error) { toast.error('Failed to load readings'); setLoading(false); return }
+    if (error) { console.error('odometer query error', error); toast.error('Failed to load readings'); setLoading(false); return }
 
     let filtered = data ?? []
     if (search.trim()) {

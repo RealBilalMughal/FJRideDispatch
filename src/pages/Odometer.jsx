@@ -101,7 +101,7 @@ export default function Odometer() {
     if (filterVerified === 'no') q = q.eq('is_verified', false)
 
     const { data, count, error } = await q
-    if (error) { console.error('odometer query error', error); toast.error('Failed to load readings'); setLoading(false); return }
+    if (error) { console.error('odometer query error', error.message, error.details, error.hint); toast.error(error.message || 'Failed to load readings'); setLoading(false); return }
 
     let filtered = data ?? []
     if (search.trim()) {

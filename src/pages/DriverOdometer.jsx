@@ -4,7 +4,7 @@ import { ArrowLeft, Camera, CheckCircle2, LogOut } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { fmtDate } from '../lib/format'
-import { pkToday } from '../lib/time'
+import { pkToday, addDays } from '../lib/time'
 import './DriverOdometer.css'
 
 async function uploadPhoto(vehicleId, logDate, file) {

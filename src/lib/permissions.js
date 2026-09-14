@@ -57,6 +57,7 @@ export const PERMISSION_PAGES = [
   { key: 'vendors', label: 'Vendors', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'drivers', label: 'Drivers', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'vehicles', label: 'Vehicles', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },
+  { key: 'odometer', label: 'Odometer', group: 'Fleet', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'users', label: 'User Management', group: 'Administration', actions: ['view', 'add', 'edit', 'delete'] },
   { key: 'roles', label: 'Role Access', group: 'Administration', actions: ['view', 'edit'] },
 ]

@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 
 // Route pages are code-split so heavy deps stay out of the initial bundle.
+const DriverOdometer = lazy(() => import('./pages/DriverOdometer'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Rides = lazy(() => import('./pages/Rides'))
 const RidePlan = lazy(() => import('./pages/RidePlan'))
@@ -19,6 +20,7 @@ const Vehicles = lazy(() => import('./pages/Vehicles'))
 const Users = lazy(() => import('./pages/Users'))
 const RoleAccess = lazy(() => import('./pages/RoleAccess'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Odometer = lazy(() => import('./pages/Odometer'))
 const Profile = lazy(() => import('./pages/Profile'))
 
 export default function App() {
@@ -27,6 +29,9 @@ export default function App() {
       <Route path="/login" element={<Login />} />
 
       <Route element={<ProtectedRoute />}>
+        {/* Driver-only route — no sidebar, full-page form */}
+        <Route path="driver" element={<DriverOdometer />} />
+
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="rides" element={<Rides />} />
@@ -42,6 +47,7 @@ export default function App() {
           <Route path="users" element={<Users />} />
           <Route path="role-access" element={<RoleAccess />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="odometer" element={<Odometer />} />
           <Route path="profile" element={<Profile />} />
         </Route>
       </Route>

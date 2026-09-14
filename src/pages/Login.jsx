@@ -16,12 +16,24 @@ export default function Login() {
 
   if (!loading && isAuthenticated) return <Navigate to="/" replace />
 
+  // Drivers log in with their phone number (+92 / 03 / 3 format).
+  // Internally stored as +923XXXXXXXXX@fjride.internal in Supabase Auth.
+  const toAuthEmail = (input) => {
+    const s = input.trim().replace(/\s/g, '')
+    if (/^(\+92|92|0)?3\d{9}$/.test(s)) {
+      const digits = s.replace(/\D/g, '')
+      const local = digits.slice(-10)
+      return `+92${local}@fjride.internal`
+    }
+    return s
+  }
+
   const onSubmit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError('')
     setRemember(remember)
-    const { error: signInError } = await signIn(email.trim(), password)
+    const { error: signInError } = await signIn(toAuthEmail(email), password)
     if (signInError) {
       setError(
         signInError.message === 'Invalid login credentials'
@@ -44,16 +56,16 @@ export default function Login() {
 
         <form className="login-form" onSubmit={onSubmit}>
           <div className="field">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">Email or Phone</label>
             <input
               id="email"
               className="input"
-              type="email"
+              type="text"
               autoComplete="username"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@buscaro.com"
+              placeholder="you@buscaro.com or 03XXXXXXXXX"
             />
           </div>
 

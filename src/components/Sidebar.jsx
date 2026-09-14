@@ -7,6 +7,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
+  Gauge,
   IdCard,
   LayoutDashboard,
   Plane,
@@ -57,6 +58,7 @@ const NAV_SECTIONS = [
       { to: '/vendors', label: 'Vendors', icon: Store, page: 'vendors' },
       { to: '/drivers', label: 'Drivers', icon: UserRound, page: 'drivers' },
       { to: '/vehicles', label: 'Vehicles', icon: Car, page: 'vehicles' },
+      { to: '/odometer', label: 'Odometer', icon: Gauge, page: 'odometer' },
     ],
   },
   {

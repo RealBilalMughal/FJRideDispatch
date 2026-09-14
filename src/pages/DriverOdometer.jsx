@@ -16,18 +16,23 @@ async function uploadPhoto(vehicleId, logDate, file) {
   return { url: publicUrl, error: null }
 }
 
-async function getPrevReading(vehicleId, beforeDate) {
+async function getPrevReading(vehicleId, upToDate) {
+  // Include same-day earlier readings (backup vehicle used by 2 drivers)
   const { data } = await supabase
     .from('vehicle_odometer_logs').select('km_reading')
-    .eq('vehicle_id', vehicleId).lt('log_date', beforeDate)
-    .order('log_date', { ascending: false }).limit(1).maybeSingle()
+    .eq('vehicle_id', vehicleId).lte('log_date', upToDate)
+    .order('log_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1).maybeSingle()
   return data?.km_reading ?? null
 }
 
-async function checkExisting(vehicleId, logDate) {
+// Unique per vehicle + date + driver (not globally per vehicle+date)
+async function checkExisting(vehicleId, logDate, recordedBy) {
   const { data } = await supabase
     .from('vehicle_odometer_logs').select('id')
-    .eq('vehicle_id', vehicleId).eq('log_date', logDate).maybeSingle()
+    .eq('vehicle_id', vehicleId).eq('log_date', logDate)
+    .eq('recorded_by', recordedBy).maybeSingle()
   return Boolean(data)
 }
 
@@ -139,12 +144,12 @@ export default function DriverOdometer() {
       if (!vehicle)                            { toast.error('Your assigned vehicle could not be found'); setSaving(false); return }
       if (!Number.isFinite(cKm) || cKm < 0)   { toast.error('Enter closing KM for your original vehicle'); setSaving(false); return }
 
-      if (await checkExisting(backupVehicle.id, logDate)) {
-        toast.error(`Backup vehicle already has a reading for ${fmtDate(logDate)}`)
+      if (await checkExisting(backupVehicle.id, logDate, profile.id)) {
+        toast.error(`You already recorded a reading for this backup vehicle today`)
         setSaving(false); return
       }
-      if (await checkExisting(vehicle.id, logDate)) {
-        toast.error(`Your original vehicle already has a reading for ${fmtDate(logDate)}`)
+      if (await checkExisting(vehicle.id, logDate, profile.id)) {
+        toast.error(`You already recorded a closing KM for your original vehicle today`)
         setSaving(false); return
       }
 
@@ -186,7 +191,7 @@ export default function DriverOdometer() {
       if (!Number.isFinite(km) || km < 0)     { toast.error('Enter a valid KM reading'); setSaving(false); return }
       if (!imageFile)                         { toast.error('Photo is required'); setSaving(false); return }
 
-      if (await checkExisting(vehicle.id, logDate)) {
+      if (await checkExisting(vehicle.id, logDate, profile.id)) {
         toast.error(`Reading already recorded for ${fmtDate(logDate)}`)
         setSaving(false); return
       }
@@ -214,7 +219,7 @@ export default function DriverOdometer() {
   const [todayDone, setTodayDone] = useState(false)
   useEffect(() => {
     if (!vehicle?.id) { setTodayDone(false); return }
-    checkExisting(vehicle.id, logDate).then(setTodayDone)
+    checkExisting(vehicle.id, logDate, profile?.id).then(setTodayDone)
   }, [vehicle?.id, logDate])
 
   return (

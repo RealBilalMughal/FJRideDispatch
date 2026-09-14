@@ -23,8 +23,8 @@ const PAGE_SIZE = 20
 const SELECT =
   'id, ref_no, log_date, km_reading, daily_km, image_url, is_verified, notes, city_id, vehicle_id, verified_at, created_at, ' +
   'vehicle:vehicles(id, vehicle_no), ' +
-  'recorder:profiles!vehicle_odometer_logs_recorded_by_fkey(id, name), ' +
-  'verifier:profiles!vehicle_odometer_logs_verified_by_fkey(id, name)'
+  'recorder:profiles!vehicle_odometer_logs_recorded_by_fkey(id, full_name), ' +
+  'verifier:profiles!vehicle_odometer_logs_verified_by_fkey(id, full_name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -43,11 +43,11 @@ function toExportRow(r) {
     ref_no: r.ref_no,
     log_date: fmtDate(r.log_date),
     vehicle: r.vehicle?.vehicle_no ?? '',
-    recorder_name: r.recorder?.name ?? '',
+    recorder_name: r.recorder?.full_name ?? '',
     km_reading: r.km_reading,
     daily_km: r.daily_km ?? '',
     is_verified: r.is_verified ? 'Yes' : 'No',
-    verified_by_name: r.verifier?.name ?? '',
+    verified_by_name: r.verifier?.full_name ?? '',
     notes: r.notes ?? '',
   }
 }
@@ -108,7 +108,7 @@ export default function Odometer() {
       const s = search.toLowerCase()
       filtered = filtered.filter((r) =>
         r.vehicle?.vehicle_no?.toLowerCase().includes(s) ||
-        r.recorder?.name?.toLowerCase().includes(s) ||
+        r.recorder?.full_name?.toLowerCase().includes(s) ||
         String(r.ref_no).includes(s),
       )
     }
@@ -212,7 +212,7 @@ export default function Odometer() {
     { key: 'ref_no', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
     { key: 'log_date', header: 'Date', render: (r) => fmtDate(r.log_date) },
     { key: 'vehicle', header: 'Vehicle', render: (r) => r.vehicle?.vehicle_no ?? '—' },
-    { key: 'recorder', header: 'Recorded By', render: (r) => r.recorder?.name ?? '—' },
+    { key: 'recorder', header: 'Recorded By', render: (r) => r.recorder?.full_name ?? '—' },
     {
       key: 'km_reading', header: 'KM Reading', align: 'right',
       render: (r) => r.km_reading.toLocaleString(),
@@ -377,7 +377,7 @@ export default function Odometer() {
               <div className="field-row">
                 <div className="view-row">
                   <span className="view-label">Recorded By</span>
-                  <span className="view-value">{viewRow.recorder?.name ?? '—'}</span>
+                  <span className="view-value">{viewRow.recorder?.full_name ?? '—'}</span>
                 </div>
                 <div className="view-row">
                   <span className="view-label">Daily KM</span>
@@ -414,7 +414,7 @@ export default function Odometer() {
               {viewRow.is_verified && viewRow.verifier && (
                 <div className="view-row">
                   <span className="view-label">Verified By</span>
-                  <span className="view-value">{viewRow.verifier.name}</span>
+                  <span className="view-value">{viewRow.verifier.full_name}</span>
                 </div>
               )}
               <div className="field">

@@ -4,7 +4,7 @@ import { ArrowLeft, Camera, CheckCircle2, LogOut } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { fmtDate } from '../lib/format'
-import { pkToday, addDays } from '../lib/time'
+import { pkToday } from '../lib/time'
 import './DriverOdometer.css'
 
 async function uploadPhoto(vehicleId, logDate, file) {
@@ -61,7 +61,6 @@ export default function DriverOdometer() {
   const closingFileRef = useRef(null)
 
   const [saving, setSaving] = useState(false)
-  const [recent, setRecent] = useState([])
 
   // load assigned vehicle
   useEffect(() => {
@@ -90,16 +89,6 @@ export default function DriverOdometer() {
     const pkHour = new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()
     if (pkHour >= 23) setPrevDay(true)
   }, [])
-
-  useEffect(() => {
-    if (!vehicle?.id) { setRecent([]); return }
-    const since = addDays(pkToday(), -7)
-    supabase.from('vehicle_odometer_logs')
-      .select('id, log_date, km_reading, daily_km, is_verified')
-      .eq('vehicle_id', vehicle.id).gte('log_date', since)
-      .order('log_date', { ascending: false })
-      .then(({ data }) => setRecent(data ?? []))
-  }, [vehicle?.id])
 
   // backup vehicle lookup
   useEffect(() => {
@@ -216,19 +205,17 @@ export default function DriverOdometer() {
       toast.success('Reading saved!')
       setKmReading(''); setImageFile(null); setImagePreview(null)
       if (normalFileRef.current) normalFileRef.current.value = ''
-
-      const since = addDays(pkToday(), -7)
-      const { data: updated } = await supabase.from('vehicle_odometer_logs')
-        .select('id, log_date, km_reading, daily_km, is_verified')
-        .eq('vehicle_id', vehicle.id).gte('log_date', since)
-        .order('log_date', { ascending: false })
-      setRecent(updated ?? [])
+      setTodayDone(true)
     }
 
     setSaving(false)
   }
 
-  const todayDone = mode === 'normal' && recent.some(r => r.log_date === logDate)
+  const [todayDone, setTodayDone] = useState(false)
+  useEffect(() => {
+    if (!vehicle?.id) { setTodayDone(false); return }
+    checkExisting(vehicle.id, logDate).then(setTodayDone)
+  }, [vehicle?.id, logDate])
 
   return (
     <div className="drv-wrap">
@@ -390,30 +377,6 @@ export default function DriverOdometer() {
           </button>
         )}
 
-        {/* Recent history — normal mode */}
-        {mode === 'normal' && recent.length > 0 && (
-          <div className="drv-recent">
-            <p className="drv-recent-head">Last 7 days — {vehicle?.vehicle_no}</p>
-            <table className="drv-recent-table">
-              <thead>
-                <tr><th>Date</th><th>KM</th><th>Daily</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {recent.map(r => (
-                  <tr key={r.id}>
-                    <td>{fmtDate(r.log_date)}</td>
-                    <td>{r.km_reading.toLocaleString()}</td>
-                    <td>{r.daily_km != null ? r.daily_km.toLocaleString() : '—'}</td>
-                    <td>{r.is_verified
-                      ? <span className="drv-status-v">Verified</span>
-                      : <span className="drv-status-p">Pending</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
 
       </main>
     </div>

@@ -16,7 +16,7 @@ import { useAuth } from '../context/useAuth'
 import { PRIVILEGED_ROLES } from '../lib/permissions'
 import { fetchRoles, roleLabel } from '../lib/roles'
 import { fmtDate } from '../lib/format'
-import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
+import { displayAuthIdentity, formatPkPhone, fromStored, isPhoneAuth, isValidPkMobile, pkPhoneError, toAuthEmail, toLocal, toStored } from '../lib/phone'
 import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
 import PkPhoneInput from '../components/PkPhoneInput'
@@ -249,7 +249,7 @@ export default function Users() {
         </div>
       ),
     },
-    { key: 'email', header: 'Email', render: (u) => u.email },
+    { key: 'email', header: 'Email / Phone', render: (u) => displayAuthIdentity(u.email) },
     { key: 'phone', header: 'Contact', render: (u) => (u.phone ? formatPkPhone(u.phone) : '—') },
     {
       key: 'role',
@@ -435,19 +435,23 @@ function AddUserModal({ assignableRoles, onClose, onDone }) {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const phoneErr = pkPhoneError(form.phone)
 
+  // Detect if the email field has a phone number entered
+  const emailIsPhone = /^(\+92|92|0)?3\d{9}$/.test(form.email.trim().replace(/\s/g, ''))
+
   const submit = async (e) => {
     e.preventDefault()
     setErr('')
     if (!form.full_name.trim()) return setErr('Name is required')
-    if (!form.email.trim()) return setErr('Email is required')
+    if (!form.email.trim()) return setErr('Email or phone is required')
     if (form.roles.length === 0) return setErr('Pick at least one role')
     if (form.phone && !isValidPkMobile(form.phone)) return setErr(phoneErr || 'Invalid phone number')
     if (form.password.length < 8) return setErr('Password must be at least 8 characters')
+    const authEmail = toAuthEmail(form.email)
     setBusy(true)
     try {
       await adminUsers.create({
         full_name: form.full_name.trim(),
-        email: form.email.trim(),
+        email: authEmail,
         phone: toStored(form.phone),
         roles: form.roles,
         password: form.password,
@@ -476,15 +480,19 @@ function AddUserModal({ assignableRoles, onClose, onDone }) {
         </div>
         <div className="field-row">
           <div className="field">
-            <label htmlFor="u-email">Email</label>
+            <label htmlFor="u-email">Email or Phone</label>
             <input
               id="u-email"
-              type="email"
+              type="text"
               className="input"
               value={form.email}
               onChange={(e) => set('email', e.target.value)}
+              placeholder="user@buscaro.com or 03XXXXXXXXX"
               autoComplete="off"
             />
+            {emailIsPhone && (
+              <span className="field-hint">Phone login — driver will sign in with this number.</span>
+            )}
           </div>
           <div className="field">
             <label htmlFor="u-phone">Contact</label>

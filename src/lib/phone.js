@@ -33,6 +33,32 @@ export function formatPkPhone(stored) {
   return `+92 ${d.slice(0, 3)} ${d.slice(3)}`
 }
 
+// Convert a login identifier (email OR Pakistani phone) to the Supabase Auth
+// email used for driver accounts. Phone → +923XXXXXXXXX@fjride.internal.
+// A real email address is returned unchanged.
+export function toAuthEmail(input) {
+  const s = String(input ?? '').trim().replace(/\s/g, '')
+  if (/^(\+92|92|0)?3\d{9}$/.test(s)) {
+    const digits = s.replace(/\D/g, '')
+    return `+92${digits.slice(-10)}@fjride.internal`
+  }
+  return s
+}
+
+// Reverse: if the stored auth email is an internal phone-email, return the
+// formatted phone number for display; otherwise return the email as-is.
+export function displayAuthIdentity(email) {
+  if (!email) return '—'
+  const m = email.match(/^\+92(\d{10})@fjride\.internal$/)
+  if (m) return `+92 ${m[1].slice(0, 3)} ${m[1].slice(3)}`
+  return email
+}
+
+// Detect whether an auth email is a phone-based internal account.
+export function isPhoneAuth(email) {
+  return Boolean(email?.endsWith('@fjride.internal'))
+}
+
 // Validation message for a partial/invalid local part ('' = ok).
 export function pkPhoneError(local, { required = false } = {}) {
   if (!local) return required ? 'Phone number is required' : ''

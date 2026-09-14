@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { setRemember } from '../lib/supabase'
+import { toAuthEmail } from '../lib/phone'
 import './Login.css'
 
 export default function Login() {
@@ -15,18 +16,6 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
 
   if (!loading && isAuthenticated) return <Navigate to="/" replace />
-
-  // Drivers log in with their phone number (+92 / 03 / 3 format).
-  // Internally stored as +923XXXXXXXXX@fjride.internal in Supabase Auth.
-  const toAuthEmail = (input) => {
-    const s = input.trim().replace(/\s/g, '')
-    if (/^(\+92|92|0)?3\d{9}$/.test(s)) {
-      const digits = s.replace(/\D/g, '')
-      const local = digits.slice(-10)
-      return `+92${local}@fjride.internal`
-    }
-    return s
-  }
 
   const onSubmit = async (e) => {
     e.preventDefault()

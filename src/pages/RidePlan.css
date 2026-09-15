@@ -208,4 +208,11 @@
     overflow-y: visible;
     max-height: none;
   }
+
+  /* Clip the table to its container so the PAGE never scrolls horizontally;
+     the table's own overflow-x:auto lets the table scroll inside this box */
+  .rp-plan-table {
+    max-width: 100%;
+    overflow: hidden;
+  }
 }

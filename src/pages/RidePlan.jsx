@@ -770,7 +770,7 @@ export default function RidePlan() {
       ),
     },
     { key: 'km', header: 'Planned KM', align: 'right', width: 95, render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
-    { key: 'crew', header: 'Crew', width: 160, render: (r) => (
+    { key: 'crew', header: 'Crew', render: (r) => (
       <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
     ) },
     {
@@ -787,7 +787,6 @@ export default function RidePlan() {
     {
       key: 'actualCrew',
       header: 'Actual Crew',
-      width: 160,
       render: (r) =>
         r.status === 'followed' && r.actualCrewNames ? (
           r.actualCrewNames.length ? (

@@ -315,7 +315,7 @@ export default function RidePlan() {
     const planRows = list.map((r) => {
       const names = r.ride?.id ? crewByRide.get(r.ride.id) || [] : null
       const actualVehicleNo = r.ride?.is_adhoc_vehicle
-        ? `${r.ride.adhoc_vehicle_no || '—'} · ad-hoc`
+        ? (r.ride.adhoc_vehicle_no || '—').replace(/^Ad-Hoc 0*(\d+)$/, 'Ad-Hoc $1')
         : r.ride?.vehicle_id
           ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
           : null
@@ -339,7 +339,7 @@ export default function RidePlan() {
       .map((r) => {
       const names = crewByRide.get(r.id) || []
       const actualVehicleNo = r.is_adhoc_vehicle
-        ? `${r.adhoc_vehicle_no || '—'} · ad-hoc`
+        ? (r.adhoc_vehicle_no || '—').replace(/^Ad-Hoc 0*(\d+)$/, 'Ad-Hoc $1')
         : r.vehicle_id
           ? vehicles.find((v) => v.id === r.vehicle_id)?.vehicle_no ?? null
           : null
@@ -875,7 +875,7 @@ export default function RidePlan() {
                 <XCircle size={15} />
               </button>
             )}
-            {canEdit && r.status === 'followed' && r.ride?.id && r.ride?.status !== 'cancelled' && (
+            {canEdit && !r.isExtra && r.status === 'followed' && r.ride?.id && r.ride?.status !== 'cancelled' && (
               <button
                 type="button"
                 className="icon-btn rp-cancel-btn"

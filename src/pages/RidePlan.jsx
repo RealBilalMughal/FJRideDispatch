@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, Eye, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -177,6 +177,7 @@ export default function RidePlan() {
   const [reportOpen, setReportOpen] = useState(false)
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
+  const [viewRide, setViewRide] = useState(null) // ride row to view
   const [deleting, setDeleting] = useState(false)
 
   // Inline Add Ride modal (Follow / No / plain Add Ride button)
@@ -975,6 +976,16 @@ export default function RidePlan() {
                 <MessageSquare size={15} />
               </button>
             )}
+            {r.ride?.id && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="View ride"
+                onClick={() => setViewRide(r.ride)}
+              >
+                <Eye size={15} />
+              </button>
+            )}
             {gm && (
               <a href={gm} target="_blank" rel="noreferrer" className="icon-btn" title="Open ride route in Google Maps">
                 <Navigation size={15} />
@@ -1237,6 +1248,21 @@ export default function RidePlan() {
             </button>
           </div>
         </Modal>
+      )}
+      {viewRide && (
+        <RideModal
+          row={viewRide}
+          startInEdit={false}
+          canEdit={canEdit}
+          flights={flights}
+          crew={crew}
+          vehicles={vehicles}
+          drivers={drivers}
+          allowedCities={allowedCities}
+          createdBy={profile?.id}
+          onClose={() => setViewRide(null)}
+          onDone={() => { setViewRide(null); fetchRows() }}
+        />
       )}
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}
       {cancelFor && <CancelPlanRideModal row={cancelFor} onClose={() => setCancelFor(null)} onConfirm={doCancelPlanRide} />}

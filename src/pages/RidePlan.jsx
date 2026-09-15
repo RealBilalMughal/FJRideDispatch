@@ -765,7 +765,6 @@ export default function RidePlan() {
           ? `${fmtTime12(r.start_time) || '—'} - ${fmtTime12(r.end_time)}`
           : fmtTime12(r.start_time) || '—',
     },
-    { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
     { key: 'crew', header: 'Crew', render: (r) => (
       <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
     ) },
@@ -823,6 +822,7 @@ export default function RidePlan() {
       },
     },
     { key: 'status', header: 'Status', render: (r) => <StatusCell row={r} /> },
+    { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
     {
       key: 'actual',
       header: 'Actual KM',

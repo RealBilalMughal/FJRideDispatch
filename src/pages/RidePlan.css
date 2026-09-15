@@ -109,3 +109,22 @@
   background: var(--surface);
   z-index: 2;
 }
+
+/* ── Row tinting ──────────────────────────────────────────────────── */
+.rp-plan-table .data-table tbody tr.rp-row-followed td {
+  background: color-mix(in srgb, var(--success, #1a7f37) 7%, transparent);
+}
+.rp-plan-table .data-table tbody tr.rp-row-cancelled td {
+  background: color-mix(in srgb, var(--danger, #c0392b) 7%, transparent);
+}
+
+/* ── Cancelled status badge ──────────────────────────────────────── */
+.rp-status-cancelled {
+  font-size: 12px;
+  font-weight: 600;
+  color: #b02020;
+}
+
+/* ── Not-happening (XCircle) button ─────────────────────────────── */
+.rp-cancel-btn { color: var(--danger, #c0392b); }
+.rp-cancel-btn:hover { opacity: 0.75; }

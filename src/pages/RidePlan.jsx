@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -126,8 +126,8 @@ function StatusCell({ row }) {
     )
   if (row.status === 'skipped')
     return (
-      <span className="status-text bad" title={row.skip_reason || ''}>
-        No
+      <span className="rp-status-cancelled" title={row.skip_reason || ''}>
+        Cancelled
       </span>
     )
   return <span className="status-text off">Pending</span>
@@ -711,11 +711,11 @@ export default function RidePlan() {
             {canEdit && r.status === 'pending' && (
               <button
                 type="button"
-                className="icon-btn"
+                className="icon-btn rp-cancel-btn"
                 title="Not happening"
                 onClick={() => setSkipFor(r)}
               >
-                <Ban size={15} />
+                <XCircle size={15} />
               </button>
             )}
             {canEdit && r.status === 'skipped' && (
@@ -900,6 +900,10 @@ export default function RidePlan() {
           rowKey={(r) => r.id}
           loading={loading}
           emptyLabel="No plan uploaded for this date"
+          rowClassName={(r) =>
+            r.status === 'followed' ? 'rp-row-followed' :
+            r.status === 'skipped' ? 'rp-row-cancelled' : ''
+          }
         />
       </div>
 

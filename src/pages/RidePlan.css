@@ -188,3 +188,24 @@
 }
 
 .rp-datebar .filter-searchselect { width: 170px; }
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Date bar wraps to multiple rows; separators don't make sense across rows */
+  .rp-datebar-sep { display: none; }
+
+  /* Let filter dropdowns take natural width instead of fixed 170px */
+  .rp-datebar .filter-searchselect { width: auto; flex: 1 1 140px; }
+
+  /* Date input takes remaining space */
+  .rp-datebar input[type='date'] { flex: 1 1 auto; }
+
+  /* On mobile: stop being sticky - let the whole page scroll normally */
+  .rp-frozen-top { position: static; }
+
+  /* On mobile: table scrolls with the page, not in its own fixed box */
+  .rp-plan-table .data-table-scroll {
+    overflow-y: visible;
+    max-height: none;
+  }
+}

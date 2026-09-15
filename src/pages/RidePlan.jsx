@@ -745,7 +745,7 @@ export default function RidePlan() {
   const hasActiveFilter = blockFilter !== 'all' || statusFilter !== 'all' || flightFilter || vehicleFilter
 
   const columns = [
-    { key: 'trip', header: 'Trip', render: (r) => {
+    { key: 'trip', header: 'Trip', width: 110, render: (r) => {
       if (!r.isExtra) return r.trip_id
       const ref = r.displayRef ?? r.ride?.ref_no ?? '—'
       return r.isChild ? <span className="rp-child-ref">↳ {ref}</span> : ref
@@ -769,8 +769,8 @@ export default function RidePlan() {
         </div>
       ),
     },
-    { key: 'km', header: 'Planned KM', align: 'right', width: 105, render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
-    { key: 'crew', header: 'Crew', width: 190, render: (r) => (
+    { key: 'km', header: 'Planned KM', align: 'right', width: 95, render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
+    { key: 'crew', header: 'Crew', width: 160, render: (r) => (
       <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
     ) },
     {
@@ -787,6 +787,7 @@ export default function RidePlan() {
     {
       key: 'actualCrew',
       header: 'Actual Crew',
+      width: 160,
       render: (r) =>
         r.status === 'followed' && r.actualCrewNames ? (
           r.actualCrewNames.length ? (
@@ -806,13 +807,13 @@ export default function RidePlan() {
       key: 'actualCrewCount',
       header: 'A Crew C',
       align: 'right',
-      width: 72,
+      width: 62,
       render: (r) => (r.status === 'followed' ? r.actualCrewCount ?? '—' : '—'),
     },
     {
       key: 'car',
       header: 'Vehicle',
-      width: 140,
+      width: 110,
       render: (r) => {
         if (r.isExtra) return <span className="rp-cell-wrap">{r.actualVehicleNo || '—'}</span>
         return (
@@ -829,17 +830,19 @@ export default function RidePlan() {
         )
       },
     },
-    { key: 'status', header: 'Status', render: (r) => <StatusCell row={r} /> },
+    { key: 'status', header: 'Status', width: 120, render: (r) => <StatusCell row={r} /> },
     {
       key: 'actual',
       header: 'Actual KM',
       align: 'right',
+      width: 90,
       render: (r) => (r.status === 'followed' && r.ride ? (Number(billableKm(r.ride)) || 0).toFixed(2) : '—'),
     },
     {
       key: 'delta',
       header: 'Difference',
       align: 'right',
+      width: 90,
       render: (r) => {
         if (r.isExtra) return <span className="secondary">—</span>
         if (r.status !== 'followed' || !r.ride) return '—'

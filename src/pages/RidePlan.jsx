@@ -108,7 +108,7 @@ const isoHHMM = (iso) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function CrewMatchCell({ row, crew, onDispatchCrew }) {
+function CrewMatchCell({ row, crew, onDispatchCrew, extraCrewSet }) {
   const matches = row.crew_matches
   if (!matches?.length) return <span className="secondary">—</span>
   const showIcons = Boolean(onDispatchCrew && hasCrewMismatch(row))
@@ -118,7 +118,8 @@ function CrewMatchCell({ row, crew, onDispatchCrew }) {
       {matches.map((m, i) => {
         const c = crew.find((x) => x.id === m.crew_id)
         const name = c?.name || m.name
-        const isUnserved = showIcons && c && !actualSet.has(name)
+        // Hide icon if crew is in the linked ride OR in any extra child ride
+        const isUnserved = showIcons && c && !actualSet.has(name) && !extraCrewSet?.has(name)
         return (
           <div key={i} className="rp-crew-row">
             <span>{name}</span>
@@ -874,9 +875,25 @@ export default function RidePlan() {
           ? `${fmtTime12(r.start_time) || '—'} - ${fmtTime12(r.end_time)}`
           : fmtTime12(r.start_time) || '—',
     },
-    { key: 'crew', header: 'Crew', render: (r) => (
-      <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
-    ) },
+    { key: 'crew', header: 'Crew', render: (r) => {
+      // Names from extra child rides for this plan row (same flight + block),
+      // used to hide the dispatch icon once that crew member's ride exists.
+      const extraCrewSet = (!r.isExtra && r.matched_flight_id)
+        ? new Set(
+            filteredRows
+              .filter((e) => e.isExtra && e.isChild && e.ride?.flight_id === r.matched_flight_id && e.block_type === r.block_type)
+              .flatMap((e) => e.actualCrewNames ?? [])
+          )
+        : null
+      return (
+        <CrewMatchCell
+          row={r}
+          crew={crew}
+          onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null}
+          extraCrewSet={extraCrewSet}
+        />
+      )
+    } },
     {
       key: 'crewCount',
       header: 'Crew C',

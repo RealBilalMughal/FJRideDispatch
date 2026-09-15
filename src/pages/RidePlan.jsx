@@ -755,7 +755,7 @@ export default function RidePlan() {
     {
       key: 'route',
       header: 'Route',
-      width: 100,
+      width: 115,
       render: (r) => (r.origin && r.destination ? `${r.origin} → ${r.destination}` : '—'),
     },
     {

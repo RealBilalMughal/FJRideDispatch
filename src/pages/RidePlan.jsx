@@ -750,7 +750,7 @@ export default function RidePlan() {
       const ref = r.displayRef ?? r.ride?.ref_no ?? '—'
       return r.isChild ? <span className="rp-child-ref">↳ {ref}</span> : ref
     } },
-    { key: 'block', header: 'Block', width: 88, render: (r) => blockLabel(r.block_type) },
+    { key: 'block', header: 'Block', width: 100, render: (r) => blockLabel(r.block_type) },
     { key: 'flight', header: 'Flight', width: 72, render: (r) => r.flight_no || '—' },
     {
       key: 'route',

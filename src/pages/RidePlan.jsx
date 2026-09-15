@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
-import { addDays, fmtTime12, pkToday } from '../lib/time'
+import { addDays, fmtTime12, pkNow, pkToday } from '../lib/time'
 import { blockLabel, displayCrewCount } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
@@ -167,6 +167,8 @@ export default function RidePlan() {
   const [planDate, setPlanDate] = useState(pkToday())
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  // Live Pakistan time, refreshed every minute for deadline warnings.
+  const [nowPk, setNowPk] = useState(() => pkNow())
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
   const [cancelFor, setCancelFor] = useState(null)
@@ -174,6 +176,7 @@ export default function RidePlan() {
   const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
+  const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [deleting, setDeleting] = useState(false)
 
   // Inline Add Ride modal (Follow / No / plain Add Ride button)
@@ -455,6 +458,23 @@ export default function RidePlan() {
 
   const canFollow = (r) => r.status === 'pending'
 
+  // Refresh Pakistan clock every minute so deadline badges stay current.
+  useEffect(() => {
+    const id = setInterval(() => setNowPk(pkNow()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Returns minutes until start_time on planDate; null when not applicable.
+  const minutesUntil = useCallback((r) => {
+    if (!r.start_time || r.status !== 'pending') return null
+    const [hh, mm] = r.start_time.split(':').map(Number)
+    const target = new Date(Date.UTC(
+      ...planDate.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v),
+      hh - 5, mm  // planDate is PK date; convert HH:MM PK to UTC
+    ))
+    return Math.round((target - nowPk) / 60_000)
+  }, [planDate, nowPk])
+
   // Fetch a plan row, build the RideModal prefill, open the modal inline.
   const openPlanRideModal = async (planRowId, viaNo = false, skipReason = null) => {
     const { data: planRow, error } = await supabase
@@ -485,6 +505,49 @@ export default function RidePlan() {
       if (planRow.block_type === 'pickup') initial.alsoDeadhead = true
       else if (planRow.block_type === 'dropoff') initial.alsoReturnLeg = true
     }
+
+    // Crew availability check: warn if any planned crew are already on another
+    // ride (any flight) that overlaps this plan row's time window.
+    const crewIds = (planRow.crew_matches || []).map((m) => m.crew_id).filter(Boolean)
+    if (crewIds.length && planRow.start_time && planRow.plan_date) {
+      const dayStart = `${planRow.plan_date}T00:00:00+05:00`
+      const dayEnd   = `${planRow.plan_date}T23:59:59+05:00`
+      const { data: busyLinks } = await supabase
+        .from('ride_crew')
+        .select('crew_id, ride:rides!inner(id, ref_no, start_at, end_at, status, flight_no, block_type)')
+        .in('crew_id', crewIds)
+        .neq('ride.status', 'cancelled')
+        .gte('ride.start_at', dayStart)
+        .lte('ride.start_at', dayEnd)
+
+      if (busyLinks?.length) {
+        // Build a PK ISO timestamp for this plan row's window.
+        const planStart = new Date(`${planRow.plan_date}T${planRow.start_time}:00+05:00`)
+        const planEnd   = planRow.end_time
+          ? new Date(`${planRow.plan_date}T${planRow.end_time}:00+05:00`)
+          : new Date(planStart.getTime() + 90 * 60_000)
+
+        const conflicts = busyLinks.filter((lk) => {
+          const rStart = new Date(lk.ride.start_at)
+          const rEnd   = new Date(lk.ride.end_at)
+          return rStart < planEnd && rEnd > planStart
+        })
+
+        if (conflicts.length) {
+          const conflictNames = conflicts.map((lk) => {
+            const c = crew.find((x) => x.id === lk.crew_id)
+            return `${c?.name ?? 'Crew'} — Ride ${lk.ride.ref_no} (${lk.ride.flight_no || lk.ride.block_type})`
+          })
+          // Store conflict info; the modal's "Proceed" callback will open rideModal.
+          setCrewConflict({
+            names: conflictNames,
+            onProceed: () => setRideModal({ initial, planRowId: planRow.id, pairedRowId, viaNo, skipReason }),
+          })
+          return
+        }
+      }
+    }
+
     setRideModal({ initial, planRowId: planRow.id, pairedRowId, viaNo, skipReason })
   }
 
@@ -752,7 +815,13 @@ export default function RidePlan() {
 
   const columns = [
     { key: 'trip', header: 'Trip', render: (r) => {
-      if (!r.isExtra) return r.trip_id
+      const mins = minutesUntil(r)
+      const badge =
+        mins !== null && mins <= 0   ? <span className="rp-deadline-badge rp-deadline-overdue">Overdue</span> :
+        mins !== null && mins <= 30  ? <span className="rp-deadline-badge rp-deadline-now">In {mins}m</span> :
+        mins !== null && mins <= 90  ? <span className="rp-deadline-badge rp-deadline-soon">In {mins}m</span> :
+        null
+      if (!r.isExtra) return <>{r.trip_id}{badge}</>
       const ref = r.displayRef ?? r.ride?.ref_no ?? '—'
       return r.isChild ? <span className="rp-child-ref">↳ {ref}</span> : ref
     } },
@@ -1120,10 +1189,14 @@ export default function RidePlan() {
           rowKey={(r) => r.id}
           loading={loading}
           emptyLabel="No plan uploaded for this date"
-          rowClassName={(r) =>
-            r.status === 'followed' ? 'rp-row-followed' :
-            r.status === 'skipped' ? 'rp-row-cancelled' : ''
-          }
+          rowClassName={(r) => {
+            if (r.status === 'followed') return 'rp-row-followed'
+            if (r.status === 'skipped') return 'rp-row-cancelled'
+            const mins = minutesUntil(r)
+            if (mins !== null && mins <= 90 && mins > 0) return 'rp-row-urgent'
+            if (mins !== null && mins <= 0) return 'rp-row-overdue'
+            return ''
+          }}
         />
       </div>
 
@@ -1144,6 +1217,27 @@ export default function RidePlan() {
         />
       )}
 
+      {crewConflict && (
+        <Modal title="Crew conflict" onClose={() => setCrewConflict(null)} size="sm">
+          <p style={{ marginBottom: 10 }}>Ye crew members is waqt already kisi aur ride pe hain:</p>
+          <ul style={{ margin: '0 0 16px 18px', lineHeight: 1.7 }}>
+            {crewConflict.names.map((n, i) => <li key={i}>{n}</li>)}
+          </ul>
+          <p style={{ marginBottom: 16, color: 'var(--muted)', fontSize: 13 }}>
+            Phir bhi Follow karna chahte hain?
+          </p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setCrewConflict(null)}>Cancel</button>
+            <button
+              className="btn btn-sm"
+              style={{ background: 'var(--danger)', color: '#fff', borderColor: 'var(--danger)' }}
+              onClick={() => { crewConflict.onProceed(); setCrewConflict(null) }}
+            >
+              Follow anyway
+            </button>
+          </div>
+        </Modal>
+      )}
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}
       {cancelFor && <CancelPlanRideModal row={cancelFor} onClose={() => setCancelFor(null)} onConfirm={doCancelPlanRide} />}
       {noReasonFor && (

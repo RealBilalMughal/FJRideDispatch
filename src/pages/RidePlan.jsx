@@ -426,22 +426,6 @@ export default function RidePlan() {
     for (const e of extraRows) {
       if (!inserted.has(e.id)) result.push(e)
     }
-
-    // Augment each plan row's actualCrewNames with crew from its child extra
-    // rides (same flight, same block) so the crew-dispatch icon disappears
-    // once a ride for that crew member has been created.
-    for (const row of result) {
-      if (row.isExtra || !row.matched_flight_id || !row.actualCrewNames) continue
-      const extraCrewNames = result
-        .filter((e) => e.isExtra && e.isChild && e.ride?.flight_id === row.matched_flight_id && e.block_type === row.block_type)
-        .flatMap((e) => e.actualCrewNames ?? [])
-      if (extraCrewNames.length) {
-        const merged = [...new Set([...row.actualCrewNames, ...extraCrewNames])]
-        row.actualCrewNames = merged
-        row.actualCrewCount = displayCrewCount(merged, row.block_type)
-      }
-    }
-
     setRows(result)
     setLoading(false)
   }, [canView, planDate, cityId, vehicles])

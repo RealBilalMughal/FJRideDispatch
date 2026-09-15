@@ -120,7 +120,7 @@ function StatusCell({ row }) {
     return (
       <div className="crew-cell-stack">
         <span className={`status-text ${row.via_no ? 'bad' : 'on'}`}>{row.via_no ? 'No Follow' : 'Followed'}</span>
-        {row.ride && <span className="secondary">{row.ride.ref_no}</span>}
+        {row.ride && <span className="secondary">{row.displayRef ?? row.ride.ref_no}</span>}
         {row.isExtra && <span className="status-text off">Extra ride</span>}
       </div>
     )
@@ -216,7 +216,7 @@ export default function RidePlan() {
     let q = supabase
       .from('ride_plan_rows')
       .select(
-        '*, ride:rides(id, ref_no, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints)',
+        '*, ride:rides(id, ref_no, return_of_ride_id, deadhead_mode, block_type, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints)',
       )
       .eq('plan_date', planDate)
       .order('seq')
@@ -235,7 +235,7 @@ export default function RidePlan() {
     let rq = supabase
       .from('rides')
       .select(
-        'id, ref_no, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
+        'id, ref_no, return_of_ride_id, deadhead_mode, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
       )
       .eq('ride_date', planDate)
     if (cityId != null) rq = rq.eq('city_id', cityId)
@@ -263,6 +263,24 @@ export default function RidePlan() {
       }, new Map())
     }
 
+    // Build a ref_no lookup for all day rides so we can compute the suffixed
+    // display ID (e.g. 1211-R) the same way the Rides page does.
+    const refNoById = new Map()
+    list.forEach((r) => r.ride?.id && refNoById.set(r.ride.id, r.ride.ref_no))
+    extraRides.forEach((r) => refNoById.set(r.id, r.ref_no))
+
+    const rideDisplayRef = (ride) => {
+      if (!ride) return null
+      const parentId = ride.return_of_ride_id
+      if (!parentId) return String(ride.ref_no)
+      const parentRef = refNoById.get(parentId) ?? ride.ref_no
+      if (ride.block_type === 'return_leg') return `${parentRef}-R`
+      if (ride.block_type === 'deadhead')
+        return ride.deadhead_mode === 'airport' ? `${parentRef}-PD` : `${parentRef}-D`
+      if (ride.block_type === 'pickup') return `${parentRef}-P`
+      return String(ride.ref_no)
+    }
+
     const planRows = list.map((r) => {
       const names = r.ride?.id ? crewByRide.get(r.ride.id) || [] : null
       const actualVehicleNo = r.ride?.is_adhoc_vehicle
@@ -272,6 +290,7 @@ export default function RidePlan() {
           : null
       return {
         ...r,
+        displayRef: rideDisplayRef(r.ride),
         actualCrewNames: names,
         actualCrewCount: names ? displayCrewCount(names, r.block_type) : null,
         actualVehicleNo,
@@ -284,7 +303,9 @@ export default function RidePlan() {
     // `planned_km` plus these rows' 0, while `actualKm` still sums their
     // linked ride's billable KM same as any followed row - so an extra ride's
     // distance only ever lands in Actual, never Planned.
-    const extraRows = extraRides.map((r) => {
+    const extraRows = extraRides
+      .sort((a, b) => (a.start_at ?? '').localeCompare(b.start_at ?? ''))
+      .map((r) => {
       const names = crewByRide.get(r.id) || []
       const actualVehicleNo = r.is_adhoc_vehicle
         ? `${r.adhoc_vehicle_no || '—'} · ad-hoc`
@@ -312,6 +333,7 @@ export default function RidePlan() {
         skip_reason: null,
         via_no: false,
         ride: r,
+        displayRef: rideDisplayRef(r),
         actualCrewNames: names,
         actualCrewCount: displayCrewCount(names, r.block_type),
         actualVehicleNo,

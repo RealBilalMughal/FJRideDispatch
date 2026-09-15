@@ -761,7 +761,7 @@ export default function RidePlan() {
     {
       key: 'time',
       header: 'Time',
-      width: 140,
+      width: 80,
       render: (r) => (
         <div className="crew-cell-stack">
           <div>{fmtTime12(r.start_time) || '—'}</div>
@@ -769,7 +769,7 @@ export default function RidePlan() {
         </div>
       ),
     },
-    { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
+    { key: 'km', header: 'Planned KM', align: 'right', width: 72, render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
     { key: 'crew', header: 'Crew', width: 190, render: (r) => (
       <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
     ) },

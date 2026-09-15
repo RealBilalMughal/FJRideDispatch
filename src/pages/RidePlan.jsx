@@ -590,11 +590,15 @@ export default function RidePlan() {
     if (rideErr) return toast.error(rideErr.message)
 
     // Also cancel any companion rides (deadhead / return leg) linked to this ride
-    const { data: companions } = await supabase
+    const { data: companions, error: compErr } = await supabase
       .from('rides')
       .select('id')
       .eq('return_of_ride_id', cancelFor.ride.id)
       .neq('status', 'cancelled')
+    if (compErr) toast.error('Companion query error: ' + compErr.message)
+    if (!companions?.length) {
+      toast('Koi companion nahi mila is ride ka (ride id: ' + cancelFor.ride.id + ')')
+    }
     if (companions?.length) {
       const companionIds = companions.map((c) => c.id)
       await supabase.from('rides').update(cancelPayload).in('id', companionIds)

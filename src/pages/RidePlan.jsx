@@ -760,12 +760,10 @@ export default function RidePlan() {
     {
       key: 'time',
       header: 'Time',
-      render: (r) => (
-        <div className="crew-cell-stack">
-          <div>{fmtTime12(r.start_time) || '—'}</div>
-          {r.end_time && <div>{fmtTime12(r.end_time)}</div>}
-        </div>
-      ),
+      render: (r) =>
+        r.end_time
+          ? `${fmtTime12(r.start_time) || '—'} - ${fmtTime12(r.end_time)}`
+          : fmtTime12(r.start_time) || '—',
     },
     { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
     { key: 'crew', header: 'Crew', render: (r) => (

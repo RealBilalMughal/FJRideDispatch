@@ -172,6 +172,9 @@ export default function RidePlan() {
 
   // Inline Add Ride modal (Follow / No / plain Add Ride button)
   const [rideModal, setRideModal] = useState(null) // { initial, planRowId, pairedRowId, viaNo } | null
+  // When a crew-dispatch modal creates rides, hold the source plan-row id so
+  // fetchRows can place the new extra rows immediately after that specific row.
+  const crewDispatchSourceRef = useRef(null)
 
   // Filters
   const [blockFilter, setBlockFilter] = useState('all')
@@ -383,13 +386,23 @@ export default function RidePlan() {
     }
     const result = [...planRows]
     const inserted = new Set()
+    const dispatchSourceId = crewDispatchSourceRef.current
     for (const [fid, extras] of extraByFlight) {
-      let lastIdx = -1
-      for (let i = 0; i < result.length; i++) {
-        if (!result[i].isExtra && result[i].matched_flight_id === fid) lastIdx = i
+      // If a crew-dispatch source row is set, place extras right after it;
+      // otherwise fall back to placing after the last plan row with that flight.
+      let targetIdx = -1
+      if (dispatchSourceId) {
+        for (let i = 0; i < result.length; i++) {
+          if (result[i].id === dispatchSourceId) { targetIdx = i; break }
+        }
       }
-      if (lastIdx >= 0) {
-        let pos = lastIdx + 1
+      if (targetIdx === -1) {
+        for (let i = 0; i < result.length; i++) {
+          if (!result[i].isExtra && result[i].matched_flight_id === fid) targetIdx = i
+        }
+      }
+      if (targetIdx >= 0) {
+        let pos = targetIdx + 1
         while (pos < result.length && result[pos].isExtra) pos++
         result.splice(pos, 0, ...extras.map((e) => ({ ...e, isChild: true })))
         extras.forEach((e) => inserted.add(e.id))
@@ -498,6 +511,7 @@ export default function RidePlan() {
     if (crewObj) initial.crewList = [crewObj]
     if (planRow.block_type === 'pickup') initial.alsoDeadhead = true
     if (planRow.block_type === 'dropoff') initial.alsoReturnLeg = true
+    crewDispatchSourceRef.current = planRowId
     setRideModal({ initial, planRowId: null, pairedRowId: null, viaNo: false, skipReason: null })
   }, [crew, flights])
 
@@ -516,7 +530,7 @@ export default function RidePlan() {
   const onRideModalDone = async (result) => {
     const m = rideModal
     setRideModal(null)
-    if (!m?.planRowId) { fetchRows(); return }
+    if (!m?.planRowId) { await fetchRows(); crewDispatchSourceRef.current = null; return }
     const rideId = result?.rideId ?? null
     const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId ?? null
     const upd = await supabase

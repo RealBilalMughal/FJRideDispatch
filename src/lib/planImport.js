@@ -212,5 +212,29 @@ export function buildPlanRows(records, { allowedCities, flights, crew, vehicles 
       matched_vehicle_id: matchedVehicle?.id ?? null,
     })
   })
+  // Second pass: fill crew_matches + flight for deadhead/return_leg rows that
+  // the sheet leaves blank (the standard format never puts crew or a flight
+  // number on these rows).  Pairing is by adjacent line number - deadhead at
+  // line N means its pickup is at line N+1; return_leg at N means its dropoff
+  // is at N-1 (confirmed against real data, same rule the plan page uses).
+  // Only fills when the row is currently empty, so an unusual sheet that does
+  // carry crew/flight on these rows is left as-is.
+  const byLine = new Map(ok.map((r) => [r.line, r]))
+  for (const r of ok) {
+    if (r.block_type === 'deadhead' || r.block_type === 'return_leg') {
+      const siblingLine = r.block_type === 'deadhead' ? r.line + 1 : r.line - 1
+      const sibling = byLine.get(siblingLine)
+      const expectedSibling = r.block_type === 'deadhead' ? 'pickup' : 'dropoff'
+      if (!sibling || sibling.block_type !== expectedSibling) continue
+      if (!r.crew_matches.length && sibling.crew_matches.length) {
+        r.crew_matches = sibling.crew_matches
+      }
+      if (!r.matched_flight_id && sibling.matched_flight_id) {
+        r.matched_flight_id = sibling.matched_flight_id
+        r.flight_no = sibling.flight_no
+      }
+    }
+  }
+
   return { ok, skipped }
 }

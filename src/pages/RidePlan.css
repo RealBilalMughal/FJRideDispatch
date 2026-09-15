@@ -128,3 +128,63 @@
 /* ── Not-happening (XCircle) button ─────────────────────────────── */
 .rp-cancel-btn { color: var(--danger, #c0392b); }
 .rp-cancel-btn:hover { opacity: 0.75; }
+
+/* ── No-reason checklist ─────────────────────────────────────────── */
+.rp-reason-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+}
+
+.rp-reason-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  user-select: none;
+}
+.rp-reason-check:hover { background: var(--accent-soft, rgba(52,113,184,0.08)); }
+.rp-reason-check input { cursor: pointer; flex-shrink: 0; }
+
+/* ── Crew mismatch - per-member row + dispatch icon ─────────────── */
+.rp-crew-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rp-crew-dispatch-btn {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.65;
+  padding: 1px 2px;
+  margin-left: 2px;
+}
+.rp-crew-dispatch-btn:hover { opacity: 1; }
+
+/* ── Child (sub) extra-ride row: indent its Trip cell ────────────── */
+.rp-child-ref {
+  color: var(--muted);
+  padding-left: 6px;
+  font-size: 12px;
+}
+
+/* ── Date + filter bar (single row) ─────────────────────────────── */
+.rp-datebar { flex-wrap: wrap; }
+
+.rp-datebar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.rp-datebar .filter-searchselect { width: 170px; }

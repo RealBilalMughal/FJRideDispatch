@@ -255,6 +255,25 @@
   font-size: 11.5px;
 }
 
+.ride-crew-drag {
+  color: var(--muted);
+  cursor: grab;
+  display: inline-flex;
+  padding: 2px 4px 2px 0;
+  flex-shrink: 0;
+}
+.ride-crew-drag:active { cursor: grabbing; }
+
+/* item being dragged: fade it so the ghost looks "lifted" */
+.ride-crew-list li.dragging {
+  opacity: 0.35;
+}
+
+/* drop target: a solid accent line at the top edge, not a background fill */
+.ride-crew-list li.drag-over {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+
 .ride-crew-x {
   border: 0;
   background: none;

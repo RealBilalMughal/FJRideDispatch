@@ -1,5 +1,11 @@
 # FJ Ride Dispatch - Project Context
 
+## Communication style
+- The user writes in **Roman Urdu** (Urdu words typed in English letters, e.g.
+  "ye krdo", "kya hua", "theek hai"). Always reply and explain in **Roman Urdu**
+  when the user's message is in Roman Urdu. Never switch to English explanations
+  for a Roman Urdu message — even for technical topics, explain them in Roman Urdu.
+
 ## Overview
 Internal **ride-dispatch console**. Standalone project - **completely separate**
 from GraphicSpark CRM (E:\GulbergSPA) and BlackDrivo (D:\BlackDrivoAdmin): its
@@ -496,6 +502,18 @@ keys, tables or deploy targets with any other project.
 
 ## Ride (`rides` page, sidebar label "Ride", group "Dispatch")
 - `rides` + `ride_crew` (ordered by `seq`) + `cities.airport_*` (per-city airport).
+  The crew list in `RideModal` is **drag-to-reorder** (`ride-crew-list`,
+  HTML5 drag-and-drop, `GripVertical` handle): dragging a crew member fades
+  them to `opacity: 0.35` (`.dragging` class - **no `pointer-events: none`**,
+  which breaks drag by causing the browser to lose the element as the drag
+  source on React re-render) and shows a 2px accent top-border on the drop
+  target (`.drag-over`, `box-shadow: inset 0 2px 0 0 var(--accent)`) instead
+  of a background fill. `dragIdx.current` prevents self-highlighting; a JS
+  guard in `onCrewDragOver` (`i !== dragIdx.current`) stops the source row
+  from marking itself as a target. Order matters for route-point assignment:
+  crew at `seq 0` is the "first crew" stop for deadhead/return-leg ref, and
+  the "Also create Deadhead/Return Leg" logic keys off `crewList[0]` /
+  `crewList[last]`.
   Vehicle double-booking is still blocked at the DB level by an
   `EXCLUDE USING gist` on `(vehicle_id, tstzrange(start_at, end_at))` (a save
   that truly overlaps still fails with the `23P01` -> "already booked for an
@@ -1139,7 +1157,15 @@ keys, tables or deploy targets with any other project.
     returns `{ ok, skipped }` (mirrors `Crew.jsx`'s `ImportModal` parse/skip/
     tag shape) - each `ok` row also carries a transient `line` (CSV line
     number, for the import preview's unmatched-crew list; stripped before the
-    real insert, `ride_plan_rows` has no such column).
+    real insert, `ride_plan_rows` has no such column). **Second pass in
+    `buildPlanRows`**: after all rows are parsed, deadhead/return_leg rows
+    whose `crew_matches` is empty OR `matched_flight_id` is null get those
+    fields auto-filled from their adjacent sibling (deadhead looks at line+1
+    pickup; return_leg looks at line-1 dropoff). The sheet never carries crew
+    or flight on these rows - this fill happens only when they're blank so an
+    unusual sheet that does carry them is left as-is. Result: Follow on a
+    deadhead/return_leg plan row pre-fills the crew in Add Ride modal and the
+    flight is shown in the Flight column.
   - **Pairing is by adjacent `seq`, NOT Trip ID** - a Deadhead row is always
     the row immediately BEFORE its Pickup, a Return Leg always immediately
     AFTER its Dropoff (confirmed against real data: 182/192 Deadheads and
@@ -1160,7 +1186,12 @@ keys, tables or deploy targets with any other project.
     `return_of_ride_id` = its followed sibling's `ride_id` and a matching
     `block_type`, riding along on the ALREADY-BUILT "Also create a Deadhead"
     (Pickup) / "Also create a Return Leg" (Dropoff) features (see the Ride
-    section). But **every block type gets its own Follow action too**
+    section). The reconciliation effect also **copies `via_no` from the
+    sibling**: if the pickup/dropoff was dispatched as "No Follow" (`via_no:
+    true`), its auto-reconciled deadhead/return leg inherits that same flag -
+    so both rows show "No Follow" instead of the deadhead/return leg showing
+    plain "Followed" while its paired row shows "No Follow". But **every
+    block type gets its own Follow action too**
     (`canFollow(r) = r.status === 'pending'`,
     no block_type filter) - for a standalone Deadhead/Return Leg with no
     plan-paired Pickup/Dropoff (13/53 trips in the sample had no pair), or
@@ -1212,15 +1243,15 @@ keys, tables or deploy targets with any other project.
     it, then "Extra ride" (flat muted) below that when `isExtra` - all three
     used to run together on one `·`-joined line, which read cramped once the
     ref_no and Extra-ride note were both present.
-  - **Not happening** (any pending row) - an icon-only action (`Ban`, the
-    same "circle with a line through it" icon `Rides.jsx` already uses for
-    Cancel ride) rather than a text button like Follow/No, since it's the
-    least-common path. Opens the ACTUAL "there is no ride" case, a separate
-    small `Modal` (no `window.prompt`) with a Note (optional reason) **and
-    an optional Ride ID** field. Left blank, it's a plain `status:
-    'skipped'`. Given a ride's `ref_no` instead (e.g. the dispatcher already
-    created that trip manually on the Rides page), it looks that ride up and
-    **links** it instead - `status: 'followed'`, `ride_id` set, the Note
+  - **Cancel** (any pending row, previously called "Not happening") - an
+    icon-only action (`XCircle`) rather than a text button. Opens `SkipModal`
+    with the same 14-option `NO_REASON_OPTIONS` checkbox list as NoReasonModal
+    (required - Confirm disabled until at least one option is selected OR a
+    Ride ID is entered) **and an optional Ride ID** field. Left blank, it's a
+    plain `status: 'skipped'`. Given a ride's `ref_no` instead (e.g. the
+    dispatcher already created that trip manually on the Rides page), it looks
+    that ride up and **links** it instead - `status: 'followed'`, `ride_id`
+    set, the Note
     saved alongside - so the row counts as followed and its Actual KM feeds
     the report exactly like a Followed row. **Reopen** (any No/Not-
     happening/linked row, back to pending) always clears `ride_id` too now,
@@ -1237,19 +1268,27 @@ keys, tables or deploy targets with any other project.
     same helper the Ride page's own route icon uses) - the actual ground
     route that was dispatched, not the flight's city pair. Needs
     `ride:rides(...)` to also select `waypoints` in `fetchRows()`.
-  - **Crew C column** ("Crew C", short for Crew Count - kept narrow since
-    the table already runs wide) - its own column right after the planned
-    Crew column: `crew_count` from the sheet (falling back to
-    `crew_matches.length` if that cell was blank).
-  - **Date bar**: the native `<input type="date">` is the only date shown
-    now - a separate `fmtDate()`-formatted span used to sit right next to it
-    (redundant, the same date twice), removed.
+  - **Crew C column** ("Crew C", short for Crew Count) - its own column
+    right after the planned Crew column: `crew_count` from the sheet (falling
+    back to `crew_matches.length` if that cell was blank). **Always 0 for
+    deadhead/return_leg** regardless of `crew_matches` length - matches
+    `displayCrewCount` everywhere else in the app.
+  - **Date bar** - the native `<input type="date">` plus prev/next day
+    arrows in `rp-datebar`. **Block, Status, Flight and Vehicle filters**
+    live in the same row (separated by a thin `.rp-datebar-sep` hairline),
+    never a separate row. Block/Status are plain `<select>`s; Flight/Vehicle
+    use `SearchSelect`. Client-side `filteredRows` memo gates what
+    `DataTable` sees - no extra fetch. `hasActiveFilter` boolean drives the
+    Clear button.
   - **"No" asks for a reason first** - clicking it opens a small `Modal`
-    (`NoReasonModal`, optional textarea) rather than navigating straight to
-    the Add Ride flow; on Continue it saves the (optional) text to
-    `ride_plan_rows.skip_reason` - the SAME column "Not happening" already
-    used, since both are just "context for why this didn't go per plan" -
-    then navigates to `/rides?planRow=<id>&plan_no=1` exactly as before.
+    (`NoReasonModal`, **required** multi-select checkbox list of 14 preset
+    options in `NO_REASON_OPTIONS`, width 480) rather than navigating
+    straight to the Add Ride flow; Continue is disabled until at least one
+    option is selected. The joined selections are passed to `doNoReason` but
+    NOT written to the DB yet - the reason is threaded through
+    `rideModal.skipReason` and only persisted (with `skip_reason`) in
+    `onRideModalDone` when the ride is actually submitted, so closing the
+    Add Ride modal without submitting has zero side-effects on the plan row.
     Any row with a `skip_reason` (from either path) shows a small always-
     accent `MessageSquare` icon in its Action column (`.rp-reason-btn`,
     same "presence is the signal" convention as the Ride page's own note
@@ -1287,24 +1326,30 @@ keys, tables or deploy targets with any other project.
     `ride_date = <this plan's date>` (+ `city_id` when filtered), excludes
     whatever's already linked via some plan row's `ride_id`, and merges
     what's left in as synthetic, **client-side-only** rows (never written to
-    `ride_plan_rows` - `id: 'extra-<ride id>'`, sorted after every real plan
-    row). Marked `isExtra: true`; the Status column's stacked `StatusCell`
-    (see the "No" bullet above) gets its extra "Extra ride" line so it reads
-    unmistakably as "this happened but wasn't planned" (the ref_no line
-    still shows too, from the normal Followed shape). **The KM handling is
-    the whole point**: an extra row's
-    `planned_km` is `null` and `crew_matches` is `[]` (never real plan
-    values), while its `ride`/`actualCrewNames`/`actualVehicleNo` are the
-    real dispatched ride's - so it flows through `summary`/`report`'s
-    existing per-block reduce untouched: `plannedKm += 0`, `actualKm +=
-    billableKm(ride)`. Its own KM/Crew Count/Vehicle/Difference columns all
-    show `—` (nothing was planned to compare against) while Actual KM,
-    Actual Crew(+Count), Vehicle (shown plain, not as an "Actual: X"
-    mismatch line) and the route map link render exactly like a followed
-    plan row's. Never touched by Follow/No/Not-happening/Reopen or the
-    Deadhead/Return-Leg reconciliation effect (all gated on `status ===
-    'pending'`, which an extra row never is) and untouched by Delete plan
-    (that only deletes `ride_plan_rows`, and these were never one).
+    `ride_plan_rows`). Marked `isExtra: true`; the Status column's stacked
+    `StatusCell` gets its extra "Extra ride" line. **Placement**: extra rides
+    whose `flight_id` matches a plan row's `matched_flight_id` are inserted
+    immediately after the LAST such plan row (so a "remaining crew dispatched
+    separately" ride sits visually below its parent pickup/dropoff); extras
+    with no matching flight go at the end. Those child rows get `isChild:
+    true` and the Trip column shows `↳ <ref>` to mark them as sub-rows.
+    Never touched by Follow/No/Cancel/Reopen or the Deadhead/Return-Leg
+    reconciliation effect and untouched by Delete plan.
+  - **Crew mismatch quick-dispatch** - when a followed pickup/dropoff plan
+    row has fewer crew in the actual ride than the plan called for
+    (`hasCrewMismatch()`), each planned crew member whose name is NOT in
+    `actualCrewNames` gets a small `UserPlus` icon button next to their name
+    in the Crew column (`openCrewDispatchModal`). Clicking fetches the plan
+    row, calls `buildPlanInitial` with that single crew member, pre-ticks
+    `alsoDeadhead` (pickup) or `alsoReturnLeg` (dropoff), and opens the Add
+    Ride modal. No plan row is linked on completion (`planRowId: null`) -
+    the created ride shows up as an extra child row below.
+  - **Cancel a followed ride from the plan** - a `Ban` icon button appears on
+    followed rows whose linked ride is not yet cancelled. Opens
+    `CancelPlanRideModal` (required reason textarea). On confirm: cancels
+    the linked ride (`status: 'cancelled'`, `cancel_reason`, `cancelled_at`,
+    `cancelled_by`, `count_km: false`) AND reopens the plan row to `pending`
+    so it can be re-dispatched immediately.
   - **Difference** - a table column right after Actual KM: that row's own
     `billableKm(ride) - planned_km`, flat red when positive (ran over), flat
     green otherwise - the Report panel's per-block delta, but per-row. The

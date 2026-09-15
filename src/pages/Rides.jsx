@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   CalendarRange,
   Download,
   Eye,
+  GripVertical,
   MessageSquare,
   Navigation,
   Pencil,
@@ -2390,6 +2391,24 @@ export function RideModal({
   }
   const removeCrew = (id) => setCrewList((cl) => cl.filter((c) => c.id !== id))
 
+  const dragIdx = useRef(null)
+  const [dragOver, setDragOver] = useState(null)
+  const [dragging, setDragging] = useState(null)
+  const onCrewDragStart = (i) => { dragIdx.current = i; setDragging(i) }
+  const onCrewDragOver = (e, i) => { e.preventDefault(); if (dragOver !== i && i !== dragIdx.current) setDragOver(i) }
+  const onCrewDrop = (i) => {
+    const from = dragIdx.current
+    dragIdx.current = null; setDragOver(null); setDragging(null)
+    if (from == null || from === i) return
+    setCrewList((cl) => {
+      const next = [...cl]
+      const [item] = next.splice(from, 1)
+      next.splice(i, 0, item)
+      return next
+    })
+  }
+  const onCrewDragEnd = () => { dragIdx.current = null; setDragOver(null); setDragging(null) }
+
   const [optimizing, setOptimizing] = useState(false)
   const optimize = async () => {
     setOptimizing(true)
@@ -3022,7 +3041,16 @@ export function RideModal({
           {crewList.length > 0 && (
             <ol className="ride-crew-list">
               {crewList.map((c, i) => (
-                <li key={c.id}>
+                <li
+                  key={c.id}
+                  draggable
+                  className={[dragging === i ? 'dragging' : '', dragOver === i ? 'drag-over' : ''].filter(Boolean).join(' ')}
+                  onDragStart={() => onCrewDragStart(i)}
+                  onDragOver={(e) => onCrewDragOver(e, i)}
+                  onDrop={() => onCrewDrop(i)}
+                  onDragEnd={onCrewDragEnd}
+                >
+                  <span className="ride-crew-drag"><GripVertical size={13} /></span>
                   <span className="ride-crew-seq">{i + 1}</span>
                   <span className="ride-crew-name">
                     ({c.ref_no}) {c.name}

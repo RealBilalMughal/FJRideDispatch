@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, XCircle } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -14,6 +14,7 @@ import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import DataTable from '../components/data/DataTable'
 import StatCards from '../components/data/StatCards'
+import SearchSelect from '../components/SearchSelect'
 import { RideModal } from './Rides'
 import '../components/data/data.css'
 import './RidePlan.css'
@@ -92,17 +93,31 @@ const isoHHMM = (iso) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function CrewMatchCell({ row, crew }) {
+function CrewMatchCell({ row, crew, onDispatchCrew }) {
   const matches = row.crew_matches
   if (!matches?.length) return <span className="secondary">—</span>
+  const showIcons = Boolean(onDispatchCrew && hasCrewMismatch(row))
+  const actualSet = showIcons ? new Set(row.actualCrewNames ?? []) : null
   return (
     <div className="crew-cell-stack">
       {matches.map((m, i) => {
         const c = crew.find((x) => x.id === m.crew_id)
+        const name = c?.name || m.name
+        const isUnserved = showIcons && c && !actualSet.has(name)
         return (
-          <div key={i}>
-            {c?.name || m.name}
+          <div key={i} className="rp-crew-row">
+            <span>{name}</span>
             {tierText(m.tier) && <span className={`status-text ${tierClass(m.tier)}`}>{tierText(m.tier)}</span>}
+            {isUnserved && (
+              <button
+                type="button"
+                className="icon-btn rp-crew-dispatch-btn"
+                title={`Open Add Ride for ${name}`}
+                onClick={() => onDispatchCrew(row.id, m.crew_id)}
+              >
+                <UserPlus size={12} />
+              </button>
+            )}
           </div>
         )
       })}
@@ -148,6 +163,7 @@ export default function RidePlan() {
   const [loading, setLoading] = useState(true)
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
+  const [cancelFor, setCancelFor] = useState(null)
   const [noReasonFor, setNoReasonFor] = useState(null)
   const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
@@ -156,6 +172,12 @@ export default function RidePlan() {
 
   // Inline Add Ride modal (Follow / No / plain Add Ride button)
   const [rideModal, setRideModal] = useState(null) // { initial, planRowId, pairedRowId, viaNo } | null
+
+  // Filters
+  const [blockFilter, setBlockFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [flightFilter, setFlightFilter] = useState('')
+  const [vehicleFilter, setVehicleFilter] = useState('')
 
   // The page itself never scrolls - only the table does, in its own fixed-
   // height box, with its header frozen inside that box. topBarH re-triggers
@@ -243,7 +265,7 @@ export default function RidePlan() {
     let rq = supabase
       .from('rides')
       .select(
-        'id, ref_no, return_of_ride_id, deadhead_mode, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
+        'id, ref_no, return_of_ride_id, deadhead_mode, distance_km, status, count_km, vehicle_id, flight_id, is_adhoc_vehicle, adhoc_vehicle_no, waypoints, block_type, flight_no, origin_label, dest_label, start_at, end_at, city_id',
       )
       .eq('ride_date', planDate)
     if (cityId != null) rq = rq.eq('city_id', cityId)
@@ -271,11 +293,12 @@ export default function RidePlan() {
       }, new Map())
     }
 
-    // Build a ref_no lookup for all day rides so we can compute the suffixed
-    // display ID (e.g. 1211-R) the same way the Rides page does.
+    // Build a ref_no lookup for ALL day rides so parent IDs are always
+    // resolvable even when a ride is linked to a plan row (excluded from
+    // extraRides) but its embedded r.ride comes back null for any reason.
     const refNoById = new Map()
+    ;(dayRides ?? []).forEach((r) => refNoById.set(r.id, r.ref_no))
     list.forEach((r) => r.ride?.id && refNoById.set(r.ride.id, r.ride.ref_no))
-    extraRides.forEach((r) => refNoById.set(r.id, r.ref_no))
 
     const rideDisplayRef = (ride) => {
       if (!ride) return null
@@ -348,7 +371,34 @@ export default function RidePlan() {
       }
     })
 
-    setRows([...planRows, ...extraRows])
+    // Place each extra ride immediately after the LAST plan row that shares its
+    // flight_id, so "remaining crew dispatched separately" groups with the
+    // parent pickup/dropoff instead of floating at the bottom.
+    const extraByFlight = new Map()
+    const extraNoFlight = []
+    for (const e of extraRows) {
+      const fid = e.ride?.flight_id
+      if (fid) { if (!extraByFlight.has(fid)) extraByFlight.set(fid, []); extraByFlight.get(fid).push(e) }
+      else extraNoFlight.push(e)
+    }
+    const result = [...planRows]
+    const inserted = new Set()
+    for (const [fid, extras] of extraByFlight) {
+      let lastIdx = -1
+      for (let i = 0; i < result.length; i++) {
+        if (!result[i].isExtra && result[i].matched_flight_id === fid) lastIdx = i
+      }
+      if (lastIdx >= 0) {
+        let pos = lastIdx + 1
+        while (pos < result.length && result[pos].isExtra) pos++
+        result.splice(pos, 0, ...extras.map((e) => ({ ...e, isChild: true })))
+        extras.forEach((e) => inserted.add(e.id))
+      }
+    }
+    for (const e of extraRows) {
+      if (!inserted.has(e.id)) result.push(e)
+    }
+    setRows(result)
     setLoading(false)
   }, [canView, planDate, cityId, vehicles])
 
@@ -387,7 +437,7 @@ export default function RidePlan() {
         if (companion) {
           await supabase
             .from('ride_plan_rows')
-            .update({ status: 'followed', ride_id: companion.id })
+            .update({ status: 'followed', ride_id: companion.id, via_no: sibling.via_no ?? false })
             .eq('id', r.id)
           changed = true
         }
@@ -400,7 +450,7 @@ export default function RidePlan() {
   const canFollow = (r) => r.status === 'pending'
 
   // Fetch a plan row, build the RideModal prefill, open the modal inline.
-  const openPlanRideModal = async (planRowId, viaNo = false) => {
+  const openPlanRideModal = async (planRowId, viaNo = false, skipReason = null) => {
     const { data: planRow, error } = await supabase
       .from('ride_plan_rows')
       .select('*')
@@ -429,23 +479,38 @@ export default function RidePlan() {
       if (planRow.block_type === 'pickup') initial.alsoDeadhead = true
       else if (planRow.block_type === 'dropoff') initial.alsoReturnLeg = true
     }
-    setRideModal({ initial, planRowId: planRow.id, pairedRowId, viaNo })
+    setRideModal({ initial, planRowId: planRow.id, pairedRowId, viaNo, skipReason })
   }
 
-  // "No" asks for a reason FIRST, saves it, then opens the inline Add Ride modal.
-  const doNoReason = async (reason) => {
+  // Crew-mismatch quick-dispatch: opens Add Ride pre-filled with a SINGLE
+  // crew member from a followed plan row where that crew member was not
+  // included in the dispatched ride.  No plan row is linked on completion
+  // (planRowId: null) - the created ride shows up as an extra row.
+  const openCrewDispatchModal = useCallback(async (planRowId, crewId) => {
+    const { data: planRow, error } = await supabase
+      .from('ride_plan_rows')
+      .select('*')
+      .eq('id', planRowId)
+      .single()
+    if (error || !planRow) return toast.error('Could not load plan row')
+    const crewObj = crew.find((c) => c.id === crewId)
+    const initial = buildPlanInitial(planRow, { flights, crew, viaNo: false })
+    if (crewObj) initial.crewList = [crewObj]
+    if (planRow.block_type === 'pickup') initial.alsoDeadhead = true
+    if (planRow.block_type === 'dropoff') initial.alsoReturnLeg = true
+    setRideModal({ initial, planRowId: null, pairedRowId: null, viaNo: false, skipReason: null })
+  }, [crew, flights])
+
+  // "No" collects a reason, then opens the inline Add Ride modal.
+  // The reason is NOT written to the DB yet — it is saved together with the
+  // `followed` update in onRideModalDone, so closing the modal without
+  // submitting has zero side-effects on the plan row.
+  const doNoReason = (reason) => {
     if (!noReasonFor) return
     const trimmed = reason.trim()
-    if (trimmed) {
-      const { error } = await supabase
-        .from('ride_plan_rows')
-        .update({ skip_reason: trimmed })
-        .eq('id', noReasonFor.id)
-      if (error) return toast.error(error.message)
-    }
     const id = noReasonFor.id
     setNoReasonFor(null)
-    openPlanRideModal(id, true)
+    openPlanRideModal(id, true, trimmed || null)
   }
 
   const onRideModalDone = async (result) => {
@@ -456,7 +521,7 @@ export default function RidePlan() {
     const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId ?? null
     const upd = await supabase
       .from('ride_plan_rows')
-      .update({ status: 'followed', ride_id: rideId, via_no: m.viaNo ?? false })
+      .update({ status: 'followed', ride_id: rideId, via_no: m.viaNo ?? false, skip_reason: m.skipReason ?? null })
       .eq('id', m.planRowId)
       .select('id')
     if (upd.error || !upd.data?.length) {
@@ -505,6 +570,47 @@ export default function RidePlan() {
       .eq('id', skipFor.id)
     if (error) return toast.error(error.message)
     setSkipFor(null)
+    fetchRows()
+  }
+
+  const doCancelPlanRide = async (reason) => {
+    if (!cancelFor?.ride?.id) return
+    const cancelPayload = {
+      status: 'cancelled',
+      cancel_reason: reason,
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: profile?.id ?? null,
+      count_km: false,
+    }
+    // Cancel the main ride
+    const { error: rideErr } = await supabase
+      .from('rides')
+      .update(cancelPayload)
+      .eq('id', cancelFor.ride.id)
+    if (rideErr) return toast.error(rideErr.message)
+
+    // Also cancel any companion rides (deadhead / return leg) linked to this ride
+    const { data: companions } = await supabase
+      .from('rides')
+      .select('id')
+      .eq('return_of_ride_id', cancelFor.ride.id)
+      .neq('status', 'cancelled')
+    if (companions?.length) {
+      const companionIds = companions.map((c) => c.id)
+      await supabase.from('rides').update(cancelPayload).in('id', companionIds)
+      // Reopen any plan rows that were linked to those companion rides
+      await supabase
+        .from('ride_plan_rows')
+        .update({ status: 'pending', ride_id: null, skip_reason: null, via_no: false })
+        .in('ride_id', companionIds)
+    }
+
+    // Reopen the main plan row
+    await supabase
+      .from('ride_plan_rows')
+      .update({ status: 'pending', ride_id: null, skip_reason: null, via_no: false })
+      .eq('id', cancelFor.id)
+    setCancelFor(null)
     fetchRows()
   }
 
@@ -596,8 +702,50 @@ export default function RidePlan() {
   )
   const totalDelta = summary.total.actualKm - summary.total.plannedKm
 
+  const flightFilterOpts = useMemo(
+    () => [
+      { value: '', label: 'All flights' },
+      ...flights
+        .filter((f) => cityId == null || f.city_id === cityId)
+        .map((f) => ({ value: f.id, label: f.flight_no, sub: f.flight_code })),
+    ],
+    [flights, cityId],
+  )
+
+  const vehicleFilterOpts = useMemo(
+    () => [
+      { value: '', label: 'All vehicles' },
+      ...vehicles
+        .filter((v) => cityId == null || v.city_id === cityId)
+        .map((v) => ({ value: v.id, label: v.vehicle_no })),
+    ],
+    [vehicles, cityId],
+  )
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (blockFilter !== 'all' && r.block_type !== blockFilter) return false
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false
+      if (flightFilter) {
+        const fid = r.isExtra ? r.ride?.flight_id : r.matched_flight_id
+        if (fid !== flightFilter) return false
+      }
+      if (vehicleFilter) {
+        const vid = r.isExtra ? r.ride?.vehicle_id : r.matched_vehicle_id
+        if (vid !== vehicleFilter) return false
+      }
+      return true
+    })
+  }, [rows, blockFilter, statusFilter, flightFilter, vehicleFilter])
+
+  const hasActiveFilter = blockFilter !== 'all' || statusFilter !== 'all' || flightFilter || vehicleFilter
+
   const columns = [
-    { key: 'trip', header: 'Trip', render: (r) => (r.isExtra ? r.ride?.ref_no ?? '—' : r.trip_id) },
+    { key: 'trip', header: 'Trip', render: (r) => {
+      if (!r.isExtra) return r.trip_id
+      const ref = r.displayRef ?? r.ride?.ref_no ?? '—'
+      return r.isChild ? <span className="rp-child-ref">↳ {ref}</span> : ref
+    } },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
     { key: 'flight', header: 'Flight', render: (r) => r.flight_no || '—' },
     {
@@ -613,13 +761,19 @@ export default function RidePlan() {
       render: (r) => `${fmtTime12(r.start_time) || '—'}${r.end_time ? ` – ${fmtTime12(r.end_time)}` : ''}`,
     },
     { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
-    { key: 'crew', header: 'Crew', width: 190, render: (r) => <CrewMatchCell row={r} crew={crew} /> },
+    { key: 'crew', header: 'Crew', width: 190, render: (r) => (
+      <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
+    ) },
     {
       key: 'crewCount',
       header: 'Crew C',
       align: 'right',
       width: 55,
-      render: (r) => (r.isExtra ? '—' : r.crew_count ?? r.crew_matches?.length ?? '—'),
+      render: (r) => {
+        if (r.isExtra) return '—'
+        if (r.block_type === 'deadhead' || r.block_type === 'return_leg') return 0
+        return r.crew_count ?? r.crew_matches?.length ?? '—'
+      },
     },
     {
       key: 'actualCrew',
@@ -712,10 +866,20 @@ export default function RidePlan() {
               <button
                 type="button"
                 className="icon-btn rp-cancel-btn"
-                title="Not happening"
+                title="Cancel"
                 onClick={() => setSkipFor(r)}
               >
                 <XCircle size={15} />
+              </button>
+            )}
+            {canEdit && r.status === 'followed' && r.ride?.id && r.ride?.status !== 'cancelled' && (
+              <button
+                type="button"
+                className="icon-btn rp-cancel-btn"
+                title="Cancel this ride"
+                onClick={() => setCancelFor(r)}
+              >
+                <Ban size={15} />
               </button>
             )}
             {canEdit && r.status === 'skipped' && (
@@ -850,6 +1014,53 @@ export default function RidePlan() {
               Today
             </button>
           )}
+          <div className="rp-datebar-sep" />
+          <select
+            className="filter-select"
+            value={blockFilter}
+            onChange={(e) => setBlockFilter(e.target.value)}
+          >
+            <option value="all">All blocks</option>
+            <option value="deadhead">Deadhead</option>
+            <option value="pickup">Pickup</option>
+            <option value="dropoff">Drop Off</option>
+            <option value="return_leg">Return Leg</option>
+          </select>
+          <select
+            className="filter-select"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="all">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="followed">Followed</option>
+            <option value="skipped">Cancelled</option>
+          </select>
+          <div className="filter-searchselect">
+            <SearchSelect
+              value={flightFilter}
+              onChange={setFlightFilter}
+              options={flightFilterOpts}
+              placeholder="All flights"
+            />
+          </div>
+          <div className="filter-searchselect">
+            <SearchSelect
+              value={vehicleFilter}
+              onChange={setVehicleFilter}
+              options={vehicleFilterOpts}
+              placeholder="All vehicles"
+            />
+          </div>
+          {hasActiveFilter && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-square btn-sm"
+              onClick={() => { setBlockFilter('all'); setStatusFilter('all'); setFlightFilter(''); setVehicleFilter('') }}
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -896,7 +1107,7 @@ export default function RidePlan() {
       >
         <DataTable
           columns={columns}
-          rows={rows}
+          rows={filteredRows}
           rowKey={(r) => r.id}
           loading={loading}
           emptyLabel="No plan uploaded for this date"
@@ -925,6 +1136,7 @@ export default function RidePlan() {
       )}
 
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}
+      {cancelFor && <CancelPlanRideModal row={cancelFor} onClose={() => setCancelFor(null)} onConfirm={doCancelPlanRide} />}
       {noReasonFor && (
         <NoReasonModal row={noReasonFor} onClose={() => setNoReasonFor(null)} onContinue={doNoReason} />
       )}
@@ -957,28 +1169,50 @@ export default function RidePlan() {
   )
 }
 
+const NO_REASON_OPTIONS = [
+  'CP/FO Not Sharing Car',
+  'Crew Change',
+  'Foreigner FO',
+  'Route Change',
+  '2 Pickup / 3',
+  'Ride Time Mismatched',
+  'Flight Change',
+  'Combine with other',
+  'Double Sector',
+  'Single Pickup / Combine',
+  'Flight Delay',
+  'Off Load',
+  'Completed with Off load',
+  'Extra Pickup',
+]
+
 function NoReasonModal({ row, onClose, onContinue }) {
-  const [reason, setReason] = useState('')
+  const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState(false)
+
+  const toggle = (opt) =>
+    setSelected((prev) => prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt])
+
   return (
-    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Reason for No`} width={420}>
+    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Reason for No`} width={480}>
       <div className="modal-form">
         <div className="field">
-          <label htmlFor="no-reason">Reason (optional)</label>
-          <textarea
-            id="no-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. flight delayed, vehicle swapped…"
-            autoFocus
-          />
+          <label>
+            Reason <span style={{ color: 'var(--danger)' }}>*</span>
+          </label>
+          <div className="rp-reason-checklist">
+            {NO_REASON_OPTIONS.map((opt) => (
+              <label key={opt} className="rp-reason-check">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(opt)}
+                  onChange={() => toggle(opt)}
+                />
+                {opt}
+              </label>
+            ))}
+          </div>
         </div>
-        <span className="field-hint">
-          Saved on this row (click its <MessageSquare size={11} /> icon later to see it), then opens the
-          Add Ride form to dispatch it.
-        </span>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
             Cancel
@@ -986,10 +1220,10 @@ function NoReasonModal({ row, onClose, onContinue }) {
           <button
             type="button"
             className="btn btn-square"
-            disabled={busy}
+            disabled={busy || selected.length === 0}
             onClick={async () => {
               setBusy(true)
-              await onContinue(reason)
+              await onContinue(selected.join(', '))
               setBusy(false)
             }}
           >
@@ -1016,32 +1250,17 @@ function ReasonPopup({ row, onClose }) {
   )
 }
 
-function SkipModal({ row, onClose, onSkip }) {
+function CancelPlanRideModal({ row, onClose, onConfirm }) {
   const [reason, setReason] = useState('')
-  const [refNo, setRefNo] = useState('')
   const [busy, setBusy] = useState(false)
+  const ref = row.displayRef ?? row.ride?.ref_no ?? row.trip_id
   return (
-    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Not Happening`} width={420}>
+    <Modal open onClose={onClose} title={`Cancel Ride · ${ref}`} width={420}>
       <div className="modal-form">
         <div className="field">
-          <label htmlFor="skip-refno">Ride ID (optional)</label>
-          <input
-            id="skip-refno"
-            className="input"
-            inputMode="numeric"
-            value={refNo}
-            onChange={(e) => setRefNo(e.target.value.replace(/\D/g, ''))}
-            placeholder="e.g. 1234 - if this trip was already dispatched separately"
-          />
-          <span className="field-hint">
-            Link an already-created ride's ID instead - the row counts as followed and its Actual KM
-            feeds the report.
-          </span>
-        </div>
-        <div className="field">
-          <label htmlFor="skip-reason">Note (optional)</label>
+          <label htmlFor="rp-cancel-reason">Reason <span className="required">*</span></label>
           <textarea
-            id="skip-reason"
+            id="rp-cancel-reason"
             className="input"
             rows={3}
             value={reason}
@@ -1052,12 +1271,73 @@ function SkipModal({ row, onClose, onSkip }) {
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
-            Cancel
+            Close
+          </button>
+          <button
+            type="button"
+            className="btn btn-square btn-danger"
+            disabled={busy || !reason.trim()}
+            onClick={async () => {
+              setBusy(true)
+              await onConfirm(reason.trim())
+              setBusy(false)
+            }}
+          >
+            {busy ? 'Cancelling…' : 'Cancel Ride'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function SkipModal({ row, onClose, onSkip }) {
+  const [selected, setSelected] = useState([])
+  const [refNo, setRefNo] = useState('')
+  const [busy, setBusy] = useState(false)
+  const toggle = (opt) =>
+    setSelected((s) => s.includes(opt) ? s.filter((x) => x !== opt) : [...s, opt])
+  const reason = selected.join(', ')
+  return (
+    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Cancel`} width={480}>
+      <div className="modal-form">
+        <div className="field">
+          <label>Reason <span className="required">*</span></label>
+          <div className="rp-reason-checklist">
+            {NO_REASON_OPTIONS.map((opt) => (
+              <label key={opt} className="rp-reason-check">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(opt)}
+                  onChange={() => toggle(opt)}
+                />
+                {opt}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="skip-refno">Ride ID (optional)</label>
+          <input
+            id="skip-refno"
+            className="input"
+            inputMode="numeric"
+            value={refNo}
+            onChange={(e) => setRefNo(e.target.value.replace(/\D/g, ''))}
+            placeholder="e.g. 1234 — if this trip was already dispatched separately"
+          />
+          <span className="field-hint">
+            Link an already-created ride&rsquo;s ID — the row counts as followed and its Actual KM feeds the report.
+          </span>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
+            Close
           </button>
           <button
             type="button"
             className="btn btn-square"
-            disabled={busy}
+            disabled={busy || (!refNo && !selected.length)}
             onClick={async () => {
               setBusy(true)
               await onSkip(reason, refNo)

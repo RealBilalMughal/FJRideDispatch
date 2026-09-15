@@ -806,6 +806,7 @@ export default function RidePlan() {
       key: 'actualCrewCount',
       header: 'A Crew C',
       align: 'right',
+      width: 72,
       render: (r) => (r.status === 'followed' ? r.actualCrewCount ?? '—' : '—'),
     },
     {

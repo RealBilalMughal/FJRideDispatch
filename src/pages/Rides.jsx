@@ -2533,6 +2533,56 @@ function RideModal({
       }
     }
 
+    // On edit: sync a companion deadhead (-PD) or return leg (-R) when the
+    // relevant crew changes.  Deadhead: Airport -> first crew's stop.
+    // Return leg: last crew's stop -> Airport.
+    if (!isAdd && row?.follow_on?.block_type === 'return_leg' && crewList.length) {
+      try {
+        const lastC = crewList[crewList.length - 1]
+        const rlPts = buildRoutePoints('return_leg', null, [{ ...lastC, crew_id: lastC.id }], airport)
+        const rlInfo = routeComplete(rlPts) ? await routeInfo(rlPts.map((p) => [p.lng, p.lat])) : null
+        await supabase
+          .from('rides')
+          .update({
+            origin_label: rlPts[0]?.label || null,
+            origin_lat: rlPts[0]?.lat ?? null,
+            origin_lng: rlPts[0]?.lng ?? null,
+            waypoints: rlPts,
+            route_geometry: rlInfo?.line ?? null,
+            distance_km: rlInfo?.distanceKm ?? null,
+            duration_min: rlInfo?.durationMin ?? null,
+          })
+          .eq('id', row.follow_on.id)
+        await supabase.from('ride_crew').delete().eq('ride_id', row.follow_on.id)
+        await supabase.from('ride_crew').insert({ ride_id: row.follow_on.id, crew_id: lastC.id, seq: 0 })
+      } catch (e3) {
+        toast.error(`Dropoff saved, but the companion return leg could not be updated: ${e3.message}`)
+      }
+    }
+    if (!isAdd && row?.follow_on?.block_type === 'deadhead' && crewList[0]) {
+      try {
+        const c1 = crewList[0]
+        const dhPts = buildRoutePoints('deadhead', 'airport', [{ ...c1, crew_id: c1.id }], airport)
+        const dhInfo = routeComplete(dhPts) ? await routeInfo(dhPts.map((p) => [p.lng, p.lat])) : null
+        await supabase
+          .from('rides')
+          .update({
+            dest_label: dhPts[1]?.label || null,
+            dest_lat: dhPts[1]?.lat ?? null,
+            dest_lng: dhPts[1]?.lng ?? null,
+            waypoints: dhPts,
+            route_geometry: dhInfo?.line ?? null,
+            distance_km: dhInfo?.distanceKm ?? null,
+            duration_min: dhInfo?.durationMin ?? null,
+          })
+          .eq('id', row.follow_on.id)
+        await supabase.from('ride_crew').delete().eq('ride_id', row.follow_on.id)
+        await supabase.from('ride_crew').insert({ ride_id: row.follow_on.id, crew_id: c1.id, seq: 0 })
+      } catch (e3) {
+        toast.error(`Pickup saved, but the companion deadhead could not be updated: ${e3.message}`)
+      }
+    }
+
     // Pickup + "Also create a Deadhead": one extra ride, Airport -> the first
     // crew stop, on the same vehicle, timed to arrive `deadhead_buffer_min`
     // before the pickup starts. Chains off the pickup (return_of_ride_id) so

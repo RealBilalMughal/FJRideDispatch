@@ -3,7 +3,35 @@
 // Block Type/Trip ID/Flight No/Origin/Destination/Start Time/End Time/
 // Distance (km)/Crew Count/Crew - export it from Excel as CSV before upload,
 // same as every other import in this app).
-import { parseTime } from './time'
+import { parseTime, toTime24 } from './time'
+import { primaryTimeSlot } from './rideRoute'
+
+// Build the RideModal `initial` prop from a ride_plan_rows row - used by both
+// the Rides page (via URL param) and the RidePlan page (inline modal).
+export function buildPlanInitial(planRow, { flights, crew, viaNo = false }) {
+  const matchedFlight = planRow.matched_flight_id
+    ? flights.find((f) => f.id === planRow.matched_flight_id)
+    : null
+  const slot = primaryTimeSlot(planRow.block_type)
+  const crewList = (planRow.crew_matches || [])
+    .map((m) => crew.find((c) => c.id === m.crew_id))
+    .filter(Boolean)
+  return {
+    block_type: planRow.block_type,
+    city_id: planRow.city_id,
+    ride_date: planRow.plan_date,
+    flight_id: matchedFlight?.id ?? '',
+    flight_no: matchedFlight?.flight_no ?? planRow.flight_no ?? '',
+    flight_code: matchedFlight?.flight_code ?? '',
+    checkin_old: slot === 'checkin' ? toTime24(matchedFlight?.flight_time) : undefined,
+    checkout_old: slot === 'checkout' ? toTime24(matchedFlight?.flight_time) : undefined,
+    vehicle_id: planRow.is_adhoc_car ? '' : planRow.matched_vehicle_id ?? '',
+    is_adhoc_vehicle: Boolean(planRow.is_adhoc_car),
+    start_time: toTime24(planRow.start_time),
+    notes: viaNo ? `Plan trip ${planRow.trip_id} - dispatched despite "No"` : `Plan trip ${planRow.trip_id}`,
+    crewList,
+  }
+}
 
 export const PLAN_REQUIRED_COLUMNS = [
   'date',

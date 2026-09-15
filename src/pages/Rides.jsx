@@ -77,6 +77,7 @@ import BulkDeleteBar from '../components/data/BulkDeleteBar'
 import FilterBar from '../components/data/FilterBar'
 import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
+import { buildPlanInitial } from '../lib/planImport'
 import './Rides.css'
 
 const PAGE_SIZE = 15
@@ -179,36 +180,6 @@ function CheckCell({ scheduled, actual }) {
 // Build a RideModal `initial` prefill from a Ride Plan row (see RidePlan.jsx /
 // src/lib/planImport.js) - matches the plan's own crew/flight/vehicle
 // resolutions against the arrays this page already has loaded.
-function buildPlanInitial(planRow, { flights, crew, viaNo = false }) {
-  const matchedFlight = planRow.matched_flight_id
-    ? flights.find((f) => f.id === planRow.matched_flight_id)
-    : null
-  const slot = primaryTimeSlot(planRow.block_type)
-  const crewList = (planRow.crew_matches || [])
-    .map((m) => crew.find((c) => c.id === m.crew_id))
-    .filter(Boolean)
-  return {
-    block_type: planRow.block_type,
-    city_id: planRow.city_id,
-    ride_date: planRow.plan_date,
-    flight_id: matchedFlight?.id ?? '',
-    flight_no: matchedFlight?.flight_no ?? planRow.flight_no ?? '',
-    flight_code: matchedFlight?.flight_code ?? '',
-    checkin_old: slot === 'checkin' ? toTime24(matchedFlight?.flight_time) : undefined,
-    checkout_old: slot === 'checkout' ? toTime24(matchedFlight?.flight_time) : undefined,
-    // The plan's own Ad-hoc Car flag (planImport skips fleet-matching for
-    // these) carries straight over into the ride's own ad-hoc vehicle - same
-    // concept, just previously two disconnected fields. Leaves
-    // adhoc_vehicle_no unset - the Ride form assigns the next "Ad-Hoc NN"
-    // for that city+date itself once the modal mounts with the box checked.
-    vehicle_id: planRow.is_adhoc_car ? '' : planRow.matched_vehicle_id ?? '',
-    is_adhoc_vehicle: Boolean(planRow.is_adhoc_car),
-    start_time: toTime24(planRow.start_time),
-    notes: viaNo ? `Plan trip ${planRow.trip_id} - dispatched despite "No"` : `Plan trip ${planRow.trip_id}`,
-    crewList,
-  }
-}
-
 export default function Rides() {
   const { can, profile } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
@@ -1974,7 +1945,7 @@ function TripPlayback({ row, mapHeight = 200 }) {
 }
 
 // ── Ride form ─────────────────────────────────────────────────────────────
-function RideModal({
+export function RideModal({
   row,
   startInEdit = false,
   canEdit = true,

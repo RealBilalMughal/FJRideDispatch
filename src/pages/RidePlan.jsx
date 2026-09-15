@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -10,11 +9,12 @@ import { addDays, fmtTime12, pkToday } from '../lib/time'
 import { blockLabel, displayCrewCount } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
-import { PLAN_REQUIRED_COLUMNS, buildPlanRows } from '../lib/planImport'
+import { PLAN_REQUIRED_COLUMNS, buildPlanInitial, buildPlanRows } from '../lib/planImport'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
 import DataTable from '../components/data/DataTable'
 import StatCards from '../components/data/StatCards'
+import { RideModal } from './Rides'
 import '../components/data/data.css'
 import './RidePlan.css'
 
@@ -136,23 +136,26 @@ function StatusCell({ row }) {
 export default function RidePlan() {
   const { can, profile } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
-  const navigate = useNavigate()
 
   const canView = can('ride_plan', 'view')
   const canAdd = can('ride_plan', 'add')
   const canEdit = can('ride_plan', 'edit')
   const canDelete = can('ride_plan', 'delete')
+  const canAddRide = can('rides', 'add')
 
   const [planDate, setPlanDate] = useState(pkToday())
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
-  const [noReasonFor, setNoReasonFor] = useState(null) // a row - "No" reason prompt before it opens the Add Ride flow
-  const [reasonFor, setReasonFor] = useState(null) // a row - view its saved reason (No or Not happening)
+  const [noReasonFor, setNoReasonFor] = useState(null)
+  const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Inline Add Ride modal (Follow / No / plain Add Ride button)
+  const [rideModal, setRideModal] = useState(null) // { initial, planRowId, pairedRowId, viaNo } | null
 
   // The page itself never scrolls - only the table does, in its own fixed-
   // height box, with its header frozen inside that box. topBarH re-triggers
@@ -193,6 +196,7 @@ export default function RidePlan() {
   const [flights, setFlights] = useState([])
   const [crew, setCrew] = useState([])
   const [vehicles, setVehicles] = useState([])
+  const [drivers, setDrivers] = useState([])
 
   useEffect(() => {
     if (!canView) return
@@ -202,12 +206,16 @@ export default function RidePlan() {
       .then(({ data }) => setFlights((data ?? []).filter((f) => f.is_active)))
     supabase
       .from('crew')
-      .select('id, ref_no, name, employee_no, city_id, is_active')
+      .select('id, ref_no, name, employee_no, stop_name, stop_lat, stop_lng, city_id, is_active')
       .then(({ data }) => setCrew((data ?? []).filter((c) => c.is_active)))
     supabase
       .from('vehicles')
-      .select('id, ref_no, vehicle_no, city_id, is_active')
+      .select('id, ref_no, vehicle_no, city_id, is_active, driver_id, night_driver_id')
       .then(({ data }) => setVehicles((data ?? []).filter((v) => v.is_active)))
+    supabase
+      .from('drivers')
+      .select('id, ref_no, name')
+      .then(({ data }) => setDrivers(data ?? []))
   }, [canView])
 
   const fetchRows = useCallback(async () => {
@@ -391,9 +399,40 @@ export default function RidePlan() {
 
   const canFollow = (r) => r.status === 'pending'
 
-  // "No" asks for a reason FIRST, saves it, then opens the same Add Ride
-  // flow as Follow - the reason is just context for why this deviated from
-  // plan, not a block on actually dispatching it.
+  // Fetch a plan row, build the RideModal prefill, open the modal inline.
+  const openPlanRideModal = async (planRowId, viaNo = false) => {
+    const { data: planRow, error } = await supabase
+      .from('ride_plan_rows')
+      .select('*')
+      .eq('id', planRowId)
+      .single()
+    if (error || !planRow) return toast.error('Could not load the plan row')
+
+    let pairedRowId = null
+    const pairedBlock = planRow.block_type === 'pickup' ? 'deadhead' : planRow.block_type === 'dropoff' ? 'return_leg' : null
+    if (pairedBlock) {
+      const targetSeq = planRow.block_type === 'pickup' ? planRow.seq - 1 : planRow.seq + 1
+      let pairQ = supabase
+        .from('ride_plan_rows')
+        .select('id')
+        .eq('city_id', planRow.city_id)
+        .eq('seq', targetSeq)
+        .eq('block_type', pairedBlock)
+        .eq('status', 'pending')
+      if (planRow.car) pairQ = pairQ.eq('car', planRow.car)
+      const { data: pair } = await pairQ.maybeSingle()
+      pairedRowId = pair?.id ?? null
+    }
+
+    const initial = buildPlanInitial(planRow, { flights, crew, viaNo })
+    if (pairedRowId) {
+      if (planRow.block_type === 'pickup') initial.alsoDeadhead = true
+      else if (planRow.block_type === 'dropoff') initial.alsoReturnLeg = true
+    }
+    setRideModal({ initial, planRowId: planRow.id, pairedRowId, viaNo })
+  }
+
+  // "No" asks for a reason FIRST, saves it, then opens the inline Add Ride modal.
   const doNoReason = async (reason) => {
     if (!noReasonFor) return
     const trimmed = reason.trim()
@@ -406,7 +445,30 @@ export default function RidePlan() {
     }
     const id = noReasonFor.id
     setNoReasonFor(null)
-    navigate(`/rides?planRow=${id}&plan_no=1`)
+    openPlanRideModal(id, true)
+  }
+
+  const onRideModalDone = async (result) => {
+    const m = rideModal
+    setRideModal(null)
+    if (!m?.planRowId) { fetchRows(); return }
+    const rideId = result?.rideId ?? null
+    const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId ?? null
+    const upd = await supabase
+      .from('ride_plan_rows')
+      .update({ status: 'followed', ride_id: rideId, via_no: m.viaNo ?? false })
+      .eq('id', m.planRowId)
+      .select('id')
+    if (upd.error || !upd.data?.length) {
+      toast.error(upd.error?.message || 'Ride created, but the plan row could not be updated')
+    }
+    if (m.pairedRowId && pairedRideId) {
+      await supabase
+        .from('ride_plan_rows')
+        .update({ status: 'followed', ride_id: pairedRideId, via_no: m.viaNo ?? false })
+        .eq('id', m.pairedRowId)
+    }
+    fetchRows()
   }
 
   // A "Skip" can instead LINK an already-created ride (e.g. one dispatched
@@ -628,11 +690,11 @@ export default function RidePlan() {
         const gm = r.status === 'followed' ? gmapsRoute(r.ride?.waypoints) : null
         return (
           <div className="rp-row-actions">
-            {canEdit && canFollow(r) && (
+            {canEdit && canAddRide && canFollow(r) && (
               <button
                 type="button"
                 className="btn btn-ghost btn-square btn-sm rp-follow-btn"
-                onClick={() => navigate(`/rides?planRow=${r.id}`)}
+                onClick={() => openPlanRideModal(r.id, false)}
               >
                 Follow
               </button>
@@ -711,6 +773,11 @@ export default function RidePlan() {
             >
               <Sigma size={13} /> Report
             </button>
+            {canAddRide && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={() => setRideModal({ initial: null, planRowId: null, pairedRowId: null, viaNo: false })}>
+                <Plus size={14} /> Add Ride
+              </button>
+            )}
             {canAdd && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={() => setImportOpen(true)}>
                 <Upload size={14} /> Upload plan
@@ -858,6 +925,21 @@ export default function RidePlan() {
         <NoReasonModal row={noReasonFor} onClose={() => setNoReasonFor(null)} onContinue={doNoReason} />
       )}
       {reasonFor && <ReasonPopup row={reasonFor} onClose={() => setReasonFor(null)} />}
+
+      {rideModal && (
+        <RideModal
+          flights={flights}
+          crew={crew}
+          vehicles={vehicles}
+          drivers={drivers}
+          allowedCities={allowedCities}
+          defaultCityId={cityId}
+          createdBy={profile?.id}
+          initial={rideModal.initial}
+          onClose={() => setRideModal(null)}
+          onDone={onRideModalDone}
+        />
+      )}
 
       <ConfirmDelete
         open={deletePlanOpen}

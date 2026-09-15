@@ -745,23 +745,21 @@ export default function RidePlan() {
   const hasActiveFilter = blockFilter !== 'all' || statusFilter !== 'all' || flightFilter || vehicleFilter
 
   const columns = [
-    { key: 'trip', header: 'Trip', width: 110, render: (r) => {
+    { key: 'trip', header: 'Trip', render: (r) => {
       if (!r.isExtra) return r.trip_id
       const ref = r.displayRef ?? r.ride?.ref_no ?? '—'
       return r.isChild ? <span className="rp-child-ref">↳ {ref}</span> : ref
     } },
-    { key: 'block', header: 'Block', width: 100, render: (r) => blockLabel(r.block_type) },
-    { key: 'flight', header: 'Flight', width: 72, render: (r) => r.flight_no || '—' },
+    { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
+    { key: 'flight', header: 'Flight', render: (r) => r.flight_no || '—' },
     {
       key: 'route',
       header: 'Route',
-      width: 115,
       render: (r) => (r.origin && r.destination ? `${r.origin} → ${r.destination}` : '—'),
     },
     {
       key: 'time',
       header: 'Time',
-      width: 90,
       render: (r) => (
         <div className="crew-cell-stack">
           <div>{fmtTime12(r.start_time) || '—'}</div>
@@ -769,15 +767,14 @@ export default function RidePlan() {
         </div>
       ),
     },
-    { key: 'km', header: 'Planned KM', align: 'right', width: 95, render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
-    { key: 'crew', header: 'Crew', width: 150, render: (r) => (
+    { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
+    { key: 'crew', header: 'Crew', render: (r) => (
       <CrewMatchCell row={r} crew={crew} onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null} />
     ) },
     {
       key: 'crewCount',
       header: 'Crew C',
       align: 'right',
-      width: 55,
       render: (r) => {
         if (r.isExtra) return '—'
         if (r.block_type === 'deadhead' || r.block_type === 'return_leg') return 0
@@ -787,7 +784,6 @@ export default function RidePlan() {
     {
       key: 'actualCrew',
       header: 'Actual Crew',
-      width: 130,
       render: (r) =>
         r.status === 'followed' && r.actualCrewNames ? (
           r.actualCrewNames.length ? (
@@ -807,13 +803,11 @@ export default function RidePlan() {
       key: 'actualCrewCount',
       header: 'A Crew C',
       align: 'right',
-      width: 62,
       render: (r) => (r.status === 'followed' ? r.actualCrewCount ?? '—' : '—'),
     },
     {
       key: 'car',
       header: 'Vehicle',
-      width: 110,
       render: (r) => {
         if (r.isExtra) return <span className="rp-cell-wrap">{r.actualVehicleNo || '—'}</span>
         return (
@@ -830,19 +824,17 @@ export default function RidePlan() {
         )
       },
     },
-    { key: 'status', header: 'Status', width: 120, render: (r) => <StatusCell row={r} /> },
+    { key: 'status', header: 'Status', render: (r) => <StatusCell row={r} /> },
     {
       key: 'actual',
       header: 'Actual KM',
       align: 'right',
-      width: 90,
       render: (r) => (r.status === 'followed' && r.ride ? (Number(billableKm(r.ride)) || 0).toFixed(2) : '—'),
     },
     {
       key: 'delta',
       header: 'Difference',
       align: 'right',
-      width: 90,
       render: (r) => {
         if (r.isExtra) return <span className="secondary">—</span>
         if (r.status !== 'followed' || !r.ride) return '—'

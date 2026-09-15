@@ -23,6 +23,21 @@ import './RidePlan.css'
 // to appear in.
 const SUMMARY_BLOCKS = ['deadhead', 'pickup', 'dropoff', 'return_leg']
 
+// Full ride select - same shape RideModal expects (same as Rides.jsx SELECT).
+const RIDE_SELECT = `
+  id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
+  ride_date, duty_sheet_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
+  vehicle_id, driver_id, is_adhoc_vehicle, adhoc_vehicle_no, adhoc_driver_name, adhoc_driver_phone,
+  airport_name, airport_lat, airport_lng,
+  origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
+  waypoints, route_geometry, distance_km, extra_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
+  cancel_reason, cancelled_at, count_km,
+  city:cities(name),
+  vehicle:vehicles(ref_no, vehicle_no, tracker_url),
+  driver:drivers!rides_driver_id_fkey(ref_no, name),
+  ride_crew(seq, crew:crew(id, ref_no, name, stop_name, stop_lat, stop_lng))
+`
+
 const SAMPLE_COLS = PLAN_REQUIRED_COLUMNS.map((key) => ({ key, label: key }))
 const SAMPLE = [
   {
@@ -178,6 +193,9 @@ export default function RidePlan() {
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
+  const [viewLoading, setViewLoading] = useState(false)
+  // Session cache: ride id → full ride object so repeated opens skip the fetch.
+  const rideCache = useRef(new Map())
   const [deleting, setDeleting] = useState(false)
 
   // Inline Add Ride modal (Follow / No / plain Add Ride button)
@@ -458,6 +476,21 @@ export default function RidePlan() {
   }, [rows, fetchRows, canEdit])
 
   const canFollow = (r) => r.status === 'pending'
+
+  // Open the full ride view modal.  Cache hit = instant; miss = one fetch.
+  const openRideView = useCallback(async (rideId) => {
+    if (!rideId) return
+    if (rideCache.current.has(rideId)) {
+      setViewRide(rideCache.current.get(rideId))
+      return
+    }
+    setViewLoading(true)
+    const { data, error } = await supabase.from('rides').select(RIDE_SELECT).eq('id', rideId).single()
+    setViewLoading(false)
+    if (error || !data) return toast.error('Could not load ride details')
+    rideCache.current.set(rideId, data)
+    setViewRide(data)
+  }, [])
 
   // Refresh Pakistan clock every minute so deadline badges stay current.
   useEffect(() => {
@@ -981,7 +1014,7 @@ export default function RidePlan() {
                 type="button"
                 className="icon-btn"
                 title="View ride"
-                onClick={() => setViewRide(r.ride)}
+                onClick={() => openRideView(r.ride.id)}
               >
                 <Eye size={15} />
               </button>
@@ -1249,6 +1282,11 @@ export default function RidePlan() {
           </div>
         </Modal>
       )}
+      {viewLoading && (
+        <Modal title="Loading ride…" onClose={() => setViewLoading(false)} size="sm">
+          <p style={{ padding: '12px 0', color: 'var(--muted)' }}>Ride data load ho rahi hai…</p>
+        </Modal>
+      )}
       {viewRide && (
         <RideModal
           row={viewRide}
@@ -1261,7 +1299,11 @@ export default function RidePlan() {
           allowedCities={allowedCities}
           createdBy={profile?.id}
           onClose={() => setViewRide(null)}
-          onDone={() => { setViewRide(null); fetchRows() }}
+          onDone={() => {
+            rideCache.current.delete(viewRide.id) // invalidate so edit changes reflect
+            setViewRide(null)
+            fetchRows()
+          }}
         />
       )}
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}

@@ -236,3 +236,37 @@
   background: rgba(183, 121, 31, 0.16);
   color: var(--warning);
 }
+
+/* Current-time indicator — red vertical "now" line */
+.vb-now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e53e3e;
+  pointer-events: none;
+  z-index: 3;
+  transform: translateX(-50%);
+}
+
+.vb-now-label {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 800;
+  color: #e53e3e;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  z-index: 3;
+  white-space: nowrap;
+}
+
+/* Conflict highlight — amber lane when a vehicle has a genuine time clash */
+.vb-row-conflict .vb-veh {
+  background: rgba(183, 121, 31, 0.08);
+}
+
+.vb-track-conflict {
+  background: rgba(183, 121, 31, 0.06) !important;
+}

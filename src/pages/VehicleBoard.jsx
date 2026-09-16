@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -26,6 +26,10 @@ const minsOf = (iso) => {
   const d = new Date(iso)
   return d.getHours() * 60 + d.getMinutes()
 }
+const pkNowMins = () => {
+  const now = new Date(Date.now() + 5 * 60 * 60 * 1000)
+  return now.getUTCHours() * 60 + now.getUTCMinutes()
+}
 const ms = (iso) => new Date(iso).getTime()
 const overlaps = (aS, aE, list) => list.some((b) => aS < b.e && aE > b.s)
 
@@ -45,6 +49,8 @@ export default function VehicleBoard() {
   const [autoOn, setAutoOn] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [dragOverV, setDragOverV] = useState(null)
+  const [nowMins, setNowMins] = useState(pkNowMins)
+  const nowTimerRef = useRef(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -64,6 +70,16 @@ export default function VehicleBoard() {
   useEffect(() => {
     if (canView) load()
   }, [canView, load])
+
+  useEffect(() => {
+    const tick = () => setNowMins(pkNowMins())
+    const msUntilNextMinute = 60000 - (Date.now() % 60000)
+    nowTimerRef.current = setTimeout(() => {
+      tick()
+      nowTimerRef.current = setInterval(tick, 60000)
+    }, msUntilNextMinute)
+    return () => clearTimeout(nowTimerRef.current)
+  }, [])
 
   // time window for the gantt
   const win = useMemo(() => {
@@ -93,6 +109,22 @@ export default function VehicleBoard() {
     }
     return m
   }, [rides])
+
+  // vehicles with genuine booking overlap (start_at/end_at windows truly cross)
+  const conflictSet = useMemo(() => {
+    const ids = new Set()
+    byVehicle.forEach((vRides, vId) => {
+      const active = vRides.filter((r) => r.start_at && r.end_at && r.status !== 'cancelled')
+      for (let i = 0; i < active.length; i++) {
+        for (let j = i + 1; j < active.length; j++) {
+          if (ms(active[i].start_at) < ms(active[j].end_at) && ms(active[j].start_at) < ms(active[i].end_at)) {
+            ids.add(vId)
+          }
+        }
+      }
+    })
+    return ids
+  }, [byVehicle])
 
   const unassigned = useMemo(
     () =>
@@ -298,10 +330,17 @@ export default function VehicleBoard() {
                         {h < 12 || h === 24 ? 'a' : 'p'}
                       </span>
                     ))}
+                    {nowMins >= win.start && nowMins <= win.end && (
+                      <span className="vb-now-label" style={{ left: pct(nowMins) }}>
+                        Now
+                      </span>
+                    )}
                   </div>
                 </div>
-                {rows.map(({ v, rides: vr }) => (
-                  <div className="vb-row" key={v.id}>
+                {rows.map(({ v, rides: vr }) => {
+                  const hasConflict = conflictSet.has(v.id)
+                  return (
+                  <div className={`vb-row${hasConflict ? ' vb-row-conflict' : ''}`} key={v.id}>
                     <div className="vb-veh">
                       <span className="primary">
                         ({v.ref_no}) {v.vehicle_no}
@@ -309,7 +348,7 @@ export default function VehicleBoard() {
                       <span className="secondary">{v.driver?.name || 'no driver'}</span>
                     </div>
                     <div
-                      className={`vb-track${dragOverV === v.id ? ' drop-over' : ''}`}
+                      className={`vb-track${dragOverV === v.id ? ' drop-over' : ''}${hasConflict ? ' vb-track-conflict' : ''}`}
                       onDragOver={canEdit ? (e) => e.preventDefault() : undefined}
                       onDragEnter={canEdit ? () => setDragOverV(v.id) : undefined}
                       onDragLeave={canEdit ? () => setDragOverV((c) => (c === v.id ? null : c)) : undefined}
@@ -348,9 +387,13 @@ export default function VehicleBoard() {
                           </button>
                         )
                       })}
+                      {nowMins >= win.start && nowMins <= win.end && (
+                        <span className="vb-now-line" style={{ left: pct(nowMins) }} />
+                      )}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </>
           )}

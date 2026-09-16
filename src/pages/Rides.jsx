@@ -999,7 +999,6 @@ export default function Rides() {
         selected={selected}
         onToggle={toggle}
         onToggleAll={() => toggleAll(pageRows)}
-        onRowClick={(r) => setDetail({ row: r, edit: false })}
         title="Rides"
         subtitle={`${filtered.length} shown`}
       />

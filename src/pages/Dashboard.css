@@ -280,6 +280,31 @@
   color: var(--muted);
 }
 
+/* ---- plan adherence card ---- */
+.dash-adherence-card {
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dash-adherence-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 130px;
+}
+.dash-adherence-hero .dash-num {
+  line-height: 1;
+}
+.dash-adherence-bars {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 /* ---- analytics table (flight/crew/vehicle breakdown) ---- */
 .dash-analytics-table {
   border-radius: 10px;

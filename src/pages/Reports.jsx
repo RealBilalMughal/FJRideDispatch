@@ -75,6 +75,10 @@ const RIDE_SECTIONS = [
 ]
 const PLAN_SECTION = { key: 'plan', label: 'Ride Plan vs Actual' }
 const USER_SECTION = { key: 'userwise', label: 'Agent Performance' }
+const FLIGHT_SECTION = { key: 'flightwise', label: 'Flight-wise' }
+const CREW_SECTION = { key: 'crewwise', label: 'Crew Utilization' }
+const VEHICLE_SECTION = { key: 'vehiclewise', label: 'Vehicle Utilization' }
+const CANCEL_SECTION = { key: 'cancelwise', label: 'Cancellations' }
 
 export default function Reports() {
   const { can } = useAuth()
@@ -86,7 +90,7 @@ export default function Reports() {
     () => [
       ...(canViewRides ? RIDE_SECTIONS : []),
       ...(canViewPlan ? [PLAN_SECTION] : []),
-      ...(canViewRides ? [USER_SECTION] : []),
+      ...(canViewRides ? [USER_SECTION, FLIGHT_SECTION, CREW_SECTION, VEHICLE_SECTION, CANCEL_SECTION] : []),
     ],
     [canViewRides, canViewPlan],
   )
@@ -117,6 +121,10 @@ export default function Reports() {
 
   const isPlan = section === 'plan'
   const isUserwise = section === 'userwise'
+  const isFlightwise = section === 'flightwise'
+  const isCrewwise = section === 'crewwise'
+  const isVehiclewise = section === 'vehiclewise'
+  const isCancelwise = section === 'cancelwise'
 
   // ride-based sections share one query - the section only changes how the
   // fetched rows are filtered/summarised below, not what's fetched.
@@ -297,6 +305,72 @@ export default function Reports() {
     return [...map.values()].sort((a, b) => b.total - a.total)
   }, [rows, planLinkMap])
 
+  const rptByFlight = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      const fn = r.flight_no || '—'
+      const e = m.get(fn) || { flight: fn, count: 0, km: 0 }
+      e.count += 1
+      e.km += billableKm(r)
+      m.set(fn, e)
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count)
+  }, [rows])
+
+  const rptByCrew = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      for (const rc of r.ride_crew || []) {
+        const name = rc.crew?.name
+        if (!name) continue
+        const e = m.get(name) || { name, rides: 0, km: 0, days: new Set() }
+        e.rides += 1
+        e.km += billableKm(r)
+        if (r.ride_date) e.days.add(r.ride_date)
+        m.set(name, e)
+      }
+    }
+    return [...m.values()].map((e) => ({ ...e, days: e.days.size })).sort((a, b) => b.rides - a.rides)
+  }, [rows])
+
+  const rptByVehicle = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      const vno = r.is_adhoc_vehicle ? 'Ad-Hoc' : r.vehicle?.vehicle_no
+      if (!vno) continue
+      const e = m.get(vno) || { vehicle: vno, rides: 0, km: 0, days: new Set() }
+      e.rides += 1
+      e.km += billableKm(r)
+      if (r.ride_date) e.days.add(r.ride_date)
+      m.set(vno, e)
+    }
+    const totalDays = dateFrom && dateTo
+      ? Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1
+      : 0
+    return [...m.values()]
+      .map((e) => ({ ...e, days: e.days.size, utilPct: totalDays > 0 ? Math.round((e.days.size / totalDays) * 100) : null }))
+      .sort((a, b) => b.rides - a.rides)
+  }, [rows, dateFrom, dateTo])
+
+  const rptCancelStats = useMemo(() => {
+    const cancelled = rows.filter((r) => r.status === 'cancelled')
+    const reasons = new Map()
+    for (const r of cancelled) {
+      const reason = r.cancel_reason || 'No reason'
+      reasons.set(reason, (reasons.get(reason) || 0) + 1)
+    }
+    const byBlock = {}
+    for (const r of cancelled) {
+      byBlock[r.block_type] = (byBlock[r.block_type] || 0) + 1
+    }
+    return {
+      count: cancelled.length,
+      pct: rows.length > 0 ? ((cancelled.length / rows.length) * 100).toFixed(1) : '0.0',
+      reasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([reason, count]) => ({ reason, count })),
+      byBlock,
+    }
+  }, [rows])
+
   const rideColumns = [
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
     { key: 'ref', header: 'ID', render: (r) => r.ref_no },
@@ -358,6 +432,38 @@ export default function Reports() {
 
   const exportCsv = () => {
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
+    if (isFlightwise) {
+      downloadCsv(`report-flightwise-${tag}.csv`, toCsv(
+        [{ key: 'flight', label: 'Flight' }, { key: 'count', label: 'Rides' }, { key: 'km', label: 'Total KM' }, { key: 'avgkm', label: 'Avg KM' }],
+        rptByFlight.map((r) => ({ flight: r.flight, count: r.count, km: r.km.toFixed(2), avgkm: r.count > 0 ? (r.km / r.count).toFixed(2) : '' })),
+      ))
+      toast.success('Report exported')
+      return
+    }
+    if (isCrewwise) {
+      downloadCsv(`report-crewwise-${tag}.csv`, toCsv(
+        [{ key: 'name', label: 'Crew' }, { key: 'rides', label: 'Rides' }, { key: 'days', label: 'Days active' }, { key: 'km', label: 'Total KM' }],
+        rptByCrew.map((r) => ({ name: r.name, rides: r.rides, days: r.days, km: r.km.toFixed(2) })),
+      ))
+      toast.success('Report exported')
+      return
+    }
+    if (isVehiclewise) {
+      downloadCsv(`report-vehiclewise-${tag}.csv`, toCsv(
+        [{ key: 'vehicle', label: 'Vehicle' }, { key: 'rides', label: 'Rides' }, { key: 'days', label: 'Days used' }, { key: 'km', label: 'Total KM' }, { key: 'util', label: 'Util %' }],
+        rptByVehicle.map((r) => ({ vehicle: r.vehicle, rides: r.rides, days: r.days, km: r.km.toFixed(2), util: r.utilPct != null ? `${r.utilPct}%` : '' })),
+      ))
+      toast.success('Report exported')
+      return
+    }
+    if (isCancelwise) {
+      downloadCsv(`report-cancellations-${tag}.csv`, toCsv(
+        [{ key: 'reason', label: 'Reason' }, { key: 'count', label: 'Count' }],
+        rptCancelStats.reasons,
+      ))
+      toast.success('Report exported')
+      return
+    }
     if (isPlan) {
       const cols = planColumns.map((c) => ({ key: c.key, label: c.header }))
       const data = planBreakdown.map((r) => ({
@@ -497,6 +603,91 @@ export default function Reports() {
                 rowKey={(r) => r.key}
                 loading={loading}
                 emptyLabel="No plan data in this range"
+              />
+            </>
+          ) : isFlightwise ? (
+            <>
+              <StatCards
+                items={[
+                  { key: 'total', label: 'Flights', value: rptByFlight.length, hint: `${rows.length} rides`, active: true },
+                  { key: 'km', label: 'Total KM', value: rptByFlight.reduce((s, f) => s + f.km, 0).toFixed(2), hint: 'billable' },
+                ]}
+              />
+              <DataTable
+                columns={[
+                  { key: 'flight', header: 'Flight', render: (r) => r.flight },
+                  { key: 'count', header: 'Rides', align: 'right', render: (r) => r.count },
+                  { key: 'km', header: 'Total KM', align: 'right', render: (r) => r.km.toFixed(2) },
+                  { key: 'avgkm', header: 'Avg KM', align: 'right', render: (r) => r.count > 0 ? (r.km / r.count).toFixed(2) : '—' },
+                ]}
+                rows={rptByFlight}
+                rowKey={(r) => r.flight}
+                loading={loading}
+                emptyLabel="No rides in this range"
+              />
+            </>
+          ) : isCrewwise ? (
+            <>
+              <StatCards
+                items={[
+                  { key: 'total', label: 'Crew members', value: rptByCrew.length, hint: `${rows.length} rides`, active: true },
+                  { key: 'km', label: 'Total KM', value: rptByCrew.reduce((s, c) => s + c.km, 0).toFixed(2), hint: 'billable' },
+                ]}
+              />
+              <DataTable
+                columns={[
+                  { key: 'name', header: 'Crew', render: (r) => r.name },
+                  { key: 'rides', header: 'Rides', align: 'right', render: (r) => r.rides },
+                  { key: 'days', header: 'Days active', align: 'right', render: (r) => r.days },
+                  { key: 'km', header: 'Total KM', align: 'right', render: (r) => r.km.toFixed(2) },
+                ]}
+                rows={rptByCrew}
+                rowKey={(r) => r.name}
+                loading={loading}
+                emptyLabel="No rides in this range"
+              />
+            </>
+          ) : isVehiclewise ? (
+            <>
+              <StatCards
+                items={[
+                  { key: 'total', label: 'Vehicles', value: rptByVehicle.length, hint: `${rows.length} rides`, active: true },
+                  { key: 'km', label: 'Total KM', value: rptByVehicle.reduce((s, v) => s + v.km, 0).toFixed(2), hint: 'billable' },
+                ]}
+              />
+              <DataTable
+                columns={[
+                  { key: 'vehicle', header: 'Vehicle', render: (r) => r.vehicle },
+                  { key: 'rides', header: 'Rides', align: 'right', render: (r) => r.rides },
+                  { key: 'days', header: 'Days used', align: 'right', render: (r) => r.days },
+                  { key: 'km', header: 'Total KM', align: 'right', render: (r) => r.km.toFixed(2) },
+                  { key: 'util', header: 'Util %', align: 'right', render: (r) => r.utilPct != null ? `${r.utilPct}%` : '—' },
+                ]}
+                rows={rptByVehicle}
+                rowKey={(r) => r.vehicle}
+                loading={loading}
+                emptyLabel="No rides in this range"
+              />
+            </>
+          ) : isCancelwise ? (
+            <>
+              <StatCards
+                items={[
+                  { key: 'cancelled', label: 'Cancelled', value: rptCancelStats.count, hint: `${rptCancelStats.pct}% of ${rows.length} rides`, active: rptCancelStats.count > 0 },
+                  ...['pickup', 'dropoff', 'deadhead', 'return_leg'].map((b) => ({
+                    key: b, label: blockLabel(b), value: rptCancelStats.byBlock[b] || 0, hint: 'rides',
+                  })),
+                ]}
+              />
+              <DataTable
+                columns={[
+                  { key: 'reason', header: 'Reason', render: (r) => r.reason },
+                  { key: 'count', header: 'Count', align: 'right', render: (r) => r.count },
+                ]}
+                rows={rptCancelStats.reasons}
+                rowKey={(r) => r.reason}
+                loading={loading}
+                emptyLabel="No cancellations in this range"
               />
             </>
           ) : isUserwise ? (

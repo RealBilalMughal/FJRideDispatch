@@ -13,7 +13,7 @@ import {
   Users2,
   Waypoints,
 } from 'lucide-react'
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -206,74 +206,6 @@ export default function Dashboard() {
     }
     return [...m.entries()].sort((a, b) => b[1].count - a[1].count)
   }, [rows, cityId])
-
-  // Flight-wise: group by flight_no, compute count + totalKm + avgKm per block
-  const byFlight = useMemo(() => {
-    const m = new Map()
-    for (const r of rows) {
-      const fn = r.flight_no || '—'
-      const e = m.get(fn) || { flight: fn, count: 0, km: 0, blocks: {} }
-      e.count += 1
-      e.km += km(r)
-      e.blocks[r.block_type] = (e.blocks[r.block_type] || 0) + 1
-      m.set(fn, e)
-    }
-    return [...m.values()].sort((a, b) => b.count - a.count).slice(0, 12)
-  }, [rows])
-
-  // Crew utilization: per crew member - ride count + km + unique ride dates
-  const byCrew = useMemo(() => {
-    const m = new Map()
-    for (const r of rows) {
-      for (const rc of r.ride_crew || []) {
-        const name = rc.crew?.name
-        if (!name) continue
-        const e = m.get(name) || { name, rides: 0, km: 0, days: new Set() }
-        e.rides += 1
-        e.km += km(r)
-        if (r.ride_date) e.days.add(r.ride_date)
-        m.set(name, e)
-      }
-    }
-    return [...m.values()]
-      .map((e) => ({ ...e, days: e.days.size }))
-      .sort((a, b) => b.rides - a.rides)
-      .slice(0, 12)
-  }, [rows])
-
-  // Vehicle utilization: per vehicle - ride count + km
-  const byVehicle = useMemo(() => {
-    const m = new Map()
-    for (const r of rows) {
-      const vno = r.is_adhoc_vehicle ? 'Ad-Hoc' : r.vehicle?.vehicle_no
-      if (!vno) continue
-      const e = m.get(vno) || { vehicle: vno, rides: 0, km: 0, days: new Set() }
-      e.rides += 1
-      e.km += km(r)
-      if (r.ride_date) e.days.add(r.ride_date)
-      m.set(vno, e)
-    }
-    const totalDays = from && to ? dateList(from, to).length : 0
-    return [...m.values()]
-      .map((e) => ({ ...e, days: e.days.size, utilPct: totalDays > 0 ? Math.round((e.days.size / totalDays) * 100) : null }))
-      .sort((a, b) => b.rides - a.rides)
-      .slice(0, 12)
-  }, [rows, from, to])
-
-  // Cancellation rate + reason breakdown
-  const cancelStats = useMemo(() => {
-    const cancelled = rows.filter((r) => r.status === 'cancelled')
-    const reasons = new Map()
-    for (const r of cancelled) {
-      const reason = r.cancel_reason || 'No reason'
-      reasons.set(reason, (reasons.get(reason) || 0) + 1)
-    }
-    return {
-      count: cancelled.length,
-      pct: rows.length > 0 ? ((cancelled.length / rows.length) * 100).toFixed(1) : '0.0',
-      reasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6),
-    }
-  }, [rows])
 
   const liveRows = useMemo(() => {
     const now = Date.now()
@@ -471,112 +403,49 @@ export default function Dashboard() {
             )}
           </section>
 
-          {/* ── Flight-wise breakdown + KM per flight ─────────────── */}
-          {byFlight.length > 0 && (
+          {planAdherence && planAdherence.total > 0 && (
             <section className="dash-section">
-              <h2>Flight-wise</h2>
-              <div className="dash-analytics-table">
-                <div className="dat-head">
-                  <span>Flight</span><span>Rides</span><span>Total KM</span><span>Avg KM</span>
-                </div>
-                {byFlight.map((f) => (
-                  <div className="dat-row" key={f.flight}>
-                    <span className="dat-label">{f.flight}</span>
-                    <span>{f.count}</span>
-                    <span>{fmtKm(f.km)}</span>
-                    <span className="dash-hint">{fmtKm(f.count > 0 ? f.km / f.count : 0)}</span>
-                  </div>
-                ))}
-              </div>
+              <h2>Plan adherence</h2>
+              <PlanAdherenceCard data={planAdherence} />
             </section>
           )}
-
-          {/* ── Crew utilization ──────────────────────────────────── */}
-          {byCrew.length > 0 && (
-            <section className="dash-section">
-              <h2>Crew utilization</h2>
-              <div className="dash-analytics-table">
-                <div className="dat-head">
-                  <span>Crew</span><span>Rides</span><span>Days active</span><span>KM</span>
-                </div>
-                {byCrew.map((c) => (
-                  <div className="dat-row" key={c.name}>
-                    <span className="dat-label">{c.name}</span>
-                    <span>{c.rides}</span>
-                    <span>{c.days}</span>
-                    <span className="dash-hint">{fmtKm(c.km)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ── Vehicle utilization ───────────────────────────────── */}
-          {byVehicle.length > 0 && (
-            <section className="dash-section">
-              <h2>Vehicle utilization</h2>
-              <div className="dash-analytics-table">
-                <div className="dat-head">
-                  <span>Vehicle</span><span>Rides</span><span>Days used</span><span>KM</span>
-                  {byVehicle[0]?.utilPct != null && <span>Util %</span>}
-                </div>
-                {byVehicle.map((v) => (
-                  <div className={`dat-row${v.vehicle === 'Ad-Hoc' ? ' dat-muted' : ''}`} key={v.vehicle}>
-                    <span className="dat-label">{v.vehicle}</span>
-                    <span>{v.rides}</span>
-                    <span>{v.days}</span>
-                    <span className="dash-hint">{fmtKm(v.km)}</span>
-                    {v.utilPct != null && <span className="dash-hint">{v.utilPct}%</span>}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ── Cancellation rate + Plan adherence (side by side) ─── */}
-          <div className="dash-cols">
-            {cancelStats.count > 0 && (
-              <section className="dash-section dash-col-main">
-                <h2>Cancellation rate</h2>
-                <div className="dash-cancel-stat">
-                  <span className="dash-num" style={{ color: 'var(--danger)' }}>{cancelStats.count}</span>
-                  <span className="dash-name">cancelled &nbsp;·&nbsp; <span className="dash-hint">{cancelStats.pct}% of total</span></span>
-                </div>
-                {cancelStats.reasons.length > 0 && (
-                  <div className="dash-analytics-table" style={{ marginTop: 10 }}>
-                    {cancelStats.reasons.map(([reason, cnt]) => (
-                      <div className="dat-row" key={reason}>
-                        <span className="dat-label">{reason}</span>
-                        <span>{cnt}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
-
-            {planAdherence && planAdherence.total > 0 && (
-              <section className="dash-section dash-col-side">
-                <h2>Plan adherence</h2>
-                <div className="dash-cancel-stat">
-                  <span className="dash-num" style={{ color: planAdherence.pct >= 80 ? 'var(--success)' : planAdherence.pct >= 50 ? '#f59e0b' : 'var(--danger)' }}>
-                    {planAdherence.pct}%
-                  </span>
-                  <span className="dash-name">{planAdherence.followed} of {planAdherence.total} followed</span>
-                </div>
-                <div className="dash-analytics-table" style={{ marginTop: 10 }}>
-                  {Object.entries(planAdherence.byBlock).map(([blk, d]) => (
-                    <div className="dat-row" key={blk}>
-                      <span className="dat-label">{blockLabel(blk)}</span>
-                      <span>{d.total > 0 ? Math.round((d.followed / d.total) * 100) : 0}%</span>
-                      <span className="dash-hint">{d.followed}/{d.total}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
         </>
+      )}
+    </div>
+  )
+}
+
+const BLOCKS_ORDER = ['pickup', 'dropoff', 'deadhead', 'return_leg']
+
+function PlanAdherenceCard({ data }) {
+  const chartData = BLOCKS_ORDER
+    .filter((b) => data.byBlock[b]?.total > 0)
+    .map((b) => ({
+      name: blockLabel(b),
+      pct: Math.round((data.byBlock[b].followed / data.byBlock[b].total) * 100),
+      label: `${data.byBlock[b].followed}/${data.byBlock[b].total}`,
+    }))
+  const color = data.pct >= 80 ? 'var(--success)' : data.pct >= 50 ? '#f59e0b' : 'var(--danger)'
+  return (
+    <div className="dash-adherence-card">
+      <div className="dash-adherence-hero">
+        <span className="dash-num" style={{ fontSize: 48, color }}>{data.pct}%</span>
+        <span className="dash-name">plan adherence</span>
+        <span className="dash-hint">{data.followed} of {data.total} rows followed</span>
+      </div>
+      {chartData.length > 0 && (
+        <div className="dash-adherence-bars">
+          <ResponsiveContainer width="100%" height={chartData.length * 40 + 24}>
+            <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 52, left: 80, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
+              <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10.5, fill: 'var(--muted)' }} tickFormatter={(v) => `${v}%`} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--body)' }} width={78} />
+              <Tooltip formatter={(v, _n, p) => [`${v}% (${p.payload.label})`, 'Adherence']} contentStyle={{ fontSize: 12 }} />
+              <Bar dataKey="pct" fill="var(--accent)" radius={[0, 3, 3, 0]} maxBarSize={16}
+                label={{ position: 'right', fontSize: 10.5, fill: 'var(--muted)', formatter: (v) => `${v}%` }} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </div>
   )

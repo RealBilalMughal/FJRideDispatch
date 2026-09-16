@@ -81,7 +81,6 @@ import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
 import { buildPlanInitial } from '../lib/planImport'
 import './Rides.css'
-import './Flights.css'
 
 const PAGE_SIZE = 15
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
@@ -661,14 +660,14 @@ export default function Rides() {
             </button>
           )
         }
-        if (!s.found) return <span className="fl-chip fl-muted">Not found</span>
+        if (!s.found) return <span className="rfs-status rfs-status-muted">Not found</span>
         const delay = r.block_type === 'pickup' ? s.depDelay : s.arrDelay
-        if (s.status === 'cancelled') return <span className="fl-chip fl-red">Cancelled</span>
-        if (s.status === 'diverted')  return <span className="fl-chip fl-orange">Diverted</span>
-        if (s.status === 'active')    return <span className="fl-chip fl-green">In air{delay > 0 ? ` +${delay}m` : ''}</span>
-        if (s.status === 'landed')    return <span className="fl-chip fl-blue">Landed{delay > 0 ? ` +${delay}m` : ''}</span>
-        if (delay > 0)                return <span className="fl-chip fl-orange">Delayed +{delay}m</span>
-        return <span className="fl-chip fl-muted">On time</span>
+        if (s.status === 'cancelled') return <span className="rfs-status rfs-status-red">Cancelled</span>
+        if (s.status === 'diverted')  return <span className="rfs-status rfs-status-orange">Diverted</span>
+        if (s.status === 'active')    return <span className="rfs-status rfs-status-green">In air{delay > 0 ? ` +${delay}m` : ''}</span>
+        if (s.status === 'landed')    return <span className="rfs-status rfs-status-blue">Landed{delay > 0 ? ` +${delay}m` : ''}</span>
+        if (delay > 0)                return <span className="rfs-status rfs-status-orange">Delayed +{delay}m</span>
+        return <span className="rfs-status rfs-status-muted">On time</span>
       },
     },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
@@ -1000,6 +999,7 @@ export default function Rides() {
         selected={selected}
         onToggle={toggle}
         onToggleAll={() => toggleAll(pageRows)}
+        onRowClick={(r) => setDetail({ row: r, edit: false })}
         title="Rides"
         subtitle={`${filtered.length} shown`}
       />

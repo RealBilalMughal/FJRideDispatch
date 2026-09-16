@@ -1991,6 +1991,8 @@ export function RideModal({
   // above - same pattern, opposite direction. Chains off the dropoff ->
   // displays as "<dropoff ref>-R", cascades on delete.
   const [alsoReturnLeg, setAlsoReturnLeg] = useState(Boolean(initial?.alsoReturnLeg))
+  const [liveFlightHint, setLiveFlightHint] = useState(null)
+  const [liveFlightFetching, setLiveFlightFetching] = useState(false)
 
   const initialCrew = row
     ? [...(row?.ride_crew || [])]
@@ -2128,28 +2130,62 @@ export function RideModal({
       .join('|')
   const savedRouteSig = useMemo(() => (row?.waypoints ? routeSig(row.waypoints) : null), [row])
 
-  // pick a flight -> snapshot + auto block + city + times
-  const pickFlight = (fid) => {
+  // pick a flight -> snapshot + auto block + city + times; also fetches live
+  // departure/arrival time from AviationStack (fire-and-forget after registry fill)
+  const pickFlight = async (fid) => {
     const f = flights.find((x) => x.id === fid)
-    if (!f) return set('flight_id', '')
-    setForm((prev) => {
-      const block = f.block_type || prev.block_type || 'pickup'
-      const slot = primaryTimeSlot(block)
-      const ft = toTime24(f.flight_time)
-      return {
-        ...prev,
-        flight_id: fid,
-        flight_no: f.flight_no,
-        flight_code: f.flight_code || '',
-        block_type: block,
-        city_id: f.city_id,
-        checkin_old: slot === 'checkin' ? ft : prev.checkin_old,
-        checkin_new: slot === 'checkin' && !prev.checkin_new ? ft : prev.checkin_new,
-        checkout_old: slot === 'checkout' ? ft : prev.checkout_old,
-        checkout_new: slot === 'checkout' && !prev.checkout_new ? ft : prev.checkout_new,
-      }
-    })
+    if (!f) { set('flight_id', ''); setLiveFlightHint(null); return }
+    const block = f.block_type || form.block_type || 'pickup'
+    const slot = primaryTimeSlot(block)
+    const ft = toTime24(f.flight_time)
+    setForm((prev) => ({
+      ...prev,
+      flight_id: fid,
+      flight_no: f.flight_no,
+      flight_code: f.flight_code || '',
+      block_type: block,
+      city_id: f.city_id,
+      checkin_old: slot === 'checkin' ? ft : prev.checkin_old,
+      checkin_new: slot === 'checkin' && !prev.checkin_new ? ft : prev.checkin_new,
+      checkout_old: slot === 'checkout' ? ft : prev.checkout_old,
+      checkout_new: slot === 'checkout' && !prev.checkout_new ? ft : prev.checkout_new,
+    }))
     setCrewList([])
+    setLiveFlightHint(null)
+
+    if (!f.flight_no?.trim()) return
+    setLiveFlightFetching(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('flight-info', {
+        body: { flight_iata: f.flight_no.trim() },
+      })
+      if (error || !data?.found) {
+        if (!error) setLiveFlightHint({ text: 'Not found in AviationStack', warn: true })
+        return
+      }
+      const liveTime = slot === 'checkin' ? data.departure?.time : slot === 'checkout' ? data.arrival?.time : null
+      if (liveTime) {
+        setForm((prev) => ({
+          ...prev,
+          checkin_old: slot === 'checkin' ? liveTime : prev.checkin_old,
+          checkin_new: slot === 'checkin' && !prev.checkin_new ? liveTime : prev.checkin_new,
+          checkout_old: slot === 'checkout' ? liveTime : prev.checkout_old,
+          checkout_new: slot === 'checkout' && !prev.checkout_new ? liveTime : prev.checkout_new,
+        }))
+      }
+      const dep = data.departure
+      const arr = data.arrival
+      const delay = slot === 'checkin' ? dep?.delay : arr?.delay
+      let text = `Live · ${dep?.iata ?? ''}→${arr?.iata ?? ''}`
+      if (dep?.time) text += ` · Dep ${dep.time}`
+      if (arr?.time) text += ` · Arr ${arr.time}`
+      text += delay > 0 ? ` · ⚠ ${delay}m delay` : ' · On time'
+      setLiveFlightHint({ text, warn: delay > 0 })
+    } catch {
+      // silent fail — registry time stays
+    } finally {
+      setLiveFlightFetching(false)
+    }
   }
 
   // block change -> re-map the flight time to the right slot, trim crew to max
@@ -2169,6 +2205,7 @@ export function RideModal({
     })
     const r = crewRule(block, form.deadhead_mode)
     if (r.max != null) setCrewList((cl) => cl.slice(0, r.max))
+    setLiveFlightHint(null)
   }
 
   // fetch the ORS route ONLY when it can change something and actually changed:
@@ -2991,42 +3028,60 @@ export function RideModal({
           </div>
 
           {form.block_type === 'pickup' && (
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="r-cio">Check-in</label>
-                <input id="r-cio" type="time" className="input" value={form.checkin_old} disabled />
-                <span className="field-hint">From the flight</span>
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="r-cio">Check-in</label>
+                  <input id="r-cio" type="time" className="input" value={form.checkin_old} disabled />
+                  <span className="field-hint">
+                    {liveFlightFetching ? 'Fetching live time…' : liveFlightHint ? '' : 'From the flight'}
+                  </span>
+                </div>
+                <div className="field">
+                  <label htmlFor="r-cin">Actual</label>
+                  <input
+                    id="r-cin"
+                    type="time"
+                    className="input"
+                    value={form.checkin_new}
+                    onChange={(e) => set('checkin_new', e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="r-cin">Actual</label>
-                <input
-                  id="r-cin"
-                  type="time"
-                  className="input"
-                  value={form.checkin_new}
-                  onChange={(e) => set('checkin_new', e.target.value)}
-                />
-              </div>
-            </div>
+              {liveFlightHint && (
+                <span className={`field-hint${liveFlightHint.warn ? ' field-hint-warn' : ''}`}>
+                  {liveFlightHint.text}
+                </span>
+              )}
+            </>
           )}
           {form.block_type === 'dropoff' && (
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="r-coo">Check-out</label>
-                <input id="r-coo" type="time" className="input" value={form.checkout_old} disabled />
-                <span className="field-hint">From the flight</span>
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="r-coo">Check-out</label>
+                  <input id="r-coo" type="time" className="input" value={form.checkout_old} disabled />
+                  <span className="field-hint">
+                    {liveFlightFetching ? 'Fetching live time…' : liveFlightHint ? '' : 'From the flight'}
+                  </span>
+                </div>
+                <div className="field">
+                  <label htmlFor="r-con">Actual</label>
+                  <input
+                    id="r-con"
+                    type="time"
+                    className="input"
+                    value={form.checkout_new}
+                    onChange={(e) => set('checkout_new', e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="r-con">Actual</label>
-                <input
-                  id="r-con"
-                  type="time"
-                  className="input"
-                  value={form.checkout_new}
-                  onChange={(e) => set('checkout_new', e.target.value)}
-                />
-              </div>
-            </div>
+              {liveFlightHint && (
+                <span className={`field-hint${liveFlightHint.warn ? ' field-hint-warn' : ''}`}>
+                  {liveFlightHint.text}
+                </span>
+              )}
+            </>
           )}
 
         {/* crew */}

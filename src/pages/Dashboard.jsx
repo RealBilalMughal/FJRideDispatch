@@ -82,7 +82,7 @@ function rollup(rows) {
 }
 
 const RANGE_SELECT =
-  'block_type, distance_km, extra_km, status, count_km, shift, ride_date, start_at, city_id, is_adhoc_vehicle, city:cities(name), ride_crew(seq)'
+  'block_type, distance_km, extra_km, status, count_km, shift, ride_date, start_at, city_id, is_adhoc_vehicle, flight_no, flight_id, cancel_reason, vehicle_id, city:cities(name), vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(id, name))'
 const LIVE_SELECT =
   'id, ref_no, block_type, start_at, end_at, vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(name))'
 
@@ -90,6 +90,7 @@ export default function Dashboard() {
   const { profile, can } = useAuth()
   const { cityId, cityName, ready } = useCity()
   const canRides = can('rides', 'view')
+  const canPlan = can('ride_plan', 'view')
   const fullName = (profile?.full_name || '').trim()
 
   const [preset, setPreset] = useState('this-month')
@@ -100,6 +101,7 @@ export default function Dashboard() {
   const [rows, setRows] = useState([])
   const [prevRows, setPrevRows] = useState([])
   const [live, setLive] = useState([])
+  const [planAdherence, setPlanAdherence] = useState(null)
   const [loading, setLoading] = useState(true)
 
   // main range + the equivalent previous period (for the trend %)
@@ -151,6 +153,29 @@ export default function Dashboard() {
     }
   }, [ready, canRides, cityId])
 
+  // Plan adherence: followed / total pending+followed plan rows for the range
+  useEffect(() => {
+    if (!ready || !canPlan) { setPlanAdherence(null); return }
+    let alive = true
+    let q = supabase.from('ride_plan_rows').select('status, block_type').in('status', ['followed', 'pending', 'skipped'])
+    if (from) q = q.gte('plan_date', from)
+    if (to) q = q.lte('plan_date', to)
+    if (cityId != null) q = q.eq('city_id', cityId)
+    q.then(({ data }) => {
+      if (!alive || !data) return
+      const total = data.length
+      const followed = data.filter((r) => r.status === 'followed').length
+      const byBlock = {}
+      for (const r of data) {
+        if (!byBlock[r.block_type]) byBlock[r.block_type] = { total: 0, followed: 0 }
+        byBlock[r.block_type].total += 1
+        if (r.status === 'followed') byBlock[r.block_type].followed += 1
+      }
+      setPlanAdherence({ total, followed, pct: total > 0 ? Math.round((followed / total) * 100) : 0, byBlock })
+    })
+    return () => { alive = false }
+  }, [ready, canPlan, from, to, cityId])
+
   const s = useMemo(() => rollup(rows), [rows])
   const p = useMemo(() => rollup(prevRows), [prevRows])
   const hasPrev = Boolean(from && to) && prevRows.length > 0
@@ -181,6 +206,74 @@ export default function Dashboard() {
     }
     return [...m.entries()].sort((a, b) => b[1].count - a[1].count)
   }, [rows, cityId])
+
+  // Flight-wise: group by flight_no, compute count + totalKm + avgKm per block
+  const byFlight = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      const fn = r.flight_no || '—'
+      const e = m.get(fn) || { flight: fn, count: 0, km: 0, blocks: {} }
+      e.count += 1
+      e.km += km(r)
+      e.blocks[r.block_type] = (e.blocks[r.block_type] || 0) + 1
+      m.set(fn, e)
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count).slice(0, 12)
+  }, [rows])
+
+  // Crew utilization: per crew member - ride count + km + unique ride dates
+  const byCrew = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      for (const rc of r.ride_crew || []) {
+        const name = rc.crew?.name
+        if (!name) continue
+        const e = m.get(name) || { name, rides: 0, km: 0, days: new Set() }
+        e.rides += 1
+        e.km += km(r)
+        if (r.ride_date) e.days.add(r.ride_date)
+        m.set(name, e)
+      }
+    }
+    return [...m.values()]
+      .map((e) => ({ ...e, days: e.days.size }))
+      .sort((a, b) => b.rides - a.rides)
+      .slice(0, 12)
+  }, [rows])
+
+  // Vehicle utilization: per vehicle - ride count + km
+  const byVehicle = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      const vno = r.is_adhoc_vehicle ? 'Ad-Hoc' : r.vehicle?.vehicle_no
+      if (!vno) continue
+      const e = m.get(vno) || { vehicle: vno, rides: 0, km: 0, days: new Set() }
+      e.rides += 1
+      e.km += km(r)
+      if (r.ride_date) e.days.add(r.ride_date)
+      m.set(vno, e)
+    }
+    const totalDays = from && to ? dateList(from, to).length : 0
+    return [...m.values()]
+      .map((e) => ({ ...e, days: e.days.size, utilPct: totalDays > 0 ? Math.round((e.days.size / totalDays) * 100) : null }))
+      .sort((a, b) => b.rides - a.rides)
+      .slice(0, 12)
+  }, [rows, from, to])
+
+  // Cancellation rate + reason breakdown
+  const cancelStats = useMemo(() => {
+    const cancelled = rows.filter((r) => r.status === 'cancelled')
+    const reasons = new Map()
+    for (const r of cancelled) {
+      const reason = r.cancel_reason || 'No reason'
+      reasons.set(reason, (reasons.get(reason) || 0) + 1)
+    }
+    return {
+      count: cancelled.length,
+      pct: rows.length > 0 ? ((cancelled.length / rows.length) * 100).toFixed(1) : '0.0',
+      reasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6),
+    }
+  }, [rows])
 
   const liveRows = useMemo(() => {
     const now = Date.now()
@@ -377,6 +470,112 @@ export default function Dashboard() {
               </div>
             )}
           </section>
+
+          {/* ── Flight-wise breakdown + KM per flight ─────────────── */}
+          {byFlight.length > 0 && (
+            <section className="dash-section">
+              <h2>Flight-wise</h2>
+              <div className="dash-analytics-table">
+                <div className="dat-head">
+                  <span>Flight</span><span>Rides</span><span>Total KM</span><span>Avg KM</span>
+                </div>
+                {byFlight.map((f) => (
+                  <div className="dat-row" key={f.flight}>
+                    <span className="dat-label">{f.flight}</span>
+                    <span>{f.count}</span>
+                    <span>{fmtKm(f.km)}</span>
+                    <span className="dash-hint">{fmtKm(f.count > 0 ? f.km / f.count : 0)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Crew utilization ──────────────────────────────────── */}
+          {byCrew.length > 0 && (
+            <section className="dash-section">
+              <h2>Crew utilization</h2>
+              <div className="dash-analytics-table">
+                <div className="dat-head">
+                  <span>Crew</span><span>Rides</span><span>Days active</span><span>KM</span>
+                </div>
+                {byCrew.map((c) => (
+                  <div className="dat-row" key={c.name}>
+                    <span className="dat-label">{c.name}</span>
+                    <span>{c.rides}</span>
+                    <span>{c.days}</span>
+                    <span className="dash-hint">{fmtKm(c.km)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Vehicle utilization ───────────────────────────────── */}
+          {byVehicle.length > 0 && (
+            <section className="dash-section">
+              <h2>Vehicle utilization</h2>
+              <div className="dash-analytics-table">
+                <div className="dat-head">
+                  <span>Vehicle</span><span>Rides</span><span>Days used</span><span>KM</span>
+                  {byVehicle[0]?.utilPct != null && <span>Util %</span>}
+                </div>
+                {byVehicle.map((v) => (
+                  <div className={`dat-row${v.vehicle === 'Ad-Hoc' ? ' dat-muted' : ''}`} key={v.vehicle}>
+                    <span className="dat-label">{v.vehicle}</span>
+                    <span>{v.rides}</span>
+                    <span>{v.days}</span>
+                    <span className="dash-hint">{fmtKm(v.km)}</span>
+                    {v.utilPct != null && <span className="dash-hint">{v.utilPct}%</span>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Cancellation rate + Plan adherence (side by side) ─── */}
+          <div className="dash-cols">
+            {cancelStats.count > 0 && (
+              <section className="dash-section dash-col-main">
+                <h2>Cancellation rate</h2>
+                <div className="dash-cancel-stat">
+                  <span className="dash-num" style={{ color: 'var(--danger)' }}>{cancelStats.count}</span>
+                  <span className="dash-name">cancelled &nbsp;·&nbsp; <span className="dash-hint">{cancelStats.pct}% of total</span></span>
+                </div>
+                {cancelStats.reasons.length > 0 && (
+                  <div className="dash-analytics-table" style={{ marginTop: 10 }}>
+                    {cancelStats.reasons.map(([reason, cnt]) => (
+                      <div className="dat-row" key={reason}>
+                        <span className="dat-label">{reason}</span>
+                        <span>{cnt}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {planAdherence && planAdherence.total > 0 && (
+              <section className="dash-section dash-col-side">
+                <h2>Plan adherence</h2>
+                <div className="dash-cancel-stat">
+                  <span className="dash-num" style={{ color: planAdherence.pct >= 80 ? 'var(--success)' : planAdherence.pct >= 50 ? '#f59e0b' : 'var(--danger)' }}>
+                    {planAdherence.pct}%
+                  </span>
+                  <span className="dash-name">{planAdherence.followed} of {planAdherence.total} followed</span>
+                </div>
+                <div className="dash-analytics-table" style={{ marginTop: 10 }}>
+                  {Object.entries(planAdherence.byBlock).map(([blk, d]) => (
+                    <div className="dat-row" key={blk}>
+                      <span className="dat-label">{blockLabel(blk)}</span>
+                      <span>{d.total > 0 ? Math.round((d.followed / d.total) * 100) : 0}%</span>
+                      <span className="dash-hint">{d.followed}/{d.total}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
         </>
       )}
     </div>

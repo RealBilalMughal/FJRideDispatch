@@ -500,15 +500,16 @@ export default function RidePlan() {
   }, [])
 
   // Returns minutes until start_time on planDate; null when not applicable.
-  const minutesUntil = useCallback((r) => {
-    if (!r.start_time || r.status !== 'pending') return null
-    const [hh, mm] = r.start_time.split(':').map(Number)
-    const target = new Date(Date.UTC(
-      ...planDate.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v),
-      hh - 5, mm  // planDate is PK date; convert HH:MM PK to UTC
-    ))
-    return Math.round((target - nowPk) / 60_000)
-  }, [planDate, nowPk])
+  // const minutesUntil = useCallback((r) => {
+  //   if (!r.start_time || r.status !== 'pending') return null
+  //   const [hh, mm] = r.start_time.split(':').map(Number)
+  //   const target = new Date(Date.UTC(
+  //     ...planDate.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v),
+  //     hh - 5, mm  // planDate is PK date; convert HH:MM PK to UTC
+  //   ))
+  //   return Math.round((target - nowPk) / 60_000)
+  // }, [planDate, nowPk])
+  const minutesUntil = useCallback(() => null, [])
 
   // Fetch a plan row, build the RideModal prefill, open the modal inline.
   const openPlanRideModal = async (planRowId, viaNo = false, skipReason = null) => {

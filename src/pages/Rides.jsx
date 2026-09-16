@@ -20,6 +20,7 @@ import {
   Sparkles,
   Trash2,
   Undo2,
+  Wifi,
   X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -80,6 +81,7 @@ import Pagination from '../components/data/Pagination'
 import StatCards from '../components/data/StatCards'
 import { buildPlanInitial } from '../lib/planImport'
 import './Rides.css'
+import './Flights.css'
 
 const PAGE_SIZE = 15
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
@@ -223,6 +225,49 @@ export default function Rides() {
       .select('id, ref_no, name')
       .then(({ data }) => setDrivers(data ?? []))
   }, [canView])
+
+  // Live flight status — fetched on demand only (quota-safe: 100 req/month).
+  // keyed by flight_no (uppercased), cached 30 min in-memory.
+  const FLIGHT_STATUS_TTL = 30 * 60 * 1000
+  const [rideFlightStatus, setRideFlightStatus] = useState({})
+  const flightCheckingRef = useRef(new Set())
+
+  const fetchFlightStatus = async (flightNo) => {
+    if (!flightNo) return
+    const key = flightNo.trim().toUpperCase()
+    if (flightCheckingRef.current.has(key)) return
+    const cached = rideFlightStatus[key]
+    if (cached && Date.now() - cached.checkedAt < FLIGHT_STATUS_TTL) return
+    flightCheckingRef.current.add(key)
+    try {
+      const { data, error } = await supabase.functions.invoke('flight-info', { body: { flight_iata: key } })
+      if (error || !data) return
+      setRideFlightStatus((prev) => ({
+        ...prev,
+        [key]: {
+          found: data.found,
+          status: data.status,
+          depDelay: data.departure?.delay,
+          arrDelay: data.arrival?.delay,
+          depTime: data.departure?.time,
+          arrTime: data.arrival?.time,
+          checkedAt: Date.now(),
+        },
+      }))
+    } finally {
+      flightCheckingRef.current.delete(key)
+    }
+  }
+
+  const checkAllVisibleFlights = () => {
+    const seen = new Set()
+    for (const r of pageRows) {
+      if (r.flight_no && (r.block_type === 'pickup' || r.block_type === 'dropoff')) {
+        const key = r.flight_no.trim().toUpperCase()
+        if (!seen.has(key)) { seen.add(key); fetchFlightStatus(r.flight_no) }
+      }
+    }
+  }
 
   // Ride Plan hand-off: /rides?planRow=<id> opens the Add Ride modal
   // pre-filled from that plan row (see src/pages/RidePlan.jsx's "Follow").
@@ -598,6 +643,34 @@ export default function Rides() {
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
     { key: 'dutysheet', header: 'Duty Sheet', render: (r) => fmtDate(r.duty_sheet_display) },
     { key: 'fno', header: 'Flight', render: (r) => r.flight_no || '—' },
+    {
+      key: 'fstatus',
+      header: 'Flight Status',
+      render: (r) => {
+        if (!r.flight_no || (r.block_type !== 'pickup' && r.block_type !== 'dropoff')) return null
+        const key = r.flight_no.trim().toUpperCase()
+        const s = rideFlightStatus[key]
+        if (!s) {
+          return (
+            <button
+              className="flight-check-btn"
+              title="Check live flight status"
+              onClick={(e) => { e.stopPropagation(); fetchFlightStatus(r.flight_no) }}
+            >
+              <Wifi size={12} />
+            </button>
+          )
+        }
+        if (!s.found) return <span className="fl-chip fl-muted">Not found</span>
+        const delay = r.block_type === 'pickup' ? s.depDelay : s.arrDelay
+        if (s.status === 'cancelled') return <span className="fl-chip fl-red">Cancelled</span>
+        if (s.status === 'diverted')  return <span className="fl-chip fl-orange">Diverted</span>
+        if (s.status === 'active')    return <span className="fl-chip fl-green">In air{delay > 0 ? ` +${delay}m` : ''}</span>
+        if (s.status === 'landed')    return <span className="fl-chip fl-blue">Landed{delay > 0 ? ` +${delay}m` : ''}</span>
+        if (delay > 0)                return <span className="fl-chip fl-orange">Delayed +{delay}m</span>
+        return <span className="fl-chip fl-muted">On time</span>
+      },
+    },
     { key: 'fcode', header: 'Code', render: (r) => r.flight_code || '—' },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
     {
@@ -743,6 +816,13 @@ export default function Rides() {
         <div className="page-actions">
           <button className="icon-btn" onClick={fetchRows} title="Refresh">
             <RefreshCw size={15} />
+          </button>
+          <button
+            className="btn btn-ghost btn-square btn-sm"
+            onClick={checkAllVisibleFlights}
+            title="Check live flight status for all visible pickup/dropoff rides"
+          >
+            <Wifi size={14} /> Flight Status
           </button>
           <button
             className={`btn btn-ghost btn-square btn-sm${summaryOpen ? ' on' : ''}`}

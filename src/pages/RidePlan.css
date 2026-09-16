@@ -229,3 +229,186 @@
     overflow: hidden;
   }
 }
+
+/* ── View-mode toggle (List / Timeline) ─────────────────────────── */
+.rpt-viewswitch {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.rpt-viewswitch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+  white-space: nowrap;
+}
+
+.rpt-viewswitch button + button {
+  border-left: 1px solid var(--border);
+}
+
+.rpt-viewswitch button:hover {
+  color: var(--heading);
+  background: var(--surface);
+}
+
+.rpt-viewswitch button.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ── Vehicle Timeline ────────────────────────────────────────────── */
+.rp-timeline-wrap {
+  padding-top: 8px;
+  overflow-x: auto;
+}
+
+.rpt-wrap {
+  min-width: 700px;
+  font-size: 12px;
+}
+
+/* Axis header row */
+.rpt-axis {
+  display: flex;
+  align-items: flex-end;
+  height: 28px;
+  margin-bottom: 2px;
+}
+
+/* Vehicle name column – shared by axis spacer and lane labels */
+.rpt-vcol {
+  flex: 0 0 110px;
+  width: 110px;
+  padding-right: 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The horizontal timeline track – relative so bars can be absolute */
+.rpt-track {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+/* Hour labels on the axis */
+.rpt-hour {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  user-select: none;
+  bottom: 2px;
+}
+
+/* Each vehicle row */
+.rpt-lane {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  border-top: 1px solid var(--border);
+}
+
+.rpt-lane:last-of-type {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.rpt-lane .rpt-vcol {
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: var(--body);
+}
+
+.rpt-lane .rpt-track {
+  background: var(--surface);
+}
+
+/* Vertical grid lines at every hour */
+.rpt-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+/* Ride bars */
+.rpt-bar {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+  cursor: default;
+  min-width: 8px;
+  overflow: hidden;
+  transition: opacity 0.15s;
+}
+
+.rpt-bar:hover {
+  opacity: 1 !important;
+  filter: brightness(1.1);
+  z-index: 2;
+}
+
+.rpt-bar-text {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* Legend row below the lanes */
+.rpt-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 8px 0 16px 110px;
+}
+
+.rpt-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--body);
+}
+
+.rpt-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.rpt-legend-muted {
+  color: var(--muted);
+  font-size: 11px;
+}

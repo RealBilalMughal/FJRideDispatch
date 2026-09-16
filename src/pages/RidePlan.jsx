@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, Eye, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -170,6 +170,103 @@ function StatusCell({ row }) {
   return <span className="status-text off">Pending</span>
 }
 
+// ─── Vehicle Timeline (Day View) ─────────────────────────────────────────────
+function PlanTimeline({ rows }) {
+  const toMins = (t) => {
+    if (!t) return null
+    const [h, m] = t.split(':').map(Number)
+    return isNaN(h) || isNaN(m) ? null : h * 60 + m
+  }
+
+  const planRows = rows.filter((r) => !r.isExtra && r.start_time && r.end_time)
+
+  if (planRows.length === 0) {
+    return <p className="secondary" style={{ padding: '24px 0' }}>No plan rows with time data to display.</p>
+  }
+
+  const allMins = planRows.flatMap((r) => [toMins(r.start_time), toMins(r.end_time)].filter((v) => v != null))
+  const rangeStart = Math.max(0, Math.min(...allMins) - 30)
+  const rangeEnd = Math.min(1440, Math.max(...allMins) + 60)
+  const rangeWidth = rangeEnd - rangeStart || 1
+
+  const leftPct = (m) => `${((m - rangeStart) / rangeWidth * 100).toFixed(3)}%`
+  const widthPct = (s, e) => `${Math.max(1.2, (e - s) / rangeWidth * 100).toFixed(3)}%`
+
+  const hours = []
+  for (let h = Math.ceil(rangeStart / 60); h <= Math.floor(rangeEnd / 60); h++) {
+    const pos = ((h * 60 - rangeStart) / rangeWidth * 100)
+    if (pos >= 0 && pos <= 100) hours.push({ h, pos })
+  }
+
+  const groups = {}
+  for (const r of planRows) {
+    const key = r.car?.trim() || 'Unassigned'
+    if (!groups[key]) groups[key] = []
+    groups[key].push(r)
+  }
+  const sortedVehicles = Object.keys(groups).sort((a, b) => {
+    if (a === 'Unassigned') return 1
+    if (b === 'Unassigned') return -1
+    return a.localeCompare(b)
+  })
+
+  const BAR_COLORS = { deadhead: 'var(--warning)', pickup: 'var(--accent)', dropoff: 'var(--success)', return_leg: '#8b5cf6' }
+  const BAR_SHORT  = { deadhead: 'DH', pickup: 'PU', dropoff: 'DO', return_leg: 'RL' }
+
+  return (
+    <div className="rpt-wrap">
+      <div className="rpt-axis">
+        <div className="rpt-vcol" />
+        <div className="rpt-track">
+          {hours.map(({ h, pos }) => (
+            <span key={h} className="rpt-hour" style={{ left: `${pos.toFixed(3)}%` }}>
+              {String(h).padStart(2, '0')}:00
+            </span>
+          ))}
+        </div>
+      </div>
+      {sortedVehicles.map((vehicle) => (
+        <div key={vehicle} className="rpt-lane">
+          <div className="rpt-vcol" title={vehicle}>{vehicle}</div>
+          <div className="rpt-track">
+            {hours.map(({ h, pos }) => (
+              <div key={h} className="rpt-grid" style={{ left: `${pos.toFixed(3)}%` }} />
+            ))}
+            {groups[vehicle].map((r) => {
+              const s = toMins(r.start_time)
+              const e = toMins(r.end_time)
+              if (s == null || e == null) return null
+              const opacity = r.status === 'followed' ? 1 : r.status === 'skipped' ? 0.3 : 0.65
+              const strikethrough = r.status === 'skipped'
+              return (
+                <div
+                  key={r.id}
+                  className="rpt-bar"
+                  style={{ left: leftPct(s), width: widthPct(s, e), background: BAR_COLORS[r.block_type] || 'var(--muted)', opacity }}
+                  title={`${blockLabel(r.block_type)}${r.flight_no ? ' · ' + r.flight_no : ''}\n${r.start_time} – ${r.end_time}\nStatus: ${r.status}`}
+                >
+                  <span className="rpt-bar-text" style={strikethrough ? { textDecoration: 'line-through' } : undefined}>
+                    {BAR_SHORT[r.block_type] || '?'}{r.flight_no ? ' ' + r.flight_no : ''}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="rpt-legend">
+        {Object.entries(BAR_COLORS).map(([bt, color]) => (
+          <span key={bt} className="rpt-legend-item">
+            <span className="rpt-legend-dot" style={{ background: color }} />
+            {blockLabel(bt)}
+          </span>
+        ))}
+        <span className="rpt-legend-item rpt-legend-muted">Full opacity = Followed · Faded = Pending · Dimmer = Cancelled</span>
+      </div>
+    </div>
+  )
+}
+
 export default function RidePlan() {
   const { can, profile } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
@@ -191,6 +288,7 @@ export default function RidePlan() {
   const [noReasonFor, setNoReasonFor] = useState(null)
   const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'timeline'
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
@@ -1071,6 +1169,14 @@ export default function RidePlan() {
             <button className="icon-btn" onClick={fetchRows} title="Refresh">
               <RefreshCw size={15} />
             </button>
+            <div className="rpt-viewswitch">
+              <button className={viewMode === 'list' ? 'on' : ''} onClick={() => setViewMode('list')}>
+                <LayoutList size={13} /> List
+              </button>
+              <button className={viewMode === 'timeline' ? 'on' : ''} onClick={() => setViewMode('timeline')}>
+                <GanttChart size={13} /> Timeline
+              </button>
+            </div>
             <button
               className={`filter-toggle${reportOpen ? ' on' : ''}`}
               onClick={() => setReportOpen((v) => !v)}
@@ -1240,27 +1346,33 @@ export default function RidePlan() {
         </div>
       )}
 
-      <div
-        ref={tableWrapRef}
-        className="rp-plan-table"
-        style={tableMaxH ? { '--rp-table-max-h': `${tableMaxH}px` } : undefined}
-      >
-        <DataTable
-          columns={columns}
-          rows={filteredRows}
-          rowKey={(r) => r.id}
-          loading={loading}
-          emptyLabel="No plan uploaded for this date"
-          rowClassName={(r) => {
-            if (r.status === 'followed') return 'rp-row-followed'
-            if (r.status === 'skipped') return 'rp-row-cancelled'
-            const mins = minutesUntil(r)
-            if (mins !== null && mins <= 90 && mins > 0) return 'rp-row-urgent'
-            if (mins !== null && mins <= 0) return 'rp-row-overdue'
-            return ''
-          }}
-        />
-      </div>
+      {viewMode === 'timeline' ? (
+        <div className="rp-timeline-wrap">
+          <PlanTimeline rows={filteredRows} />
+        </div>
+      ) : (
+        <div
+          ref={tableWrapRef}
+          className="rp-plan-table"
+          style={tableMaxH ? { '--rp-table-max-h': `${tableMaxH}px` } : undefined}
+        >
+          <DataTable
+            columns={columns}
+            rows={filteredRows}
+            rowKey={(r) => r.id}
+            loading={loading}
+            emptyLabel="No plan uploaded for this date"
+            rowClassName={(r) => {
+              if (r.status === 'followed') return 'rp-row-followed'
+              if (r.status === 'skipped') return 'rp-row-cancelled'
+              const mins = minutesUntil(r)
+              if (mins !== null && mins <= 90 && mins > 0) return 'rp-row-urgent'
+              if (mins !== null && mins <= 0) return 'rp-row-overdue'
+              return ''
+            }}
+          />
+        </div>
+      )}
 
       {importOpen && (
         <ImportModal

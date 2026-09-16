@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { CheckCircle2, Circle, Download, Eye, Gauge, Trash2 } from 'lucide-react'
+import { CheckCircle2, Circle, Download, Eye, Gauge, MapPin, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
-import { pkToday } from '../lib/time'
+import { pkToday, fmtTimeOnly12 } from '../lib/time'
 import { downloadCsv, toCsv } from '../lib/csv'
 import { useSelection } from '../lib/useSelection'
 import Modal from '../components/Modal'
@@ -21,7 +21,8 @@ import './Odometer.css'
 
 const PAGE_SIZE = 20
 const SELECT =
-  'id, ref_no, log_date, km_reading, daily_km, image_url, is_verified, notes, city_id, vehicle_id, verified_at, created_at, ' +
+  'id, ref_no, log_date, km_reading, daily_km, image_url, is_verified, notes, city_id, vehicle_id, ' +
+  'verified_at, created_at, reading_type, submit_lat, submit_lng, ' +
   'vehicle:vehicles(id, vehicle_no), ' +
   'recorder:profiles!vehicle_odometer_logs_recorded_by_fkey(id, full_name), ' +
   'verifier:profiles!vehicle_odometer_logs_verified_by_fkey(id, full_name)'
@@ -210,8 +211,23 @@ export default function Odometer() {
 
   const columns = [
     { key: 'ref_no', header: 'ID', render: (r) => <span className="primary">{r.ref_no}</span> },
-    { key: 'log_date', header: 'Date', render: (r) => fmtDate(r.log_date) },
+    {
+      key: 'log_date', header: 'Date / Time',
+      render: (r) => (
+        <div>
+          <div>{fmtDate(r.log_date)}</div>
+          <div className="secondary">{r.created_at ? fmtTimeOnly12(r.created_at) : '—'}</div>
+        </div>
+      ),
+    },
     { key: 'vehicle', header: 'Vehicle', render: (r) => r.vehicle?.vehicle_no ?? '—' },
+    {
+      key: 'type', header: 'Type',
+      render: (r) => {
+        const map = { daily: '—', backup: 'Backup', closing: 'Closing', return: 'Return' }
+        return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{map[r.reading_type] ?? r.reading_type}</span>
+      },
+    },
     { key: 'recorder', header: 'Recorded By', render: (r) => r.recorder?.full_name ?? '—' },
     {
       key: 'km_reading', header: 'KM Reading', align: 'right',
@@ -220,6 +236,10 @@ export default function Odometer() {
     {
       key: 'daily_km', header: 'Daily KM', align: 'right',
       render: (r) => r.daily_km != null ? r.daily_km.toLocaleString() : '—',
+    },
+    {
+      key: 'location', header: 'Location',
+      render: (r) => <LocationCell lat={r.submit_lat} lng={r.submit_lng} />,
     },
     {
       key: 'verified', header: 'Status',
@@ -445,5 +465,38 @@ export default function Odometer() {
         onClose={() => setPending(null)}
       />
     </div>
+  )
+}
+
+function LocationCell({ lat, lng }) {
+  const [open, setOpen] = useState(false)
+  if (!lat || !lng) return <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>
+  const mapSrc =
+    `https://www.openstreetmap.org/export/embed.html` +
+    `?bbox=${lng - 0.006},${lat - 0.006},${lng + 0.006},${lat + 0.006}` +
+    `&layer=mapnik&marker=${lat},${lng}`
+  return (
+    <>
+      <button
+        type="button"
+        className="odo-loc-btn"
+        title={`${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`}
+        onClick={(e) => { e.stopPropagation(); setOpen(true) }}
+      >
+        <MapPin size={13} />
+      </button>
+      {open && (
+        <Modal open onClose={() => setOpen(false)} title="Submit Location" width={480}>
+          <iframe
+            title="submit-location-map"
+            src={mapSrc}
+            style={{ width: '100%', height: 320, border: 0, borderRadius: 'var(--r-md)', display: 'block' }}
+          />
+          <p style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8, textAlign: 'center' }}>
+            {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}
+          </p>
+        </Modal>
+      )}
+    </>
   )
 }

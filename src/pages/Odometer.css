@@ -22,3 +22,21 @@
   flex-direction: column;
   gap: 0;
 }
+
+/* location pin icon button in the table */
+.odo-loc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+}
+.odo-loc-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

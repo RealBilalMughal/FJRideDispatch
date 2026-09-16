@@ -203,11 +203,37 @@
   padding: 12px;
 }
 
-/* ── backup link ──────────────────────────────────────────────── */
+/* ── action buttons below form ────────────────────────────────── */
+.drv-bottom-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .drv-backup-btn {
   width: 100%;
   justify-content: center;
-  margin-top: 10px;
+}
+
+.drv-return-btn {
+  display: inline-flex;
+  gap: 6px;
+  color: var(--warning) !important;
+  border-color: rgba(183, 121, 31, 0.3) !important;
+}
+.drv-return-btn:hover {
+  background: rgba(183, 121, 31, 0.06) !important;
+}
+
+/* ── geo location bar ──────────────────────────────────────────── */
+.drv-geo-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 0 0;
 }
 
 /* ── backup section labels ────────────────────────────────────── */

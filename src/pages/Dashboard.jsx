@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Car,
   Milestone,
   Moon,
   PlaneLanding,
@@ -62,10 +63,12 @@ function rollup(rows) {
   let crew = 0
   let totalKm = 0
   let extraKm = 0 // Block KM Buffer (Pickup / Drop Off) - counted as empty running
+  let adhoc = 0
   for (const r of rows) {
     totalKm += km(r)
     extraKm += extraKmOf(r)
     crew += displayCrewCount(r.ride_crew, r.block_type)
+    if (r.is_adhoc_vehicle) adhoc += 1
     if (blk[r.block_type]) {
       blk[r.block_type].count += 1
       blk[r.block_type].km += km(r)
@@ -75,11 +78,11 @@ function rollup(rows) {
       shift[r.shift].km += km(r)
     }
   }
-  return { total: rows.length, totalKm, extraKm, crew, blk, shift }
+  return { total: rows.length, totalKm, extraKm, crew, adhoc, blk, shift }
 }
 
 const RANGE_SELECT =
-  'block_type, distance_km, extra_km, status, count_km, shift, ride_date, start_at, city_id, city:cities(name), ride_crew(seq)'
+  'block_type, distance_km, extra_km, status, count_km, shift, ride_date, start_at, city_id, is_adhoc_vehicle, city:cities(name), ride_crew(seq)'
 const LIVE_SELECT =
   'id, ref_no, block_type, start_at, end_at, vehicle:vehicles(vehicle_no), ride_crew(seq, crew:crew(name))'
 
@@ -116,7 +119,7 @@ export default function Dashboard() {
         const prevTo = addDays(from, -1)
         const prevFrom = addDays(prevTo, -(span - 1))
         prev = scope(
-          supabase.from('rides').select('block_type, distance_km, extra_km, status, count_km, ride_crew(seq)'),
+          supabase.from('rides').select('block_type, distance_km, extra_km, status, count_km, is_adhoc_vehicle, ride_crew(seq)'),
         )
           .gte('ride_date', prevFrom)
           .lte('ride_date', prevTo)
@@ -273,6 +276,13 @@ export default function Dashboard() {
               label="Deadhead ratio"
               sub={`${fmtKm(emptyKm)} run empty${s.extraKm > 0 ? ' (incl. buffer)' : ''}`}
               trend={hasPrev ? pctChange(deadheadPct, prevDeadheadPct) : null}
+            />
+            <Metric
+              icon={Car}
+              value={num(s.adhoc)}
+              label="Ad-Hoc rides"
+              sub={s.total > 0 ? `${((s.adhoc / s.total) * 100).toFixed(1)}% of total` : undefined}
+              trend={hasPrev ? pctChange(s.adhoc, p.adhoc) : null}
             />
           </div>
 

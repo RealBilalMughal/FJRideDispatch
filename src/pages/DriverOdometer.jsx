@@ -41,10 +41,21 @@ function useGeo() {
     navigator.geolocation.getCurrentPosition(
       (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
-      { timeout: 10000, maximumAge: 120000 },
+      { timeout: 10000, maximumAge: 60000 },
     )
   }, [])
   return coords
+}
+
+function fetchGeoNow() {
+  return new Promise((resolve) => {
+    if (!navigator?.geolocation) { resolve(null); return }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 8000, maximumAge: 30000 },
+    )
+  })
 }
 
 export default function DriverOdometer() {
@@ -165,6 +176,9 @@ export default function DriverOdometer() {
     e.preventDefault()
     setSaving(true)
 
+    // fetch fresh GPS at submit time; fall back to already-loaded coords
+    const submitCoords = await fetchGeoNow() ?? geoCoords
+
     // ── BACKUP MODE ────────────────────────────────────────────────
     if (mode === 'backup') {
       const bVehicleNo = backupVehicleNo.trim()
@@ -203,7 +217,7 @@ export default function DriverOdometer() {
         image_url: cUrl, reading_type: 'closing',
         notes: `Closing KM — driver on backup: ${backupVehicle?.vehicle_no ?? bVehicleNo}`,
         recorded_by: profile.id, is_verified: false,
-        submit_lat: geoCoords?.lat ?? null, submit_lng: geoCoords?.lng ?? null,
+        submit_lat: submitCoords?.lat ?? null, submit_lng: submitCoords?.lng ?? null,
       })
       if (e1) { toast.error('Failed to save original vehicle closing KM'); setSaving(false); return }
 
@@ -216,7 +230,7 @@ export default function DriverOdometer() {
           image_url: bUrl, reading_type: 'backup',
           notes: `Backup vehicle (original driver: ${vehicle.vehicle_no})`,
           recorded_by: profile.id, is_verified: false,
-          submit_lat: geoCoords?.lat ?? null, submit_lng: geoCoords?.lng ?? null,
+          submit_lat: submitCoords?.lat ?? null, submit_lng: submitCoords?.lng ?? null,
         })
         if (e2) { toast.error('Closing saved but backup vehicle reading failed'); setSaving(false); return }
       }
@@ -248,7 +262,7 @@ export default function DriverOdometer() {
         image_url: imgUrl, reading_type: readingType,
         notes: mode === 'return' ? 'Vehicle returned — end of day reading' : null,
         recorded_by: profile.id, is_verified: false,
-        submit_lat: geoCoords?.lat ?? null, submit_lng: geoCoords?.lng ?? null,
+        submit_lat: submitCoords?.lat ?? null, submit_lng: submitCoords?.lng ?? null,
       })
       if (error) { toast.error('Failed to save reading'); setSaving(false); return }
 

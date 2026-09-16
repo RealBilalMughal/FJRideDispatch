@@ -1,11 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Camera, CheckCircle2, LogOut, MapPin, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Camera, CheckCircle2, LogOut, MapPin, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { fmtDate } from '../lib/format'
-import { pkToday, addDays, fmtTimeOnly12 } from '../lib/time'
+import { pkToday, addDays } from '../lib/time'
 import './DriverOdometer.css'
+
+// reading_type values:
+// daily        → normal end-of-day
+// closing      → vehicle broke down, closing KM
+// backup_start → backup vehicle opening reading
+// backup_end   → backup vehicle closing reading
+// return_start → original vehicle restarted, opening reading
+// return_end   → original vehicle end-of-day after return
 
 async function uploadPhoto(storageId, logDate, suffix, file) {
   const ext = file.name.split('.').pop()
@@ -16,35 +24,22 @@ async function uploadPhoto(storageId, logDate, suffix, file) {
   return { url: publicUrl, error: null }
 }
 
-async function getPrevReading(vehicleId, upToDate) {
+async function getPrevDayReading(vehicleId, beforeDate) {
   const { data } = await supabase
     .from('vehicle_odometer_logs').select('km_reading')
-    .eq('vehicle_id', vehicleId).lte('log_date', upToDate)
+    .eq('vehicle_id', vehicleId).lt('log_date', beforeDate)
     .order('log_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(1).maybeSingle()
   return data?.km_reading ?? null
 }
 
-async function checkExisting(vehicleId, logDate, recordedBy, readingType = 'daily') {
+async function getTodayReadingKm(vehicleId, logDate, recordedBy, readingType) {
   const { data } = await supabase
-    .from('vehicle_odometer_logs').select('id')
+    .from('vehicle_odometer_logs').select('km_reading')
     .eq('vehicle_id', vehicleId).eq('log_date', logDate)
     .eq('recorded_by', recordedBy).eq('reading_type', readingType).maybeSingle()
-  return Boolean(data)
-}
-
-function useGeo() {
-  const [coords, setCoords] = useState(null) // {lat, lng}
-  useEffect(() => {
-    if (!navigator?.geolocation) return
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { timeout: 10000, maximumAge: 60000 },
-    )
-  }, [])
-  return coords
+  return data?.km_reading ?? null
 }
 
 function fetchGeoNow() {
@@ -58,6 +53,41 @@ function fetchGeoNow() {
   })
 }
 
+function useGeo() {
+  const [coords, setCoords] = useState(null)
+  useEffect(() => {
+    if (!navigator?.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { timeout: 10000, maximumAge: 60000 },
+    )
+  }, [])
+  return coords
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = (e) => resolve(e.target.result.split(',')[1])
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+}
+
+async function readOdometerFromImage(file) {
+  try {
+    const base64 = await fileToBase64(file)
+    const { data, error } = await supabase.functions.invoke('read-odometer', {
+      body: { image_base64: base64, mime_type: file.type || 'image/jpeg' },
+    })
+    if (error) return null
+    return data?.km ?? null
+  } catch {
+    return null
+  }
+}
+
 export default function DriverOdometer() {
   const { profile, signOut } = useAuth()
   const geoCoords = useGeo()
@@ -67,37 +97,34 @@ export default function DriverOdometer() {
   const [logDate, setLogDate]               = useState(pkToday())
   const [prevDay, setPrevDay]               = useState(false)
 
-  // mode: 'normal' | 'backup' | 'return'
-  const [mode, setMode] = useState('normal')
+  // what's already saved in DB for today
+  const [dbState, setDbState] = useState({
+    hasDaily: false, hasClosing: false,
+    hasBackupStart: false, hasBackupEnd: false,
+    hasReturnStart: false, hasReturnEnd: false,
+    backupVehicleId: null, backupVehicleNo: null,
+  })
 
-  // ── normal / return mode ───────────────────────────────────────
+  // current UI mode — what form to show
+  // 'idle' | 'breakdown' | 'backup_start' | 'backup_end' | 'return_start'
+  const [uiMode, setUiMode] = useState('idle')
+
+  // shared form fields (reset on mode change)
   const [kmReading, setKmReading]       = useState('')
   const [imageFile, setImageFile]       = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
-  const normalFileRef = useRef(null)
+  const fileRef = useRef(null)
 
-  // ── backup mode ────────────────────────────────────────────────
-  // section 1 — original vehicle closing KM (top)
-  const [closingKm, setClosingKm]               = useState('')
-  const [closingImageFile, setClosingImageFile] = useState(null)
-  const [closingImagePreview, setClosingImagePreview] = useState(null)
-  const closingFileRef = useRef(null)
+  // AI odometer reading
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiRead, setAiRead]       = useState(null) // km value AI detected
 
-  // section 2 — backup vehicle (bottom)
-  const [backupVehicleNo, setBackupVehicleNo]   = useState('')
-  const [backupVehicle, setBackupVehicle]       = useState(null)
-  const [backupLooking, setBackupLooking]       = useState(false)
-  const [backupKm, setBackupKm]                 = useState('')
-  const [backupImageFile, setBackupImageFile]   = useState(null)
-  const [backupImagePreview, setBackupImagePreview] = useState(null)
-  const backupFileRef = useRef(null)
+  // backup vehicle lookup (backup_start mode)
+  const [backupInput, setBackupInput]   = useState('')
+  const [backupVehicle, setBackupVehicle] = useState(null)
+  const [backupLooking, setBackupLooking] = useState(false)
 
   const [saving, setSaving] = useState(false)
-
-  // ── today's status ─────────────────────────────────────────────
-  const [todayDone, setTodayDone]       = useState(false) // 'daily' reading
-  const [closingDone, setClosingDone]   = useState(false) // 'closing' reading
-  const [returnDone, setReturnDone]     = useState(false) // 'return' reading
 
   // ── load assigned vehicle ──────────────────────────────────────
   useEffect(() => {
@@ -118,171 +145,204 @@ export default function DriverOdometer() {
     load()
   }, [profile?.phone])
 
-  useEffect(() => {
-    setLogDate(prevDay ? addDays(pkToday(), -1) : pkToday())
-  }, [prevDay])
-
+  // ── night shift auto-detect ────────────────────────────────────
   useEffect(() => {
     const pkHour = new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()
     if (pkHour >= 23) setPrevDay(true)
   }, [])
+  useEffect(() => { setLogDate(prevDay ? addDays(pkToday(), -1) : pkToday()) }, [prevDay])
 
-  useEffect(() => {
-    if (!vehicle?.id || !profile?.id) { setTodayDone(false); setClosingDone(false); setReturnDone(false); return }
-    Promise.all([
-      checkExisting(vehicle.id, logDate, profile.id, 'daily'),
-      checkExisting(vehicle.id, logDate, profile.id, 'closing'),
-      checkExisting(vehicle.id, logDate, profile.id, 'return'),
-    ]).then(([d, c, r]) => { setTodayDone(d); setClosingDone(c); setReturnDone(r) })
-  }, [vehicle?.id, logDate, profile?.id])
+  // ── load today's DB state ──────────────────────────────────────
+  const loadState = async () => {
+    if (!vehicle?.id || !profile?.id) return
+    const { data } = await supabase
+      .from('vehicle_odometer_logs')
+      .select('id, vehicle_id, reading_type, vehicle:vehicles(vehicle_no)')
+      .eq('log_date', logDate).eq('recorded_by', profile.id)
+    const rows = data ?? []
+    const hasFor = (type, vid) => rows.some(r => r.reading_type === type && r.vehicle_id === vid)
+    const backupRow = rows.find(r => r.reading_type === 'backup_start')
+    setDbState({
+      hasDaily:       hasFor('daily',        vehicle.id),
+      hasClosing:     hasFor('closing',      vehicle.id),
+      hasBackupStart: !!backupRow,
+      hasBackupEnd:   rows.some(r => r.reading_type === 'backup_end'),
+      hasReturnStart: hasFor('return_start', vehicle.id),
+      hasReturnEnd:   hasFor('return_end',   vehicle.id),
+      backupVehicleId: backupRow?.vehicle_id ?? null,
+      backupVehicleNo: backupRow?.vehicle?.vehicle_no ?? null,
+    })
+  }
+  useEffect(() => { loadState() }, [vehicle?.id, logDate, profile?.id])
+
+  // ── phase — derived from DB state ─────────────────────────────
+  // done | return_active | backup_complete | on_backup | breakdown_done | normal
+  const phase = useMemo(() => {
+    if (dbState.hasDaily || dbState.hasReturnEnd)               return 'done'
+    if (dbState.hasReturnStart)                                  return 'return_active'
+    if (dbState.hasBackupEnd && !dbState.hasReturnStart)         return 'backup_complete'
+    if (dbState.hasBackupStart && !dbState.hasBackupEnd)         return 'on_backup'
+    if (dbState.hasClosing)                                      return 'breakdown_done'
+    return 'normal'
+  }, [dbState])
 
   // ── backup vehicle lookup ──────────────────────────────────────
   useEffect(() => {
-    const trimmed = backupVehicleNo.trim()
-    if (!trimmed) { setBackupVehicle(null); return }
+    const t = backupInput.trim()
+    if (!t) { setBackupVehicle(null); return }
     const timer = setTimeout(async () => {
       setBackupLooking(true)
       const { data } = await supabase.from('vehicles').select('id, vehicle_no, city_id')
-        .ilike('vehicle_no', `%${trimmed}%`).limit(1).maybeSingle()
+        .ilike('vehicle_no', `%${t}%`).limit(1).maybeSingle()
       setBackupLooking(false)
       setBackupVehicle(data ?? null)
     }, 500)
     return () => clearTimeout(timer)
-  }, [backupVehicleNo])
+  }, [backupInput])
 
-  const enterBackup = () => setMode('backup')
-  const enterReturn = () => { setMode('return'); setKmReading(''); setImageFile(null); setImagePreview(null) }
-  const exitSpecial  = () => {
-    setMode('normal')
-    setBackupVehicleNo(''); setBackupVehicle(null)
-    setBackupKm(''); setBackupImageFile(null); setBackupImagePreview(null)
-    setClosingKm(''); setClosingImageFile(null); setClosingImagePreview(null)
+  // ── form helpers ───────────────────────────────────────────────
+  const resetForm = () => {
+    setKmReading(''); setImageFile(null); setImagePreview(null)
+    setAiRead(null); setAiLoading(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+  const enterMode = (mode) => {
+    resetForm()
+    setBackupInput(''); setBackupVehicle(null)
+    setUiMode(mode)
+  }
+  const backToIdle = () => { resetForm(); setUiMode('idle') }
+
+  // ── photo pick + AI read ───────────────────────────────────────
+  const handlePhotoFile = async (file) => {
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+    setAiRead(null)
+    setAiLoading(true)
+    const km = await readOdometerFromImage(file)
+    setAiLoading(false)
+    if (km != null) {
+      setKmReading(String(Math.round(km)))
+      setAiRead(km)
+    }
   }
 
-  const pickPhoto = (setFile, setPreview) => (e) => {
-    const file = e.target.files?.[0]; if (!file) return
-    setFile(file); setPreview(URL.createObjectURL(file))
-  }
-  const dropPhoto = (setFile, setPreview) => (e) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files?.[0]; if (!file) return
-    setFile(file); setPreview(URL.createObjectURL(file))
-  }
-  const clearPhoto = (setFile, setPreview, ref) => () => {
-    setFile(null); setPreview(null); if (ref.current) ref.current.value = ''
-  }
-
+  // ── submit ─────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!vehicle?.id) { toast.error('No vehicle assigned'); return }
     setSaving(true)
+    const geo = await fetchGeoNow() ?? geoCoords
 
-    // fetch fresh GPS at submit time; fall back to already-loaded coords
-    const submitCoords = await fetchGeoNow() ?? geoCoords
-
-    // ── BACKUP MODE ────────────────────────────────────────────────
-    if (mode === 'backup') {
-      const bVehicleNo = backupVehicleNo.trim()
-      const bKm = parseFloat(backupKm)
-      const cKm = parseFloat(closingKm)
-
-      if (!vehicle)                            { toast.error('Your assigned vehicle could not be found'); setSaving(false); return }
-      if (!Number.isFinite(cKm) || cKm < 0)   { toast.error('Enter closing KM for your original vehicle'); setSaving(false); return }
-      if (!bVehicleNo)                         { toast.error('Enter the backup vehicle number'); setSaving(false); return }
-      if (!Number.isFinite(bKm) || bKm < 0)   { toast.error('Enter backup vehicle KM reading'); setSaving(false); return }
-      if (!backupImageFile)                    { toast.error('Backup vehicle photo is required'); setSaving(false); return }
-
-      if (await checkExisting(vehicle.id, logDate, profile.id, 'closing')) {
-        toast.error('Original vehicle closing KM already recorded for today'); setSaving(false); return
-      }
-      if (backupVehicle && await checkExisting(backupVehicle.id, logDate, profile.id, 'backup')) {
-        toast.error('Backup vehicle reading already recorded for today'); setSaving(false); return
-      }
-
-      let cUrl = null
-      if (closingImageFile) {
-        const { url, error: cErr } = await uploadPhoto(vehicle.id, logDate, 'closing', closingImageFile)
-        if (cErr) { toast.error('Closing photo upload failed'); setSaving(false); return }
-        cUrl = url
-      }
-
-      const bStorageId = backupVehicle?.id ?? `untracked-${bVehicleNo.replace(/[^a-zA-Z0-9]/g, '-')}`
-      const { url: bUrl, error: bErr } = await uploadPhoto(bStorageId, logDate, 'backup', backupImageFile)
-      if (bErr) { toast.error('Backup photo upload failed'); setSaving(false); return }
-
-      // save original vehicle closing KM
-      const cPrev = await getPrevReading(vehicle.id, logDate)
-      const { error: e1 } = await supabase.from('vehicle_odometer_logs').insert({
-        vehicle_id: vehicle.id, log_date: logDate, city_id: vehicle.city_id,
-        km_reading: cKm, daily_km: cPrev != null ? +(cKm - cPrev).toFixed(1) : null,
-        image_url: cUrl, reading_type: 'closing',
-        notes: `Closing KM — driver on backup: ${backupVehicle?.vehicle_no ?? bVehicleNo}`,
-        recorded_by: profile.id, is_verified: false,
-        submit_lat: submitCoords?.lat ?? null, submit_lng: submitCoords?.lng ?? null,
-      })
-      if (e1) { toast.error('Failed to save original vehicle closing KM'); setSaving(false); return }
-
-      // save backup vehicle reading (only if it's a fleet vehicle)
-      if (backupVehicle) {
-        const bPrev = await getPrevReading(backupVehicle.id, logDate)
-        const { error: e2 } = await supabase.from('vehicle_odometer_logs').insert({
-          vehicle_id: backupVehicle.id, log_date: logDate, city_id: backupVehicle.city_id,
-          km_reading: bKm, daily_km: bPrev != null ? +(bKm - bPrev).toFixed(1) : null,
-          image_url: bUrl, reading_type: 'backup',
-          notes: `Backup vehicle (original driver: ${vehicle.vehicle_no})`,
-          recorded_by: profile.id, is_verified: false,
-          submit_lat: submitCoords?.lat ?? null, submit_lng: submitCoords?.lng ?? null,
-        })
-        if (e2) { toast.error('Closing saved but backup vehicle reading failed'); setSaving(false); return }
-      }
-
-      toast.success('Readings saved!')
-      exitSpecial()
-      setClosingDone(true)
-
-    // ── NORMAL / RETURN MODE ───────────────────────────────────────
-    } else {
+    // ── backup_start: needs separate backup vehicle ──
+    if (uiMode === 'backup_start') {
+      if (!backupVehicle) { toast.error('Enter a valid fleet vehicle number'); setSaving(false); return }
       const km = parseFloat(kmReading)
-      const readingType = mode === 'return' ? 'return' : 'daily'
-      if (!vehicle?.id)                       { toast.error('No vehicle assigned'); setSaving(false); return }
-      if (!Number.isFinite(km) || km < 0)     { toast.error('Enter a valid KM reading'); setSaving(false); return }
-      if (!imageFile)                         { toast.error('Photo is required'); setSaving(false); return }
+      if (!Number.isFinite(km) || km < 0) { toast.error('Enter backup vehicle KM'); setSaving(false); return }
+      if (!imageFile) { toast.error('Photo is required'); setSaving(false); return }
 
-      if (await checkExisting(vehicle.id, logDate, profile.id, readingType)) {
-        toast.error(`Reading already recorded for ${fmtDate(logDate)}`)
-        setSaving(false); return
-      }
+      const { url, error: upErr } = await uploadPhoto(backupVehicle.id, logDate, 'backup_start', imageFile)
+      if (upErr) { toast.error('Photo upload failed'); setSaving(false); return }
 
-      const { url: imgUrl, error: uploadErr } = await uploadPhoto(vehicle.id, logDate, readingType, imageFile)
-      if (uploadErr) { toast.error('Photo upload failed'); setSaving(false); return }
-
-      const prevKm = await getPrevReading(vehicle.id, logDate)
       const { error } = await supabase.from('vehicle_odometer_logs').insert({
-        vehicle_id: vehicle.id, log_date: logDate, city_id: vehicle.city_id,
-        km_reading: km, daily_km: prevKm != null ? +(km - prevKm).toFixed(1) : null,
-        image_url: imgUrl, reading_type: readingType,
-        notes: mode === 'return' ? 'Vehicle returned — end of day reading' : null,
+        vehicle_id: backupVehicle.id, log_date: logDate, city_id: backupVehicle.city_id,
+        km_reading: km, daily_km: null, image_url: url,
+        reading_type: 'backup_start',
+        notes: `Backup start — original vehicle: ${vehicle.vehicle_no}`,
         recorded_by: profile.id, is_verified: false,
-        submit_lat: submitCoords?.lat ?? null, submit_lng: submitCoords?.lng ?? null,
+        submit_lat: geo?.lat ?? null, submit_lng: geo?.lng ?? null,
       })
-      if (error) { toast.error('Failed to save reading'); setSaving(false); return }
-
-      toast.success('Reading saved!')
-      setKmReading(''); setImageFile(null); setImagePreview(null)
-      if (normalFileRef.current) normalFileRef.current.value = ''
-      if (mode === 'return') { setReturnDone(true); setMode('normal') }
-      else setTodayDone(true)
+      if (error) { toast.error('Failed to save'); setSaving(false); return }
+      toast.success('Backup vehicle start recorded!')
+      enterMode('idle'); loadState(); setSaving(false); return
     }
 
+    // ── all other modes ──────────────────────────────
+    const km = parseFloat(kmReading)
+    if (!Number.isFinite(km) || km < 0) { toast.error('Enter a valid KM reading'); setSaving(false); return }
+    if (!imageFile) { toast.error('Photo is required'); setSaving(false); return }
+
+    let readingType, vehicleId, cityId, dailyKm, notes
+
+    if (uiMode === 'breakdown') {
+      readingType = 'closing'; vehicleId = vehicle.id; cityId = vehicle.city_id
+      const prev = await getPrevDayReading(vehicle.id, logDate)
+      dailyKm = prev != null ? +(km - prev).toFixed(1) : null
+      notes = 'Closing KM — vehicle breakdown'
+
+    } else if (uiMode === 'backup_end') {
+      readingType = 'backup_end'; vehicleId = dbState.backupVehicleId
+      const { data: bv } = await supabase.from('vehicles').select('city_id').eq('id', vehicleId).maybeSingle()
+      cityId = bv?.city_id ?? vehicle.city_id
+      const startKm = await getTodayReadingKm(vehicleId, logDate, profile.id, 'backup_start')
+      dailyKm = startKm != null ? +(km - startKm).toFixed(1) : null
+      notes = `Backup end — original vehicle: ${vehicle.vehicle_no}`
+
+    } else if (uiMode === 'return_start') {
+      readingType = 'return_start'; vehicleId = vehicle.id; cityId = vehicle.city_id
+      dailyKm = null
+      notes = 'Vehicle returned — restart reading'
+
+    } else {
+      // idle mode: daily or return_end
+      vehicleId = vehicle.id; cityId = vehicle.city_id
+      if (phase === 'return_active') {
+        readingType = 'return_end'
+        const startKm = await getTodayReadingKm(vehicle.id, logDate, profile.id, 'return_start')
+        dailyKm = startKm != null ? +(km - startKm).toFixed(1) : null
+        notes = 'End-of-day reading after vehicle return'
+      } else {
+        readingType = 'daily'
+        const prev = await getPrevDayReading(vehicle.id, logDate)
+        dailyKm = prev != null ? +(km - prev).toFixed(1) : null
+        notes = null
+      }
+    }
+
+    const { url: imgUrl, error: upErr } = await uploadPhoto(vehicleId, logDate, readingType, imageFile)
+    if (upErr) { toast.error('Photo upload failed'); setSaving(false); return }
+
+    const { error } = await supabase.from('vehicle_odometer_logs').insert({
+      vehicle_id: vehicleId, log_date: logDate, city_id: cityId,
+      km_reading: km, daily_km: dailyKm, image_url: imgUrl,
+      reading_type: readingType, notes,
+      recorded_by: profile.id, is_verified: false,
+      submit_lat: geo?.lat ?? null, submit_lng: geo?.lng ?? null,
+    })
+    if (error) { toast.error('Failed to save reading'); setSaving(false); return }
+
+    toast.success('Reading saved!')
+    resetForm(); setUiMode('idle'); loadState()
     setSaving(false)
   }
 
-  // ── which timestamp to show after geo ──────────────────────────
-  const pkNow = new Date(Date.now() + 5 * 60 * 60 * 1000)
-  const timeStr = pkNow.toISOString().slice(11, 16) // HH:MM UTC which is PK time
+  // ── time display ───────────────────────────────────────────────
+  const pkNow  = new Date(Date.now() + 5 * 60 * 60 * 1000)
+  const timeStr = pkNow.toISOString().slice(11, 16)
   const fmtHHMM = (hhmm) => {
     const [h, m] = hhmm.split(':').map(Number)
-    const ampm = h < 12 ? 'AM' : 'PM'
-    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+  }
+
+  const isFormMode = uiMode !== 'idle' || phase === 'normal' || phase === 'return_active'
+
+  const formTitle = () => {
+    if (uiMode === 'breakdown')    return 'Breakdown — Closing KM'
+    if (uiMode === 'backup_start') return 'Backup Vehicle — Opening Reading'
+    if (uiMode === 'backup_end')   return `Backup Vehicle${dbState.backupVehicleNo ? ` · ${dbState.backupVehicleNo}` : ''} — Closing Reading`
+    if (uiMode === 'return_start') return 'Vehicle Returned — Restart Reading'
+    if (phase === 'return_active') return 'End-of-Day Reading'
+    return null // normal phase — show vehicle badge instead
+  }
+
+  const submitLabel = () => {
+    if (saving) return 'Saving…'
+    if (uiMode === 'breakdown')    return 'Save Closing Reading'
+    if (uiMode === 'backup_start') return 'Record Backup Start'
+    if (uiMode === 'backup_end')   return 'Record Backup Return'
+    if (uiMode === 'return_start') return 'Record Restart Reading'
+    if (phase === 'return_active') return 'Submit End-of-Day Reading'
+    return 'Submit Daily Reading'
   }
 
   return (
@@ -296,7 +356,7 @@ export default function DriverOdometer() {
 
       <main className="drv-main">
 
-        {/* ── date bar ─────────────────────────────────────────── */}
+        {/* date bar */}
         <div className="drv-datebar">
           <span className="drv-date-val">{fmtDate(logDate)} · {fmtHHMM(timeStr)}</span>
           <label className="drv-night-check">
@@ -305,160 +365,166 @@ export default function DriverOdometer() {
           </label>
         </div>
 
-        {(mode === 'backup' || mode === 'return') && (
-          <button type="button" className="drv-back-btn" onClick={exitSpecial}>
-            <ArrowLeft size={14} /> {mode === 'return' ? 'Back' : 'Normal reading'}
+        {/* back button */}
+        {uiMode !== 'idle' && (
+          <button type="button" className="drv-back-btn" onClick={backToIdle}>
+            <ArrowLeft size={14} /> Back
           </button>
         )}
 
-        <form className="drv-form" onSubmit={handleSubmit}>
+        {/* ── FORM (when submitting a reading) ──────────────────── */}
+        {isFormMode && (
+          <form className="drv-form" onSubmit={handleSubmit}>
 
-          {/* ── NORMAL / RETURN MODE ─────────────────────────────── */}
-          {(mode === 'normal' || mode === 'return') && (
-            <>
+            {/* header: title or vehicle badge */}
+            {formTitle() ? (
+              <p className="drv-section-label drv-section-sep">{formTitle()}</p>
+            ) : (
               <div className="drv-vehicle-badge">
-                {vehicleLoading ? (
-                  <span className="drv-vbadge-no drv-vehicle-loading">Loading…</span>
-                ) : vehicle ? (
-                  <>
-                    <span className="drv-vbadge-no">{vehicle.vehicle_no}</span>
-                    <span className="drv-vbadge-label">
-                      {mode === 'return' ? 'Vehicle returned — add reading' : 'Your assigned vehicle'}
-                    </span>
-                  </>
-                ) : (
-                  <span className="drv-no-vehicle">No vehicle assigned — contact supervisor</span>
-                )}
+                {vehicleLoading
+                  ? <span className="drv-vbadge-no drv-vehicle-loading">Loading…</span>
+                  : vehicle
+                    ? <><span className="drv-vbadge-no">{vehicle.vehicle_no}</span>
+                        <span className="drv-vbadge-label">Your assigned vehicle</span></>
+                    : <span className="drv-no-vehicle">No vehicle assigned — contact supervisor</span>}
               </div>
+            )}
 
-              {mode === 'normal' && todayDone ? (
-                <div className="drv-done-notice">
-                  <CheckCircle2 size={16} />
-                  Reading recorded for {fmtDate(logDate)}
-                </div>
-              ) : (
-                <>
-                  <div className="drv-km-field">
-                    <label className="drv-km-label">KM Reading</label>
-                    <div className="drv-km-row">
-                      <input className="input drv-km-input" type="number" min="0" step="0.1"
-                        placeholder="0" value={kmReading} onChange={e => setKmReading(e.target.value)} />
-                      <span className="drv-km-unit">km</span>
-                    </div>
-                  </div>
-
-                  <div className="field">
-                    <label>Photo <span className="drv-required">*</span></label>
-                    <UploadBox preview={imagePreview} fileRef={normalFileRef}
-                      onChange={pickPhoto(setImageFile, setImagePreview)}
-                      onDrop={dropPhoto(setImageFile, setImagePreview)}
-                      onRemove={clearPhoto(setImageFile, setImagePreview, normalFileRef)} />
-                  </div>
-
-                  <GeoBar coords={geoCoords} />
-
-                  <button type="submit" className="btn drv-submit" disabled={saving || !vehicle}>
-                    {saving ? 'Saving…' : mode === 'return' ? 'Submit Return Reading' : 'Submit Reading'}
-                  </button>
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── BACKUP MODE ──────────────────────────────────────── */}
-          {mode === 'backup' && (
-            <>
-              {/* ── SECTION 1: Original vehicle closing (top) ── */}
-              <p className="drv-section-label">
-                Original Vehicle{vehicle ? ` · ${vehicle.vehicle_no}` : ''} · Closing KM
-              </p>
-
-              {vehicleLoading ? (
-                <p className="drv-vehicle-loading" style={{ fontSize: 13 }}>Loading…</p>
-              ) : !vehicle ? (
-                <p className="drv-field-err">Assigned vehicle not found.</p>
-              ) : (
-                <>
-                  <div className="drv-km-field">
-                    <label className="drv-km-label">Closing KM <span className="drv-required">*</span></label>
-                    <div className="drv-km-row">
-                      <input className="input drv-km-input" type="number" min="0" step="0.1"
-                        placeholder="0" value={closingKm} onChange={e => setClosingKm(e.target.value)} />
-                      <span className="drv-km-unit">km</span>
-                    </div>
-                  </div>
-
-                  <div className="field">
-                    <label>Photo <span className="field-hint">(optional)</span></label>
-                    <UploadBox preview={closingImagePreview} fileRef={closingFileRef}
-                      onChange={pickPhoto(setClosingImageFile, setClosingImagePreview)}
-                      onDrop={dropPhoto(setClosingImageFile, setClosingImagePreview)}
-                      onRemove={clearPhoto(setClosingImageFile, setClosingImagePreview, closingFileRef)} />
-                  </div>
-                </>
-              )}
-
-              {/* ── DIVIDER ── */}
-              <div className="drv-section-divider">
-                <span className="drv-section-divider-label">Backup Vehicle · Reading</span>
-              </div>
-
-              {/* ── SECTION 2: Backup vehicle (bottom) ── */}
+            {/* backup vehicle input (backup_start mode) */}
+            {uiMode === 'backup_start' && (
               <div className="field">
-                <label>Vehicle Number <span className="drv-required">*</span></label>
+                <label>Backup Vehicle Number <span className="drv-required">*</span></label>
                 <div className="drv-km-row">
                   <input className="input" type="text" placeholder="e.g. ALY-851"
                     autoCapitalize="characters"
-                    value={backupVehicleNo} onChange={e => setBackupVehicleNo(e.target.value)} />
-                  {backupLooking && <span className="drv-km-unit" style={{ minWidth: 16 }}>…</span>}
-                  {backupVehicle && !backupLooking && <span className="drv-found-tick">✓</span>}
+                    value={backupInput} onChange={e => setBackupInput(e.target.value)} />
+                  {backupLooking && <span className="drv-km-unit">…</span>}
+                  {!backupLooking && backupVehicle && <span className="drv-found-tick">✓</span>}
                 </div>
-                {backupVehicleNo.trim() && !backupLooking && !backupVehicle && (
-                  <div className="drv-field-hint">Not in fleet — will be noted</div>
+                {backupInput.trim() && !backupLooking && !backupVehicle && (
+                  <div className="drv-field-err">Vehicle not found in fleet</div>
                 )}
               </div>
+            )}
 
-              <div className="drv-km-field">
-                <label className="drv-km-label">KM Reading <span className="drv-required">*</span></label>
-                <div className="drv-km-row">
-                  <input className="input drv-km-input" type="number" min="0" step="0.1"
-                    placeholder="0" value={backupKm} onChange={e => setBackupKm(e.target.value)} />
-                  <span className="drv-km-unit">km</span>
+            {/* KM field */}
+            <div className="drv-km-field">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label className="drv-km-label" style={{ margin: 0 }}>KM Reading <span className="drv-required">*</span></label>
+                {aiLoading && (
+                  <span className="drv-ai-tag drv-ai-loading">
+                    <Sparkles size={11} /> Reading…
+                  </span>
+                )}
+                {!aiLoading && aiRead != null && (
+                  <span className="drv-ai-tag">
+                    <Sparkles size={11} /> AI read
+                  </span>
+                )}
+              </div>
+              <div className="drv-km-row">
+                <input className="input drv-km-input" type="number" min="0" step="1"
+                  placeholder="0" value={kmReading}
+                  onChange={e => { setKmReading(e.target.value); setAiRead(null) }} />
+                <span className="drv-km-unit">km</span>
+              </div>
+              {aiRead != null && !aiLoading && (
+                <div className="drv-field-hint">Auto-filled from photo — edit if incorrect</div>
+              )}
+            </div>
+
+            {/* photo upload */}
+            <div className="field">
+              <label>Photo <span className="drv-required">*</span></label>
+              <div className={`drv-upload${imagePreview ? ' has-image' : ''}`}
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handlePhotoFile(f) }}>
+                {imagePreview
+                  ? <img src={imagePreview} alt="Preview" className="drv-upload-preview" />
+                  : <div className="drv-upload-placeholder"><Camera size={18} /><span>Tap to capture</span></div>}
+              </div>
+              <input ref={fileRef} type="file" capture="environment" hidden
+                onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoFile(f) }} />
+              {imagePreview && (
+                <button type="button" className="drv-remove-img" onClick={() => {
+                  setImageFile(null); setImagePreview(null); setAiRead(null)
+                  if (fileRef.current) fileRef.current.value = ''
+                }}>Remove</button>
+              )}
+            </div>
+
+            <GeoBar coords={geoCoords} />
+
+            <button type="submit" className="btn drv-submit"
+              disabled={saving || !vehicle || (uiMode === 'backup_start' && !backupVehicle)}>
+              {submitLabel()}
+            </button>
+          </form>
+        )}
+
+        {/* ── STATUS + BUTTONS (idle, non-form phases) ──────────── */}
+        {uiMode === 'idle' && !isFormMode && (
+          <div className="drv-form">
+
+            {phase === 'done' && (
+              <div className="drv-done-notice">
+                <CheckCircle2 size={16} /> All readings recorded for {fmtDate(logDate)}
+              </div>
+            )}
+
+            {phase === 'breakdown_done' && (
+              <>
+                <div className="drv-done-notice">
+                  <CheckCircle2 size={16} />
+                  Closing recorded — {vehicle?.vehicle_no ?? ''} on standby
                 </div>
-              </div>
+                <div className="drv-bottom-actions">
+                  <button type="button" className="btn drv-backup-btn" onClick={() => enterMode('backup_start')}>
+                    Using a backup vehicle
+                  </button>
+                  <button type="button" className="btn btn-ghost drv-backup-btn" onClick={() => enterMode('return_start')}>
+                    My vehicle is back (no backup)
+                  </button>
+                </div>
+              </>
+            )}
 
-              <div className="field">
-                <label>Photo <span className="drv-required">*</span></label>
-                <UploadBox preview={backupImagePreview} fileRef={backupFileRef}
-                  onChange={pickPhoto(setBackupImageFile, setBackupImagePreview)}
-                  onDrop={dropPhoto(setBackupImageFile, setBackupImagePreview)}
-                  onRemove={clearPhoto(setBackupImageFile, setBackupImagePreview, backupFileRef)} />
-              </div>
+            {phase === 'on_backup' && (
+              <>
+                <div className="drv-done-notice drv-notice-amber">
+                  On backup vehicle{dbState.backupVehicleNo ? `: ${dbState.backupVehicleNo}` : ''}
+                </div>
+                <div className="drv-bottom-actions">
+                  <button type="button" className="btn drv-backup-btn" onClick={() => enterMode('backup_end')}>
+                    Backup vehicle returned
+                  </button>
+                </div>
+              </>
+            )}
 
-              <GeoBar coords={geoCoords} />
+            {phase === 'backup_complete' && (
+              <>
+                <div className="drv-done-notice">
+                  <CheckCircle2 size={16} /> Backup done. Waiting for original vehicle.
+                </div>
+                <div className="drv-bottom-actions">
+                  <button type="button" className="btn drv-backup-btn" onClick={() => enterMode('return_start')}>
+                    My original vehicle is back
+                  </button>
+                </div>
+              </>
+            )}
 
-              <button type="submit" className="btn drv-submit"
-                disabled={saving || !backupVehicleNo.trim() || !vehicle}>
-                {saving ? 'Saving…' : 'Submit Both Readings'}
-              </button>
-            </>
-          )}
+          </div>
+        )}
 
-        </form>
-
-        {/* ── action buttons below form ─────────────────────────── */}
-        {mode === 'normal' && vehicle && (
+        {/* ── BREAKDOWN BUTTON (only on normal phase, idle) ─────── */}
+        {uiMode === 'idle' && phase === 'normal' && vehicle && (
           <div className="drv-bottom-actions">
-            {!closingDone && (
-              <button type="button" className="btn btn-ghost drv-backup-btn" onClick={enterBackup}>
-                Using a backup vehicle today?
-              </button>
-            )}
-            {(todayDone || closingDone) && !returnDone && (
-              <button type="button" className="btn btn-ghost drv-backup-btn drv-return-btn" onClick={enterReturn}>
-                <RotateCcw size={14} /> Original vehicle returned today
-              </button>
-            )}
+            <button type="button" className="btn btn-ghost drv-backup-btn" onClick={() => enterMode('breakdown')}>
+              Vehicle broke down today
+            </button>
           </div>
         )}
 
@@ -474,23 +540,5 @@ function GeoBar({ coords }) {
       <MapPin size={12} />
       <span>{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</span>
     </div>
-  )
-}
-
-function UploadBox({ preview, fileRef, onChange, onDrop, onRemove }) {
-  return (
-    <>
-      <div className={`drv-upload${preview ? ' has-image' : ''}`}
-        onClick={() => fileRef.current?.click()}
-        onDragOver={e => e.preventDefault()}
-        onDrop={onDrop}>
-        {preview
-          ? <img src={preview} alt="Preview" className="drv-upload-preview" />
-          : <div className="drv-upload-placeholder"><Camera size={18} /><span>Tap to capture</span></div>}
-      </div>
-      {/* capture="environment" forces back camera; no accept so gallery is not offered */}
-      <input ref={fileRef} type="file" capture="environment" hidden onChange={onChange} />
-      {preview && <button type="button" className="drv-remove-img" onClick={onRemove}>Remove</button>}
-    </>
   )
 }

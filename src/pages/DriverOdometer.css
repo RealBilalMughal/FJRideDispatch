@@ -280,6 +280,31 @@
   margin-top: 4px;
 }
 
+/* ── AI read tag ──────────────────────────────────────────────── */
+.drv-ai-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft, rgba(52,113,184,0.08));
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.drv-ai-loading {
+  color: var(--muted);
+  background: transparent;
+  font-weight: 500;
+}
+
+/* ── amber status notice ──────────────────────────────────────── */
+.drv-notice-amber {
+  color: var(--warning, #b7791f) !important;
+  background: rgba(183, 121, 31, 0.07) !important;
+  border-color: rgba(183, 121, 31, 0.2) !important;
+}
+
 .drv-found-tick {
   color: var(--success, #1a7f37);
   font-weight: 700;

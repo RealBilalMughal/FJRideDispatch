@@ -224,7 +224,11 @@ export default function Odometer() {
     {
       key: 'type', header: 'Type',
       render: (r) => {
-        const map = { daily: '—', backup: 'Backup', closing: 'Closing', return: 'Return' }
+        const map = {
+          daily: '—', closing: 'Closing',
+          backup_start: 'Backup Start', backup_end: 'Backup End',
+          return_start: 'Return Start', return_end: 'Return End',
+        }
         return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{map[r.reading_type] ?? r.reading_type}</span>
       },
     },

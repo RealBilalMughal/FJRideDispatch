@@ -158,6 +158,26 @@
   color: var(--muted);
 }
 
+.field-hint-warn {
+  color: var(--warning, #b7791f);
+}
+
+.input-with-btn {
+  display: flex;
+  gap: 6px;
+}
+
+.input-with-btn .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fetch-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
 .field-error {
   font-size: 11.5px;
   color: var(--danger);

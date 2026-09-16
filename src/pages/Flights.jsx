@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Download, Eye, Pencil, Plane, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
+import { Download, Eye, Pencil, Plane, Plus, RefreshCw, Search, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -384,8 +384,46 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [fetching, setFetching] = useState(false)
+  const [fetchHint, setFetchHint] = useState(null) // { text, warn }
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const title = isAdd ? 'Add Flight' : editing ? `Edit ${row.flight_no}` : `${row.flight_no} · ID ${row.ref_no}`
+
+  const fetchFlightInfo = async () => {
+    const iata = form.flight_no.trim()
+    if (!iata) return toast.error('Pehle flight number likhein')
+    setFetching(true)
+    setFetchHint(null)
+    const { data, error } = await supabase.functions.invoke('flight-info', { body: { flight_iata: iata } })
+    setFetching(false)
+    if (error || data?.error) {
+      setFetchHint({ text: data?.error || error?.message || 'API error', warn: true })
+      return
+    }
+    if (!data?.found) {
+      setFetchHint({ text: `"${iata}" today ke schedule mein nahi mila — time manually likhein`, warn: true })
+      return
+    }
+    // auto-fill time: pickup → departure time, dropoff → arrival time, others → departure
+    const useArrival = form.block_type === 'dropoff'
+    const time = useArrival ? data.arrival?.time : data.departure?.time
+    if (time) set('flight_time', time)
+
+    // build hint text
+    const dep = data.departure
+    const arr = data.arrival
+    const parts = [data.airline ?? data.flight_iata]
+    if (dep?.iata && arr?.iata) parts.push(`${dep.iata} → ${arr.iata}`)
+    if (dep?.time) parts.push(`Dep ${dep.time}`)
+    if (arr?.time) parts.push(`Arr ${arr.time}`)
+    const delayMin = useArrival ? arr?.delay : dep?.delay
+    const warn = Boolean(delayMin && delayMin > 0)
+    if (warn) parts.push(`⚠ ${delayMin} min delay`)
+    else if (data.status === 'cancelled') parts.push('✕ Cancelled')
+    setFetchHint({ text: parts.join(' · '), warn: warn || data.status === 'cancelled' })
+    if (time) toast.success(`Time auto-fill hogaya (${time})`)
+    else toast('Flight mili lekin time empty hai — manually likhein')
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -450,7 +488,16 @@ function FlightModal({ row, startInEdit = false, canEdit = true, allowedCities, 
         {err && <div className="modal-error">{err}</div>}
         <div className="field">
           <label htmlFor="f-no">Flight number</label>
-          <input id="f-no" className="input" value={form.flight_no} onChange={(e) => set('flight_no', e.target.value)} placeholder="e.g. 9P841" autoComplete="off" />
+          <div className="input-with-btn">
+            <input id="f-no" className="input" value={form.flight_no} onChange={(e) => { set('flight_no', e.target.value); setFetchHint(null) }} placeholder="e.g. 9P841" autoComplete="off" />
+            <button type="button" className="btn btn-ghost btn-square btn-sm fetch-btn" onClick={fetchFlightInfo} disabled={fetching} title="AviationStack se time fetch karo">
+              <Search size={13} />
+              {fetching ? 'Fetching…' : 'Fetch time'}
+            </button>
+          </div>
+          {fetchHint && (
+            <span className={`field-hint${fetchHint.warn ? ' field-hint-warn' : ''}`}>{fetchHint.text}</span>
+          )}
         </div>
         <div className="field">
           <label htmlFor="f-code">Flight code</label>

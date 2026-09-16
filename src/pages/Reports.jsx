@@ -106,10 +106,13 @@ export default function Reports() {
   }
 
   const [planGroupBy, setPlanGroupBy] = useState('day') // 'day' | 'month'
+  const [uwView, setUwView] = useState('user') // 'user' | 'rides'
 
   const [rows, setRows] = useState([])
   const [planRows, setPlanRows] = useState([])
   const [extraRides, setExtraRides] = useState([])
+  // ride_id -> via_no map for user-wise Follow/No counts
+  const [planLinkMap, setPlanLinkMap] = useState(new Map())
   const [loading, setLoading] = useState(true)
 
   const isPlan = section === 'plan'
@@ -137,6 +140,25 @@ export default function Reports() {
       alive = false
     }
   }, [canViewRides, isPlan, section, dateFrom, dateTo, cityId])
+
+  // For user-wise section: fetch ride_plan_rows to build ride_id → via_no map
+  // so we can count Follow vs No-Follow per dispatcher.
+  useEffect(() => {
+    if (!isUserwise) { setPlanLinkMap(new Map()); return }
+    let alive = true
+    fetchAllPages((from, to) => {
+      let q = supabase.from('ride_plan_rows').select('ride_id, via_no').eq('status', 'followed').not('ride_id', 'is', null)
+      if (dateFrom) q = q.gte('plan_date', dateFrom)
+      if (dateTo) q = q.lte('plan_date', dateTo)
+      if (cityId != null) q = q.eq('city_id', cityId)
+      return q.range(from, to)
+    }).then(({ data }) => {
+      if (!alive) return
+      const map = new Map((data ?? []).map((r) => [r.ride_id, r.via_no]))
+      setPlanLinkMap(map)
+    })
+    return () => { alive = false }
+  }, [isUserwise, dateFrom, dateTo, cityId])
 
   useEffect(() => {
     if (!canViewPlan || !isPlan) return
@@ -256,24 +278,24 @@ export default function Reports() {
     return [...map.values()].sort((a, b) => b.key.localeCompare(a.key))
   }, [planEntries, planGroupBy])
 
-  // User-wise: group all ride rows by creator, sorted by most rides first.
+  // User-wise: group rides by dispatcher; classify each as Follow / No / Direct.
   const userBreakdown = useMemo(() => {
     const map = new Map()
     for (const r of rows) {
       const uid = r.creator?.full_name || 'Unknown'
-      const entry = map.get(uid) || {
-        name: uid,
-        total: 0,
-        km: 0,
-        byBlock: Object.fromEntries(SUMMARY_BLOCKS.map((b) => [b, 0])),
-      }
+      const entry = map.get(uid) || { name: uid, total: 0, follow: 0, no: 0, direct: 0, km: 0 }
       entry.total += 1
       entry.km += billableKm(r)
-      if (entry.byBlock[r.block_type] != null) entry.byBlock[r.block_type] += 1
+      if (planLinkMap.has(r.id)) {
+        if (planLinkMap.get(r.id)) entry.no += 1
+        else entry.follow += 1
+      } else {
+        entry.direct += 1
+      }
       map.set(uid, entry)
     }
     return [...map.values()].sort((a, b) => b.total - a.total)
-  }, [rows])
+  }, [rows, planLinkMap])
 
   const rideColumns = [
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
@@ -314,13 +336,24 @@ export default function Reports() {
   ]
 
   const userColumns = [
-    { key: 'name', header: 'User', render: (r) => r.name },
-    { key: 'total', header: 'Total Rides', align: 'right', render: (r) => r.total },
-    { key: 'deadhead', header: 'Deadhead', align: 'right', render: (r) => r.byBlock.deadhead },
-    { key: 'pickup', header: 'Pickup', align: 'right', render: (r) => r.byBlock.pickup },
-    { key: 'dropoff', header: 'Drop Off', align: 'right', render: (r) => r.byBlock.dropoff },
-    { key: 'return_leg', header: 'Return Leg', align: 'right', render: (r) => r.byBlock.return_leg },
+    { key: 'name', header: 'User' },
+    { key: 'total', header: 'Total', align: 'right', render: (r) => r.total },
+    { key: 'follow', header: 'Follow', align: 'right', render: (r) => r.follow },
+    { key: 'no', header: 'No Follow', align: 'right', render: (r) => r.no },
+    { key: 'direct', header: 'Direct', align: 'right', render: (r) => r.direct },
     { key: 'km', header: 'Total KM', align: 'right', render: (r) => r.km.toFixed(2) },
+  ]
+
+  const rideColumnsWithUser = [
+    { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
+    { key: 'ref', header: 'ID', render: (r) => r.ref_no },
+    { key: 'addedby', header: 'Added by', render: (r) => r.creator?.full_name || '—' },
+    { key: 'flight', header: 'Flight', render: (r) => r.flight_no || '—' },
+    { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
+    { key: 'vehicle', header: 'Vehicle', render: (r) => rideVehicleText(r) },
+    { key: 'start', header: 'Ride Time', render: (r) => (r.start_at ? fmtTimeOnly12(r.start_at) : '—') },
+    { key: 'km', header: 'KM', align: 'right', render: (r) => (r.distance_km != null ? Number(r.distance_km).toFixed(2) : '—') },
+    { key: 'status', header: 'Status', render: (r) => statusLabel(r.status) },
   ]
 
   const exportCsv = () => {
@@ -337,17 +370,25 @@ export default function Reports() {
       }))
       downloadCsv(`report-plan-vs-actual-${tag}.csv`, toCsv(cols, data))
     } else if (isUserwise) {
-      const cols = userColumns.map((c) => ({ key: c.key, label: c.header }))
-      const data = userBreakdown.map((r) => ({
-        name: r.name,
-        total: r.total,
-        deadhead: r.byBlock.deadhead,
-        pickup: r.byBlock.pickup,
-        dropoff: r.byBlock.dropoff,
-        return_leg: r.byBlock.return_leg,
-        km: r.km.toFixed(2),
-      }))
-      downloadCsv(`report-userwise-${tag}.csv`, toCsv(cols, data))
+      if (uwView === 'user') {
+        const cols = userColumns.map((c) => ({ key: c.key, label: c.header }))
+        const data = userBreakdown.map((r) => ({
+          name: r.name, total: r.total, follow: r.follow, no: r.no, direct: r.direct, km: r.km.toFixed(2),
+        }))
+        downloadCsv(`report-userwise-${tag}.csv`, toCsv(cols, data))
+      } else {
+        const cols = rideColumnsWithUser.map((c) => ({ key: c.key, label: c.header }))
+        const data = rows.map((r) => ({
+          date: fmtDate(r.ride_date), ref: r.ref_no,
+          addedby: r.creator?.full_name || '',
+          flight: r.flight_no || '', block: blockLabel(r.block_type),
+          vehicle: rideVehicleText(r),
+          start: r.start_at ? fmtTimeOnly12(r.start_at) : '',
+          km: r.distance_km != null ? Number(r.distance_km).toFixed(2) : '',
+          status: statusLabel(r.status),
+        }))
+        downloadCsv(`report-ridewise-${tag}.csv`, toCsv(cols, data))
+      }
     } else {
       const cols = rideColumns.map((c) => ({ key: c.key, label: c.header }))
       const data = filteredRows.map((r) => ({
@@ -462,28 +503,35 @@ export default function Reports() {
             <>
               <StatCards
                 items={[
-                  {
-                    key: 'total',
-                    label: 'Total',
-                    value: `${rows.length} rides`,
-                    hint: `${userBreakdown.length} users`,
-                    active: true,
-                  },
-                  ...SUMMARY_BLOCKS.map((b) => ({
-                    key: b,
-                    label: blockLabel(b),
-                    value: `${summary.byBlock[b].count}`,
-                    hint: `${summary.byBlock[b].km.toFixed(2)} km`,
-                  })),
+                  { key: 'total', label: 'Total Rides', value: rows.length, hint: `${userBreakdown.length} dispatchers`, active: true },
+                  { key: 'follow', label: 'Follow', value: userBreakdown.reduce((s, u) => s + u.follow, 0), hint: 'from ride plan' },
+                  { key: 'no', label: 'No Follow', value: userBreakdown.reduce((s, u) => s + u.no, 0), hint: 'dispatched despite No' },
+                  { key: 'direct', label: 'Direct', value: userBreakdown.reduce((s, u) => s + u.direct, 0), hint: 'not from plan' },
                 ]}
               />
-              <DataTable
-                columns={userColumns}
-                rows={userBreakdown}
-                rowKey={(r) => r.name}
-                loading={loading}
-                emptyLabel="No rides in this range"
-              />
+              <div className="rpt-subbar">
+                <div className="date-tabs">
+                  <button type="button" className={uwView === 'user' ? 'on' : ''} onClick={() => setUwView('user')}>User-wise</button>
+                  <button type="button" className={uwView === 'rides' ? 'on' : ''} onClick={() => setUwView('rides')}>Ride-wise</button>
+                </div>
+              </div>
+              {uwView === 'user' ? (
+                <DataTable
+                  columns={userColumns}
+                  rows={userBreakdown}
+                  rowKey={(r) => r.name}
+                  loading={loading}
+                  emptyLabel="No rides in this range"
+                />
+              ) : (
+                <DataTable
+                  columns={rideColumnsWithUser}
+                  rows={rows}
+                  rowKey={(r) => r.id}
+                  loading={loading}
+                  emptyLabel="No rides in this range"
+                />
+              )}
             </>
           ) : (
             <>

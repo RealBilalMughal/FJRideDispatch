@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Download, Eye, Pencil, Plane, Plus, RefreshCw, Search, Shield, Trash2, Upload, UserCheck } from 'lucide-react'
+import { Download, Eye, Pencil, Plane, Plus, RefreshCw, Search, Shield, Trash2, Upload, UserCheck, Wifi } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -10,6 +10,7 @@ import { fmtDate } from '../lib/format'
 import { fmtTime12, parseTime, pkToday, toTime24 } from '../lib/time'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import Modal from '../components/Modal'
+import './Flights.css'
 import ConfirmDelete from '../components/ConfirmDelete'
 import DataTable from '../components/data/DataTable'
 import FilterBar from '../components/data/FilterBar'
@@ -86,6 +87,50 @@ export default function Flights() {
   const [pending, setPending] = useState(null) // { ids, label }
   const [deleting, setDeleting] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
+
+  // Live status cache: flight_no → { status, depDelay, arrDelay, airline, checkedAt }
+  // 30-min TTL — avoids hammering the free API quota (100 req/month)
+  const [liveStatus, setLiveStatus] = useState({})
+  const checkingRef = useRef(new Set()) // in-flight requests
+
+  const CACHE_TTL = 30 * 60 * 1000 // 30 min
+
+  const fetchOneStatus = async (flightNo) => {
+    if (!flightNo) return
+    const cached = liveStatus[flightNo]
+    if (cached && Date.now() - cached.checkedAt < CACHE_TTL) return // still fresh
+    if (checkingRef.current.has(flightNo)) return // already in flight
+    checkingRef.current.add(flightNo)
+    const { data, error } = await supabase.functions.invoke('flight-info', { body: { flight_iata: flightNo } })
+    checkingRef.current.delete(flightNo)
+    if (error || !data) return
+    if (!data.found) {
+      setLiveStatus((prev) => ({ ...prev, [flightNo]: { status: 'not_found', checkedAt: Date.now() } }))
+      return
+    }
+    setLiveStatus((prev) => ({
+      ...prev,
+      [flightNo]: {
+        status: data.status,
+        depDelay: data.departure?.delay ?? null,
+        arrDelay: data.arrival?.delay ?? null,
+        airline: data.airline ?? null,
+        depTime: data.departure?.time ?? null,
+        arrTime: data.arrival?.time ?? null,
+        checkedAt: Date.now(),
+      },
+    }))
+  }
+
+  const [checkingAll, setCheckingAll] = useState(false)
+  const fetchAllVisible = async () => {
+    const unique = [...new Set(pageRows.map((r) => r.flight_no).filter(Boolean))]
+    if (!unique.length) return
+    setCheckingAll(true)
+    for (const fn of unique) await fetchOneStatus(fn)
+    setCheckingAll(false)
+    toast.success(`${unique.length} flights checked`)
+  }
 
   const list = useMemo(() => rows.map((r) => ({ ...r, city_name: r.city?.name ?? '' })), [rows])
 
@@ -167,6 +212,32 @@ export default function Flights() {
     { key: 'time', header: 'Time', render: (r) => fmtTime12(r.flight_time) || '—' },
     { key: 'city', header: 'City', render: (r) => r.city_name || '—' },
     {
+      key: 'live',
+      header: 'Live',
+      render: (r) => {
+        const s = liveStatus[r.flight_no]
+        if (!s) {
+          return (
+            <button
+              className="icon-btn flight-check-btn"
+              title="Live status check karo"
+              onClick={() => fetchOneStatus(r.flight_no)}
+            >
+              <Wifi size={12} />
+            </button>
+          )
+        }
+        if (s.status === 'not_found') return <span className="fl-chip fl-muted">Not found</span>
+        const delay = s.depDelay || s.arrDelay || 0
+        if (s.status === 'cancelled') return <span className="fl-chip fl-red">Cancelled</span>
+        if (s.status === 'diverted') return <span className="fl-chip fl-orange">Diverted</span>
+        if (s.status === 'active') return <span className="fl-chip fl-green">In air{delay > 0 ? ` +${delay}m` : ''}</span>
+        if (s.status === 'landed') return <span className="fl-chip fl-blue">Landed{delay > 0 ? ` +${delay}m` : ''}</span>
+        if (delay > 0) return <span className="fl-chip fl-orange">Delayed +{delay}m</span>
+        return <span className="fl-chip fl-muted">On time</span>
+      },
+    },
+    {
       key: 'status',
       header: 'Status',
       render: (r) =>
@@ -226,6 +297,15 @@ export default function Flights() {
         <div className="page-actions">
           <button className="icon-btn" onClick={fetchRows} title="Refresh">
             <RefreshCw size={15} />
+          </button>
+          <button
+            className="btn btn-ghost btn-square btn-sm"
+            onClick={fetchAllVisible}
+            disabled={checkingAll}
+            title="Visible flights ka live status check karo (API quota uses)"
+          >
+            <Wifi size={14} />
+            {checkingAll ? 'Checking…' : 'Check status'}
           </button>
           <button className="btn btn-ghost btn-square btn-sm" onClick={exportCsv}>
             <Download size={14} /> Export

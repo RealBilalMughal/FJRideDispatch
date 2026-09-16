@@ -67,10 +67,13 @@ export default function VehicleBoard() {
 
   // time window for the gantt
   const win = useMemo(() => {
-    const withTimes = rides.filter((r) => r.start_at && r.end_at)
+    const withTimes = rides.filter((r) => r.start_at)
     if (!withTimes.length) return { start: 6 * 60, end: 22 * 60 }
     let lo = Math.min(...withTimes.map((r) => minsOf(r.start_at)))
-    let hi = Math.max(...withTimes.map((r) => minsOf(r.end_at)))
+    let hi = Math.max(...withTimes.map((r) => {
+      const s = minsOf(r.start_at)
+      return r.duration_min != null ? s + r.duration_min : (r.end_at ? minsOf(r.end_at) : s + 30)
+    }))
     lo = Math.max(0, Math.floor(lo / 60) * 60 - 30)
     hi = Math.min(24 * 60, Math.ceil(hi / 60) * 60 + 30)
     if (hi - lo < 6 * 60) hi = Math.min(24 * 60, lo + 6 * 60)
@@ -325,9 +328,11 @@ export default function VehicleBoard() {
                         <span key={h} className="vb-gridline" style={{ left: pct(h * 60) }} />
                       ))}
                       {vr.map((r) => {
-                        if (!r.start_at || !r.end_at) return null
+                        if (!r.start_at) return null
                         const s = minsOf(r.start_at)
-                        const e = Math.max(s + 8, minsOf(r.end_at))
+                        // Use start + duration for bar end (not end_at which pads 30-min vehicle buffer)
+                        const eta = r.duration_min != null ? s + r.duration_min : (r.end_at ? minsOf(r.end_at) : s + 30)
+                        const e = Math.max(s + 8, eta)
                         return (
                           <button
                             key={r.id}

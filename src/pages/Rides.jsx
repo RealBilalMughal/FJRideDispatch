@@ -101,7 +101,8 @@ const SELECT = `
   city:cities(name),
   vehicle:vehicles(ref_no, vehicle_no, tracker_url),
   driver:drivers!rides_driver_id_fkey(ref_no, name),
-  ride_crew(seq, crew:crew(id, ref_no, name, stop_name, stop_lat, stop_lng))
+  ride_crew(seq, crew:crew(id, ref_no, name, stop_name, stop_lat, stop_lng)),
+  creator:profiles!created_by(full_name)
 `
 
 const EXPORT_COLS = [
@@ -2824,6 +2825,10 @@ export function RideModal({
             <div className="view-row">
               <span className="view-label">Notes</span>
               <span className="view-value">{row.notes || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Reported by</span>
+              <span className="view-value">{row.creator?.full_name || '—'}</span>
             </div>
 
             {gm && (

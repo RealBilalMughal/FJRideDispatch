@@ -34,7 +34,8 @@ const RIDE_SELECT = `
   vehicle_id, driver_id, is_adhoc_vehicle, adhoc_vehicle_no, adhoc_driver_name,
   vehicle:vehicles(vehicle_no),
   driver:drivers!rides_driver_id_fkey(name),
-  ride_crew(seq, crew:crew(name))
+  ride_crew(seq, crew:crew(name)),
+  creator:profiles!created_by(full_name)
 `
 
 const PAGE_SIZE = 1000
@@ -73,6 +74,7 @@ const RIDE_SECTIONS = [
   { key: 'return_leg', label: 'Return Leg' },
 ]
 const PLAN_SECTION = { key: 'plan', label: 'Ride Plan vs Actual' }
+const USER_SECTION = { key: 'userwise', label: 'User-wise' }
 
 export default function Reports() {
   const { can } = useAuth()
@@ -81,7 +83,11 @@ export default function Reports() {
   const canViewPlan = can('ride_plan', 'view')
 
   const sections = useMemo(
-    () => [...(canViewRides ? RIDE_SECTIONS : []), ...(canViewPlan ? [PLAN_SECTION] : [])],
+    () => [
+      ...(canViewRides ? RIDE_SECTIONS : []),
+      ...(canViewPlan ? [PLAN_SECTION] : []),
+      ...(canViewRides ? [USER_SECTION] : []),
+    ],
     [canViewRides, canViewPlan],
   )
   const [section, setSection] = useState(null)
@@ -107,6 +113,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
 
   const isPlan = section === 'plan'
+  const isUserwise = section === 'userwise'
 
   // ride-based sections share one query - the section only changes how the
   // fetched rows are filtered/summarised below, not what's fetched.
@@ -249,6 +256,25 @@ export default function Reports() {
     return [...map.values()].sort((a, b) => b.key.localeCompare(a.key))
   }, [planEntries, planGroupBy])
 
+  // User-wise: group all ride rows by creator, sorted by most rides first.
+  const userBreakdown = useMemo(() => {
+    const map = new Map()
+    for (const r of rows) {
+      const uid = r.creator?.full_name || 'Unknown'
+      const entry = map.get(uid) || {
+        name: uid,
+        total: 0,
+        km: 0,
+        byBlock: Object.fromEntries(SUMMARY_BLOCKS.map((b) => [b, 0])),
+      }
+      entry.total += 1
+      entry.km += billableKm(r)
+      if (entry.byBlock[r.block_type] != null) entry.byBlock[r.block_type] += 1
+      map.set(uid, entry)
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total)
+  }, [rows])
+
   const rideColumns = [
     { key: 'date', header: 'Date', render: (r) => fmtDate(r.ride_date) },
     { key: 'ref', header: 'ID', render: (r) => r.ref_no },
@@ -287,6 +313,16 @@ export default function Reports() {
     },
   ]
 
+  const userColumns = [
+    { key: 'name', header: 'User', render: (r) => r.name },
+    { key: 'total', header: 'Total Rides', align: 'right', render: (r) => r.total },
+    { key: 'deadhead', header: 'Deadhead', align: 'right', render: (r) => r.byBlock.deadhead },
+    { key: 'pickup', header: 'Pickup', align: 'right', render: (r) => r.byBlock.pickup },
+    { key: 'dropoff', header: 'Drop Off', align: 'right', render: (r) => r.byBlock.dropoff },
+    { key: 'return_leg', header: 'Return Leg', align: 'right', render: (r) => r.byBlock.return_leg },
+    { key: 'km', header: 'Total KM', align: 'right', render: (r) => r.km.toFixed(2) },
+  ]
+
   const exportCsv = () => {
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
     if (isPlan) {
@@ -300,6 +336,18 @@ export default function Reports() {
         delta: (r.actualKm - r.plannedKm).toFixed(2),
       }))
       downloadCsv(`report-plan-vs-actual-${tag}.csv`, toCsv(cols, data))
+    } else if (isUserwise) {
+      const cols = userColumns.map((c) => ({ key: c.key, label: c.header }))
+      const data = userBreakdown.map((r) => ({
+        name: r.name,
+        total: r.total,
+        deadhead: r.byBlock.deadhead,
+        pickup: r.byBlock.pickup,
+        dropoff: r.byBlock.dropoff,
+        return_leg: r.byBlock.return_leg,
+        km: r.km.toFixed(2),
+      }))
+      downloadCsv(`report-userwise-${tag}.csv`, toCsv(cols, data))
     } else {
       const cols = rideColumns.map((c) => ({ key: c.key, label: c.header }))
       const data = filteredRows.map((r) => ({
@@ -408,6 +456,33 @@ export default function Reports() {
                 rowKey={(r) => r.key}
                 loading={loading}
                 emptyLabel="No plan data in this range"
+              />
+            </>
+          ) : isUserwise ? (
+            <>
+              <StatCards
+                items={[
+                  {
+                    key: 'total',
+                    label: 'Total',
+                    value: `${rows.length} rides`,
+                    hint: `${userBreakdown.length} users`,
+                    active: true,
+                  },
+                  ...SUMMARY_BLOCKS.map((b) => ({
+                    key: b,
+                    label: blockLabel(b),
+                    value: `${summary.byBlock[b].count}`,
+                    hint: `${summary.byBlock[b].km.toFixed(2)} km`,
+                  })),
+                ]}
+              />
+              <DataTable
+                columns={userColumns}
+                rows={userBreakdown}
+                rowKey={(r) => r.name}
+                loading={loading}
+                emptyLabel="No rides in this range"
               />
             </>
           ) : (

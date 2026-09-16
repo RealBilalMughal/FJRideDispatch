@@ -1946,6 +1946,19 @@ function TripPlayback({ row, mapHeight = 200 }) {
   )
 }
 
+// ── Flight status helpers ──────────────────────────────────────────────────
+function flightStatusVariant(status, delay) {
+  if (status === 'active') return 'green'
+  if (status === 'landed') return 'blue'
+  if (status === 'cancelled' || status === 'diverted') return 'red'
+  if (delay > 0) return 'orange'
+  return 'muted'
+}
+function flightStatusLabel(status) {
+  const map = { active: 'In air', landed: 'Landed', cancelled: 'Cancelled', diverted: 'Diverted', scheduled: 'Scheduled', incident: 'Incident' }
+  return map[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown')
+}
+
 // ── Ride form ─────────────────────────────────────────────────────────────
 export function RideModal({
   row,
@@ -1991,7 +2004,7 @@ export function RideModal({
   // above - same pattern, opposite direction. Chains off the dropoff ->
   // displays as "<dropoff ref>-R", cascades on delete.
   const [alsoReturnLeg, setAlsoReturnLeg] = useState(Boolean(initial?.alsoReturnLeg))
-  const [liveFlightHint, setLiveFlightHint] = useState(null)
+  const [liveFlightData, setLiveFlightData] = useState(null) // full flight-info response
   const [liveFlightFetching, setLiveFlightFetching] = useState(false)
 
   const initialCrew = row
@@ -2088,6 +2101,24 @@ export function RideModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.is_adhoc_vehicle, form.adhoc_vehicle_no, cityId, form.ride_date])
 
+  // Auto-fetch live flight status once on modal open (edit or view mode).
+  // In add mode the user picks a flight themselves, so pickFlight handles that.
+  useEffect(() => {
+    const flightNo = (row?.flight_no || form.flight_no)?.trim()
+    if (!flightNo) return
+    let alive = true
+    setLiveFlightFetching(true)
+    supabase.functions
+      .invoke('flight-info', { body: { flight_iata: flightNo } })
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (!error && data?.found) setLiveFlightData(data)
+      })
+      .finally(() => { if (alive) setLiveFlightFetching(false) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const airport = useMemo(() => {
     const c = allowedCities.find((x) => x.id === cityId)
     return { name: c?.airport_name || '', lat: Number(c?.airport_lat), lng: Number(c?.airport_lng) }
@@ -2134,7 +2165,7 @@ export function RideModal({
   // departure/arrival time from AviationStack (fire-and-forget after registry fill)
   const pickFlight = async (fid) => {
     const f = flights.find((x) => x.id === fid)
-    if (!f) { set('flight_id', ''); setLiveFlightHint(null); return }
+    if (!f) { set('flight_id', ''); setLiveFlightData(null); return }
     const block = f.block_type || form.block_type || 'pickup'
     const slot = primaryTimeSlot(block)
     const ft = toTime24(f.flight_time)
@@ -2151,7 +2182,7 @@ export function RideModal({
       checkout_new: slot === 'checkout' && !prev.checkout_new ? ft : prev.checkout_new,
     }))
     setCrewList([])
-    setLiveFlightHint(null)
+    setLiveFlightData(null)
 
     if (!f.flight_no?.trim()) return
     setLiveFlightFetching(true)
@@ -2159,10 +2190,7 @@ export function RideModal({
       const { data, error } = await supabase.functions.invoke('flight-info', {
         body: { flight_iata: f.flight_no.trim() },
       })
-      if (error || !data?.found) {
-        if (!error) setLiveFlightHint({ text: 'Not found in AviationStack', warn: true })
-        return
-      }
+      if (error || !data?.found) return
       const liveTime = slot === 'checkin' ? data.departure?.time : slot === 'checkout' ? data.arrival?.time : null
       if (liveTime) {
         setForm((prev) => ({
@@ -2173,14 +2201,7 @@ export function RideModal({
           checkout_new: slot === 'checkout' && !prev.checkout_new ? liveTime : prev.checkout_new,
         }))
       }
-      const dep = data.departure
-      const arr = data.arrival
-      const delay = slot === 'checkin' ? dep?.delay : arr?.delay
-      let text = `Live · ${dep?.iata ?? ''}→${arr?.iata ?? ''}`
-      if (dep?.time) text += ` · Dep ${dep.time}`
-      if (arr?.time) text += ` · Arr ${arr.time}`
-      text += delay > 0 ? ` · ⚠ ${delay}m delay` : ' · On time'
-      setLiveFlightHint({ text, warn: delay > 0 })
+      setLiveFlightData(data)
     } catch {
       // silent fail — registry time stays
     } finally {
@@ -2205,7 +2226,7 @@ export function RideModal({
     })
     const r = crewRule(block, form.deadhead_mode)
     if (r.max != null) setCrewList((cl) => cl.slice(0, r.max))
-    setLiveFlightHint(null)
+    setLiveFlightData(null)
   }
 
   // fetch the ORS route ONLY when it can change something and actually changed:
@@ -2804,6 +2825,29 @@ export function RideModal({
               <RvField label="Check-out" value={fmtTime12(row.checkout_old)} />
               <RvField label="Actual" value={fmtTime12(row.checkout_new)} />
             </div>
+            {liveFlightData?.found && (row.block_type === 'pickup' || row.block_type === 'dropoff') && (() => {
+              const isPickup = row.block_type === 'pickup'
+              const relevantDelay = isPickup ? liveFlightData.departure?.delay : liveFlightData.arrival?.delay
+              return (
+                <div className={`rfs-bar rfs-${flightStatusVariant(liveFlightData.status, relevantDelay)}`}>
+                  <span className="rfs-chip">{flightStatusLabel(liveFlightData.status)}</span>
+                  <span className="rfs-route">{liveFlightData.departure?.iata ?? ''}→{liveFlightData.arrival?.iata ?? ''}</span>
+                  <span className="rfs-time">
+                    Dep {liveFlightData.departure?.time ?? '—'}
+                    {liveFlightData.departure?.delay > 0 && <span className="rfs-delay"> +{liveFlightData.departure.delay}m</span>}
+                  </span>
+                  <span className="rfs-time rfs-dim">
+                    Arr {liveFlightData.arrival?.time ?? '—'}
+                    {liveFlightData.arrival?.delay > 0 && <span className="rfs-delay"> +{liveFlightData.arrival.delay}m</span>}
+                  </span>
+                  {canEdit && (
+                    <button type="button" className="btn rfs-apply-btn" onClick={() => setEditing(true)}>
+                      Edit ride
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
 
             <div className="rv-crew">
               <span className="view-label">
@@ -3034,7 +3078,7 @@ export function RideModal({
                   <label htmlFor="r-cio">Check-in</label>
                   <input id="r-cio" type="time" className="input" value={form.checkin_old} disabled />
                   <span className="field-hint">
-                    {liveFlightFetching ? 'Fetching live time…' : liveFlightHint ? '' : 'From the flight'}
+                    {liveFlightFetching ? 'Fetching live time…' : 'From the flight'}
                   </span>
                 </div>
                 <div className="field">
@@ -3048,10 +3092,30 @@ export function RideModal({
                   />
                 </div>
               </div>
-              {liveFlightHint && (
-                <span className={`field-hint${liveFlightHint.warn ? ' field-hint-warn' : ''}`}>
-                  {liveFlightHint.text}
-                </span>
+              {liveFlightData?.found && (
+                <div className={`rfs-bar rfs-${flightStatusVariant(liveFlightData.status, liveFlightData.departure?.delay)}`}>
+                  <span className="rfs-chip">{flightStatusLabel(liveFlightData.status)}</span>
+                  <span className="rfs-route">{liveFlightData.departure?.iata ?? ''}→{liveFlightData.arrival?.iata ?? ''}</span>
+                  <span className="rfs-time">
+                    Dep {liveFlightData.departure?.time ?? '—'}
+                    {liveFlightData.departure?.delay > 0 && <span className="rfs-delay"> +{liveFlightData.departure.delay}m</span>}
+                  </span>
+                  <span className="rfs-time rfs-dim">
+                    Arr {liveFlightData.arrival?.time ?? '—'}
+                  </span>
+                  {liveFlightData.departure?.time && liveFlightData.departure.time !== form.checkin_old && (
+                    <button
+                      type="button"
+                      className="btn rfs-apply-btn"
+                      onClick={() => {
+                        setForm((prev) => ({ ...prev, checkin_old: liveFlightData.departure.time }))
+                        setStartTouched(false)
+                      }}
+                    >
+                      Apply Dep time
+                    </button>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -3062,7 +3126,7 @@ export function RideModal({
                   <label htmlFor="r-coo">Check-out</label>
                   <input id="r-coo" type="time" className="input" value={form.checkout_old} disabled />
                   <span className="field-hint">
-                    {liveFlightFetching ? 'Fetching live time…' : liveFlightHint ? '' : 'From the flight'}
+                    {liveFlightFetching ? 'Fetching live time…' : 'From the flight'}
                   </span>
                 </div>
                 <div className="field">
@@ -3076,10 +3140,30 @@ export function RideModal({
                   />
                 </div>
               </div>
-              {liveFlightHint && (
-                <span className={`field-hint${liveFlightHint.warn ? ' field-hint-warn' : ''}`}>
-                  {liveFlightHint.text}
-                </span>
+              {liveFlightData?.found && (
+                <div className={`rfs-bar rfs-${flightStatusVariant(liveFlightData.status, liveFlightData.arrival?.delay)}`}>
+                  <span className="rfs-chip">{flightStatusLabel(liveFlightData.status)}</span>
+                  <span className="rfs-route">{liveFlightData.departure?.iata ?? ''}→{liveFlightData.arrival?.iata ?? ''}</span>
+                  <span className="rfs-time rfs-dim">
+                    Dep {liveFlightData.departure?.time ?? '—'}
+                  </span>
+                  <span className="rfs-time">
+                    Arr {liveFlightData.arrival?.time ?? '—'}
+                    {liveFlightData.arrival?.delay > 0 && <span className="rfs-delay"> +{liveFlightData.arrival.delay}m</span>}
+                  </span>
+                  {liveFlightData.arrival?.time && liveFlightData.arrival.time !== form.checkout_old && (
+                    <button
+                      type="button"
+                      className="btn rfs-apply-btn"
+                      onClick={() => {
+                        setForm((prev) => ({ ...prev, checkout_old: liveFlightData.arrival.time }))
+                        setStartTouched(false)
+                      }}
+                    >
+                      Apply Arr time
+                    </button>
+                  )}
+                </div>
               )}
             </>
           )}

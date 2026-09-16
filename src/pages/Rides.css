@@ -1,3 +1,41 @@
+/* Live flight status bar - shown in the Ride edit/view modal near check-in/out */
+.rfs-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.rfs-chip {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+
+/* colour variants — driven by flightStatusVariant() */
+.rfs-green  .rfs-chip { background: rgba(30,135,75,0.12);   color: var(--success); }
+.rfs-blue   .rfs-chip { background: rgba(52,113,184,0.12);  color: var(--accent);  }
+.rfs-orange .rfs-chip { background: rgba(183,121,31,0.14);  color: var(--warning); }
+.rfs-red    .rfs-chip { background: rgba(220,38,38,0.12);   color: var(--danger);  }
+.rfs-muted  .rfs-chip { background: var(--border);          color: var(--muted);   }
+
+.rfs-green  { border-color: rgba(30,135,75,0.2);  }
+.rfs-orange { border-color: rgba(183,121,31,0.25); }
+.rfs-red    { border-color: rgba(220,38,38,0.2);  }
+
+.rfs-route { color: var(--muted); font-size: 11.5px; }
+.rfs-time  { color: var(--body);  font-size: 12px; white-space: nowrap; }
+.rfs-dim   { color: var(--muted); }
+.rfs-delay { color: var(--warning); font-weight: 700; }
+.rfs-apply-btn { margin-left: auto; font-size: 11.5px; padding: 3px 11px; }
+
 /* Rides "Summary" panel - totals + a per-Duty-Sheet-date breakdown of the
    currently filtered rides. Toggled by the Summary button in the header. */
 .rides-summary {

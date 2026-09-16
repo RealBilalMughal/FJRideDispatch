@@ -95,17 +95,17 @@ export default function DriverOdometer() {
     if (pkHour >= 23) setPrevDay(true)
   }, [])
 
-  // backup vehicle lookup
+  // backup vehicle lookup — flexible, any number allowed even if not in fleet
   useEffect(() => {
     const trimmed = backupVehicleNo.trim()
     if (!trimmed) { setBackupVehicle(null); setBackupVehicleErr(''); return }
     const timer = setTimeout(async () => {
       setBackupLooking(true); setBackupVehicleErr('')
       const { data } = await supabase.from('vehicles').select('id, vehicle_no, city_id')
-        .ilike('vehicle_no', trimmed).eq('is_active', true).limit(1).maybeSingle()
+        .ilike('vehicle_no', `%${trimmed}%`).limit(1).maybeSingle()
       setBackupLooking(false)
       if (data) { setBackupVehicle(data) }
-      else { setBackupVehicle(null); setBackupVehicleErr('Vehicle not found') }
+      else { setBackupVehicle(null) } // not in fleet — allowed; will note only
     }, 500)
     return () => clearTimeout(timer)
   }, [backupVehicleNo])
@@ -138,13 +138,14 @@ export default function DriverOdometer() {
     if (mode === 'backup') {
       const bKm = parseFloat(backupKm)
       const cKm = parseFloat(closingKm)
-      if (!backupVehicle)                      { toast.error('Enter a valid backup vehicle number'); setSaving(false); return }
+      const bVehicleNo = backupVehicleNo.trim()
+      if (!bVehicleNo)                         { toast.error('Enter the backup vehicle number'); setSaving(false); return }
       if (!Number.isFinite(bKm) || bKm < 0)   { toast.error('Enter backup vehicle KM'); setSaving(false); return }
       if (!backupImageFile)                    { toast.error('Backup vehicle photo required'); setSaving(false); return }
       if (!vehicle)                            { toast.error('Your assigned vehicle could not be found'); setSaving(false); return }
       if (!Number.isFinite(cKm) || cKm < 0)   { toast.error('Enter closing KM for your original vehicle'); setSaving(false); return }
 
-      if (await checkExisting(backupVehicle.id, logDate, profile.id)) {
+      if (backupVehicle && await checkExisting(backupVehicle.id, logDate, profile.id)) {
         toast.error(`You already recorded a reading for this backup vehicle today`)
         setSaving(false); return
       }
@@ -153,7 +154,9 @@ export default function DriverOdometer() {
         setSaving(false); return
       }
 
-      const { url: bUrl, error: bErr } = await uploadPhoto(backupVehicle.id, logDate, backupImageFile)
+      // backup photo — use DB vehicle id if in fleet, else a freetext path
+      const bStorageId = backupVehicle?.id ?? `untracked-${bVehicleNo.replace(/[^a-zA-Z0-9]/g, '-')}`
+      const { url: bUrl, error: bErr } = await uploadPhoto(bStorageId, logDate, backupImageFile)
       if (bErr) { toast.error('Backup photo upload failed'); setSaving(false); return }
 
       let cUrl = null
@@ -163,26 +166,34 @@ export default function DriverOdometer() {
         cUrl = url
       }
 
-      const bPrev = await getPrevReading(backupVehicle.id, logDate)
+      // only save a backup-vehicle log entry when it's a real fleet vehicle
+      if (backupVehicle) {
+        const bPrev = await getPrevReading(backupVehicle.id, logDate)
+        const { error: e1 } = await supabase.from('vehicle_odometer_logs').insert({
+          vehicle_id: backupVehicle.id, log_date: logDate, city_id: backupVehicle.city_id,
+          km_reading: bKm, daily_km: bPrev != null ? +(bKm - bPrev).toFixed(1) : null,
+          image_url: bUrl, notes: `Backup vehicle (original: ${vehicle.vehicle_no})`,
+          recorded_by: profile.id, is_verified: false,
+        })
+        if (e1) { toast.error('Failed to save backup reading'); setSaving(false); return }
+      }
+
       const cPrev = await getPrevReading(vehicle.id, logDate)
-
-      const { error: e1 } = await supabase.from('vehicle_odometer_logs').insert({
-        vehicle_id: backupVehicle.id, log_date: logDate, city_id: backupVehicle.city_id,
-        km_reading: bKm, daily_km: bPrev != null ? +(bKm - bPrev).toFixed(1) : null,
-        image_url: bUrl, notes: `Backup vehicle (original: ${vehicle.vehicle_no})`,
-        recorded_by: profile.id, is_verified: false,
-      })
-      if (e1) { toast.error('Failed to save backup reading'); setSaving(false); return }
-
+      const closingNote = backupVehicle
+        ? `Closing KM — driver on backup: ${backupVehicle.vehicle_no}`
+        : `Closing KM — driver on backup: ${bVehicleNo} (not in fleet, backup KM: ${bKm}, photo: ${bUrl})`
       const { error: e2 } = await supabase.from('vehicle_odometer_logs').insert({
         vehicle_id: vehicle.id, log_date: logDate, city_id: vehicle.city_id,
         km_reading: cKm, daily_km: cPrev != null ? +(cKm - cPrev).toFixed(1) : null,
-        image_url: cUrl, notes: `Closing KM — driver on backup: ${backupVehicle.vehicle_no}`,
+        image_url: cUrl, notes: closingNote,
         recorded_by: profile.id, is_verified: false,
       })
-      if (e2) { toast.error('Backup saved but original vehicle closing failed'); setSaving(false); return }
+      if (e2) {
+        toast.error(backupVehicle ? 'Backup saved but original vehicle closing failed' : 'Failed to save closing KM')
+        setSaving(false); return
+      }
 
-      toast.success('Both readings saved!')
+      toast.success('Readings saved!')
       exitBackup()
 
     } else {
@@ -316,7 +327,9 @@ export default function DriverOdometer() {
                   {backupLooking && <span className="drv-km-unit" style={{ minWidth: 16 }}>…</span>}
                   {backupVehicle && !backupLooking && <span className="drv-found-tick">✓</span>}
                 </div>
-                {backupVehicleErr && <div className="drv-field-err">{backupVehicleErr}</div>}
+                {backupVehicleNo.trim() && !backupLooking && !backupVehicle && (
+                  <div className="drv-field-hint">Not in fleet — number will be noted</div>
+                )}
               </div>
 
               <div className="drv-km-field">
@@ -337,9 +350,11 @@ export default function DriverOdometer() {
               </div>
 
               {/* Section: Original vehicle closing */}
-              <p className="drv-section-label drv-section-sep">
-                Original Vehicle{vehicle ? ` — ${vehicle.vehicle_no}` : ''} · Closing KM
-              </p>
+              <div className="drv-section-divider">
+                <span className="drv-section-divider-label">
+                  Original Vehicle{vehicle ? ` · ${vehicle.vehicle_no}` : ''} · Closing KM
+                </span>
+              </div>
 
               {vehicleLoading ? (
                 <p className="drv-vehicle-loading" style={{ fontSize: 13 }}>Loading…</p>
@@ -367,7 +382,7 @@ export default function DriverOdometer() {
               )}
 
               <button type="submit" className="btn drv-submit"
-                disabled={saving || !backupVehicle || !vehicle}>
+                disabled={saving || !backupVehicleNo.trim() || !vehicle}>
                 {saving ? 'Saving…' : 'Submit Both Readings'}
               </button>
             </>
@@ -397,7 +412,7 @@ function UploadBox({ preview, fileRef, onChange, onDrop, onRemove }) {
         onDrop={onDrop}>
         {preview
           ? <img src={preview} alt="Preview" className="drv-upload-preview" />
-          : <div className="drv-upload-placeholder"><Camera size={26} /><span>Tap to capture</span></div>}
+          : <div className="drv-upload-placeholder"><Camera size={18} /><span>Tap to capture</span></div>}
       </div>
       <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={onChange} />
       {preview && <button type="button" className="drv-remove-img" onClick={onRemove}>Remove</button>}

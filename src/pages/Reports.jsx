@@ -74,7 +74,7 @@ const RIDE_SECTIONS = [
   { key: 'return_leg', label: 'Return Leg' },
 ]
 const PLAN_SECTION = { key: 'plan', label: 'Ride Plan vs Actual' }
-const USER_SECTION = { key: 'userwise', label: 'User-wise' }
+const USER_SECTION = { key: 'userwise', label: 'Agent Performance' }
 
 export default function Reports() {
   const { can } = useAuth()
@@ -336,7 +336,7 @@ export default function Reports() {
   ]
 
   const userColumns = [
-    { key: 'name', header: 'User' },
+    { key: 'name', header: 'User', render: (r) => r.name },
     { key: 'total', header: 'Total', align: 'right', render: (r) => r.total },
     { key: 'follow', header: 'Follow', align: 'right', render: (r) => r.follow },
     { key: 'no', header: 'No Follow', align: 'right', render: (r) => r.no },

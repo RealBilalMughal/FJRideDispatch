@@ -209,6 +209,8 @@ svg {
   color: var(--heading);
 }
 
+.required-star { color: var(--danger, #c0392b); font-size: 13px; margin-left: 1px; }
+
 .input,
 .select,
 .textarea {

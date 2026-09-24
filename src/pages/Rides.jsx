@@ -94,7 +94,7 @@ const NOTIFY_ENABLED = false
 const SELECT = `
   id, ref_no, city_id, flight_id, flight_no, flight_code, block_type, deadhead_mode,
   ride_date, duty_sheet_date, checkin_old, checkin_new, checkout_old, checkout_new, start_at, end_at,
-  vehicle_id, driver_id, is_adhoc_vehicle, adhoc_vehicle_no, adhoc_driver_name, adhoc_driver_phone,
+  vehicle_id, driver_id, is_adhoc_vehicle, adhoc_vehicle_no, adhoc_driver_name, adhoc_driver_phone, backup_vehicle_no,
   airport_name, airport_lat, airport_lng,
   origin_label, origin_lat, origin_lng, dest_label, dest_lat, dest_lng,
   waypoints, route_geometry, distance_km, extra_km, duration_min, status, shift, return_of_ride_id, notes, created_at,
@@ -131,6 +131,7 @@ const EXPORT_COLS = [
   { key: 'billable_km', label: 'Billable KM' },
   { key: 'status', label: 'Status' },
   { key: 'cancel_reason', label: 'Cancel reason' },
+  { key: 'backup_vehicle_no', label: 'Backup vehicle' },
   { key: 'notes', label: 'Note' },
 ]
 
@@ -602,6 +603,7 @@ export default function Rides() {
       billable_km: billableKm(r) ? billableKm(r).toFixed(2) : '0',
       status: statusLabel(r.status),
       cancel_reason: r.cancel_reason ?? '',
+      backup_vehicle_no: r.backup_vehicle_no ?? '',
       notes: r.notes ?? '',
     }))
     const tag = cityId == null ? 'all' : cityName.toLowerCase()
@@ -2109,6 +2111,7 @@ export function RideModal({
     vehicle_id: row?.vehicle_id ?? initial?.vehicle_id ?? '',
     is_adhoc_vehicle: row?.is_adhoc_vehicle ?? initial?.is_adhoc_vehicle ?? false,
     adhoc_vehicle_no: row?.adhoc_vehicle_no ?? initial?.adhoc_vehicle_no ?? '',
+    backup_vehicle_no: row?.backup_vehicle_no ?? '',
     notes: row?.notes ?? initial?.notes ?? '',
   })
   const [crewList, setCrewList] = useState(initialCrew)
@@ -2586,6 +2589,7 @@ export function RideModal({
     if (!routeReady) return setErr('Route is incomplete — check the crew stops and airport have coordinates')
     if (form.is_adhoc_vehicle && !form.adhoc_vehicle_no)
       return setErr('Still assigning an ad-hoc number — try again in a moment')
+    if (!form.is_adhoc_vehicle && !form.vehicle_id) return setErr('Assign a vehicle')
     if (hasVehicle && !startAt) return setErr('Set the ride start time for the vehicle')
     if (isAdd && alsoDeadhead && form.block_type === 'pickup' && !startAt)
       return setErr('Set the Pickup Time — the deadhead is timed to arrive just before it')
@@ -2626,6 +2630,7 @@ export function RideModal({
       extra_km: roadKm != null ? extraKm : (row?.extra_km ?? 0),
       duration_min: durMin,
       status: row?.status ?? 'dispatched',
+      backup_vehicle_no: !form.is_adhoc_vehicle && form.backup_vehicle_no.trim() ? form.backup_vehicle_no.trim() : null,
       notes: form.notes.trim() || null,
     }
     let rideId = row?.id
@@ -2944,6 +2949,9 @@ export function RideModal({
             <div className="rv-grid">
               <RvField label="Vehicle" value={row.is_adhoc_vehicle ? `${row.adhoc_vehicle_no || '—'} · ad-hoc` : row.vehicle?.vehicle_no} />
               <RvField label="Driver" value={row.is_adhoc_vehicle ? null : row.driver?.name} />
+              {row.backup_vehicle_no && (
+                <RvField label="Backup vehicle" value={row.backup_vehicle_no} />
+              )}
               <RvField label={rideTimeLabel(row.block_type)} value={row.start_at ? fmtTimeOnly12(row.start_at) : '—'} />
               <RvField label="ETA" value={fmtTimeOnly12(etaOf(row.start_at, row.duration_min)) || '—'} />
             </div>
@@ -3380,7 +3388,7 @@ export function RideModal({
 
         {!form.is_adhoc_vehicle && (
           <div className="field">
-            <label>Assign vehicle</label>
+            <label>Assign vehicle <span className="required-star">*</span></label>
             <SearchSelect
               value={form.vehicle_id}
               onChange={(v) => set('vehicle_id', v)}
@@ -3392,6 +3400,29 @@ export function RideModal({
               <span className="field-error">
                 Busy on Ride {conflict.ref_no} till {fmtTimeOnly12(conflict.end_at)}
               </span>
+            )}
+          </div>
+        )}
+
+        {!form.is_adhoc_vehicle && (
+          <div className="field">
+            <label className="ride-backup-check-label">
+              <input
+                type="checkbox"
+                checked={Boolean(form.backup_vehicle_no)}
+                onChange={(e) => set('backup_vehicle_no', e.target.checked ? ' ' : '')}
+              />
+              Backup vehicle
+            </label>
+            {Boolean(form.backup_vehicle_no) && (
+              <input
+                className="input"
+                type="text"
+                placeholder="Vehicle number"
+                value={form.backup_vehicle_no.trim()}
+                onChange={(e) => set('backup_vehicle_no', e.target.value)}
+                style={{ marginTop: 6 }}
+              />
             )}
           </div>
         )}

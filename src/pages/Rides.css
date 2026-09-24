@@ -361,6 +361,17 @@
   flex-shrink: 0;
 }
 
+.ride-backup-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--heading);
+  cursor: pointer;
+}
+.ride-backup-check-label input[type="checkbox"] { cursor: pointer; }
+
 /* day / night shift picker (ride form) */
 .shift-picker {
   display: flex;

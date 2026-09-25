@@ -1004,7 +1004,7 @@ export default function RidePlan() {
       if (r.status !== 'followed') continue
       b.followed += 1
       b.plannedKm += Number(r.planned_km) || 0
-      b.actualKm += Number(billableKm(r.ride)) || 0
+      b.actualKm += rowActualKm(r)
       if (hasCrewMismatch(r)) b.crewMismatch += 1
     }
     return Object.values(byBlock)
@@ -1013,6 +1013,11 @@ export default function RidePlan() {
   // Top summary: the WHOLE day's planned KM per block type (every row, not
   // just followed ones - this is the plan itself), alongside how much of it
   // has actually happened so far (followed rows only).
+  const rowActualKm = (r) => {
+    if (r.ride) return Number(billableKm(r.ride)) || 0
+    return Number(r.actual_km) || 0
+  }
+
   const summary = useMemo(() => {
     const byBlock = Object.fromEntries(SUMMARY_BLOCKS.map((b) => [b, { plannedKm: 0, actualKm: 0, followed: 0 }]))
     for (const r of rows) {
@@ -1021,7 +1026,7 @@ export default function RidePlan() {
       b.plannedKm += Number(r.planned_km) || 0
       if (r.status === 'followed') {
         b.followed += 1
-        b.actualKm += Number(billableKm(r.ride)) || 0
+        b.actualKm += rowActualKm(r)
       }
     }
     byBlock.total = Object.values(byBlock).reduce(
@@ -1201,8 +1206,8 @@ export default function RidePlan() {
       align: 'right',
       render: (r) => {
         if (r.isExtra) return <span className="secondary">—</span>
-        if (r.status !== 'followed' || !r.ride) return '—'
-        const d = (Number(billableKm(r.ride)) || 0) - (Number(r.planned_km) || 0)
+        if (r.status !== 'followed') return '—'
+        const d = rowActualKm(r) - (Number(r.planned_km) || 0)
         return <span className={`status-text ${d > 0 ? 'bad' : 'on'}`}>{d.toFixed(2)}</span>
       },
     },

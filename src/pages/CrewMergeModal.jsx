@@ -57,6 +57,7 @@ export default function CrewMergeModal({ crewObj, planRow, sameFlightRows, onAdd
 
   return (
     <Modal
+      open
       title={`Add to existing ride · ${planRow.flight_no || 'Flight'}`}
       onClose={onClose}
     >

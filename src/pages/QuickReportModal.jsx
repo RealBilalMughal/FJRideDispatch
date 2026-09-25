@@ -322,7 +322,7 @@ export default function QuickReportModal({
   return (
     <Modal
       open
-      size="full"
+      width={520}
       title={modalTitle}
       onClose={onClose}
       footer={
@@ -336,9 +336,8 @@ export default function QuickReportModal({
         </>
       }
     >
-      <form id="qrm-form" className="ride-view ride-view--split" onSubmit={handleSubmit}>
-        {/* ── Left column: form ── */}
-        <div className="ride-view-info modal-form">
+      <form id="qrm-form" className="modal-form" onSubmit={handleSubmit}>
+        <div>
           <p className="qrm-subtitle">
             {row.plan_date} &nbsp;·&nbsp; {row.origin} → {row.destination}
             {routeLoading && <span className="secondary" style={{ fontSize: 11 }}> Calculating…</span>}
@@ -490,15 +489,12 @@ export default function QuickReportModal({
           </div>
         </div>
 
-        {/* ── Right column: map ── */}
-        <div className="ride-view-map">
-          <RouteMap
-            points={routePts}
-            line={routeData?.line ?? null}
-            totalKm={routeData?.distanceKm ?? null}
-            height="calc(100vh - 240px)"
-          />
-        </div>
+        <RouteMap
+          points={routePts}
+          line={routeData?.line ?? null}
+          totalKm={routeData?.distanceKm ?? null}
+          height="260px"
+        />
       </form>
     </Modal>
   )

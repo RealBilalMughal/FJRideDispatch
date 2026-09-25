@@ -1816,19 +1816,12 @@ function CancelPlanRideModal({ row, onClose, onConfirm }) {
       <div className="modal-form">
         <div className="field">
           <label>Reason <span className="required">*</span></label>
-          <div className="rp-reason-checklist">
+          <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+            <option value="">— Select reason —</option>
             {NO_REASON_OPTIONS.map((opt) => (
-              <label key={opt} className="rp-reason-check">
-                <input
-                  type="radio"
-                  name="cancel-reason"
-                  checked={reason === opt}
-                  onChange={() => setReason(opt)}
-                />
-                {opt}
-              </label>
+              <option key={opt} value={opt}>{opt}</option>
             ))}
-          </div>
+          </select>
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>

@@ -81,8 +81,8 @@ export default function QuickReportModal({
   const [bufferEnabled, setBufferEnabled] = useState(defaultBufferEnabled)
   const [reasons, setReasons] = useState(() =>
     editMode && row.report_reason
-      ? row.report_reason.split(', ').filter(Boolean)
-      : [],
+      ? row.report_reason.split(', ').filter(Boolean)[0] || ''
+      : '',
   )
   const [remarks, setRemarks] = useState(editMode ? (row.report_remarks || '') : '')
   const [routeData, setRouteData] = useState(null)
@@ -139,9 +139,6 @@ export default function QuickReportModal({
     if (t === 'adhoc') setFleetVehicleId('')
   }
 
-  const toggleReason = (opt) =>
-    setReasons((prev) => prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt])
-
   const removeCrew = (id) => setActualCrew((c) => c.filter((x) => x.id !== id))
   const addCrewById = (id) => {
     const c = crew.find((x) => x.id === id)
@@ -170,8 +167,8 @@ export default function QuickReportModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (reasons.length === 0) {
-      toast.error('Select at least one reason')
+    if (!reasons) {
+      toast.error('Select a reason')
       return
     }
     setBusy(true)
@@ -191,7 +188,7 @@ export default function QuickReportModal({
       actual_crew_names: crewNames,
       actual_vehicle_no: vehicleNo,
       actual_km: kmVal,
-      report_reason: reasons.join(', '),
+      report_reason: reasons,
       report_remarks: remarks.trim() || null,
       reported_by_name: reporter || null,
       reported_at: now,
@@ -467,23 +464,17 @@ export default function QuickReportModal({
             )}
           </div>
 
-          {/* ── Reason (required checkboxes) ── */}
+          {/* ── Reason ── */}
           <div className="field">
             <label>
               Reason <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
-            <div className="rp-reason-checklist">
+            <select className="input" value={reasons} onChange={(e) => setReasons(e.target.value)}>
+              <option value="">— Select reason —</option>
               {NO_REASON_OPTIONS.map((opt) => (
-                <label key={opt} className="rp-reason-check">
-                  <input
-                    type="checkbox"
-                    checked={reasons.includes(opt)}
-                    onChange={() => toggleReason(opt)}
-                  />
-                  {opt}
-                </label>
+                <option key={opt} value={opt}>{opt}</option>
               ))}
-            </div>
+            </select>
           </div>
 
           {/* ── Remarks ── */}

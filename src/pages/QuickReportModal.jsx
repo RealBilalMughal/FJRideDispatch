@@ -213,13 +213,22 @@ export default function QuickReportModal({
 
       // Shift all rows after anchor to make room
       const effectiveCityId2 = row.city_id ?? cityId
-      const { error: shiftErr } = await supabase.rpc('shift_plan_row_seqs', {
-        p_plan_date: row.plan_date,
-        p_city_id: effectiveCityId2,
-        p_after_seq: anchorSeq,
-        p_increment: insertCount,
-      })
-      if (shiftErr) { toast.error('Seq shift failed: ' + shiftErr.message); setBusy(false); return }
+      const { data: shiftRows, error: shiftFetchErr } = await supabase
+        .from('ride_plan_rows')
+        .select('id, seq')
+        .eq('plan_date', row.plan_date)
+        .eq('city_id', effectiveCityId2)
+        .gt('seq', anchorSeq)
+      if (shiftFetchErr) { toast.error('Seq shift failed: ' + shiftFetchErr.message); setBusy(false); return }
+      if (shiftRows?.length) {
+        const results = await Promise.all(
+          shiftRows.map((sr) =>
+            supabase.from('ride_plan_rows').update({ seq: sr.seq + insertCount }).eq('id', sr.id),
+          ),
+        )
+        const shiftErr = results.find((r) => r.error)?.error
+        if (shiftErr) { toast.error('Seq shift failed: ' + shiftErr.message); setBusy(false); return }
+      }
 
       const newMain = {
         import_id: row.import_id,

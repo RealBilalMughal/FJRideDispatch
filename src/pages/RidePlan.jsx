@@ -1812,19 +1812,23 @@ function CancelPlanRideModal({ row, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false)
   const ref = row.displayRef ?? row.ride?.ref_no ?? row.trip_id
   return (
-    <Modal open onClose={onClose} title={`Cancel Ride · ${ref}`} width={420}>
+    <Modal open onClose={onClose} title={`Cancel Ride · ${ref}`} width={440}>
       <div className="modal-form">
         <div className="field">
-          <label htmlFor="rp-cancel-reason">Reason <span className="required">*</span></label>
-          <textarea
-            id="rp-cancel-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. flight cancelled, vehicle unavailable…"
-            autoFocus
-          />
+          <label>Reason <span className="required">*</span></label>
+          <div className="rp-reason-checklist">
+            {NO_REASON_OPTIONS.map((opt) => (
+              <label key={opt} className="rp-reason-check">
+                <input
+                  type="radio"
+                  name="cancel-reason"
+                  checked={reason === opt}
+                  onChange={() => setReason(opt)}
+                />
+                {opt}
+              </label>
+            ))}
+          </div>
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
@@ -1833,10 +1837,10 @@ function CancelPlanRideModal({ row, onClose, onConfirm }) {
           <button
             type="button"
             className="btn btn-square btn-danger"
-            disabled={busy || !reason.trim()}
+            disabled={busy || !reason}
             onClick={async () => {
               setBusy(true)
-              await onConfirm(reason.trim())
+              await onConfirm(reason)
               setBusy(false)
             }}
           >

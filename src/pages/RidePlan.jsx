@@ -1746,31 +1746,22 @@ const NO_REASON_OPTIONS = [
 ]
 
 function NoReasonModal({ row, onClose, onContinue }) {
-  const [selected, setSelected] = useState([])
+  const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const toggle = (opt) =>
-    setSelected((prev) => prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt])
-
   return (
-    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Reason for No`} width={480}>
+    <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Reason for No`} width={440}>
       <div className="modal-form">
         <div className="field">
           <label>
             Reason <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
-          <div className="rp-reason-checklist">
+          <select className="input" value={selected} onChange={(e) => setSelected(e.target.value)}>
+            <option value="">— Select reason —</option>
             {NO_REASON_OPTIONS.map((opt) => (
-              <label key={opt} className="rp-reason-check">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(opt)}
-                  onChange={() => toggle(opt)}
-                />
-                {opt}
-              </label>
+              <option key={opt} value={opt}>{opt}</option>
             ))}
-          </div>
+          </select>
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
@@ -1779,10 +1770,10 @@ function NoReasonModal({ row, onClose, onContinue }) {
           <button
             type="button"
             className="btn btn-square"
-            disabled={busy || selected.length === 0}
+            disabled={busy || !selected}
             onClick={async () => {
               setBusy(true)
-              await onContinue(selected.join(', '))
+              await onContinue(selected)
               setBusy(false)
             }}
           >
@@ -1851,29 +1842,21 @@ function CancelPlanRideModal({ row, onClose, onConfirm }) {
 }
 
 function SkipModal({ row, onClose, onSkip }) {
-  const [selected, setSelected] = useState([])
+  const [selected, setSelected] = useState('')
   const [refNo, setRefNo] = useState('')
   const [busy, setBusy] = useState(false)
-  const toggle = (opt) =>
-    setSelected((s) => s.includes(opt) ? s.filter((x) => x !== opt) : [...s, opt])
-  const reason = selected.join(', ')
+  const reason = selected
   return (
     <Modal open onClose={onClose} title={`Trip ${row.trip_id} - Cancel`} width={480}>
       <div className="modal-form">
         <div className="field">
           <label>Reason <span className="required">*</span></label>
-          <div className="rp-reason-checklist">
+          <select className="input" value={selected} onChange={(e) => setSelected(e.target.value)}>
+            <option value="">— Select reason —</option>
             {NO_REASON_OPTIONS.map((opt) => (
-              <label key={opt} className="rp-reason-check">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(opt)}
-                  onChange={() => toggle(opt)}
-                />
-                {opt}
-              </label>
+              <option key={opt} value={opt}>{opt}</option>
             ))}
-          </div>
+          </select>
         </div>
         <div className="field">
           <label htmlFor="skip-refno">Ride ID (optional)</label>
@@ -1896,7 +1879,7 @@ function SkipModal({ row, onClose, onSkip }) {
           <button
             type="button"
             className="btn btn-square"
-            disabled={busy || (!refNo && !selected.length)}
+            disabled={busy || (!refNo && !selected)}
             onClick={async () => {
               setBusy(true)
               await onSkip(reason, refNo)

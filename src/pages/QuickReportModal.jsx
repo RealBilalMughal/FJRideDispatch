@@ -6,7 +6,7 @@ import { useAuth } from '../context/useAuth'
 import Modal from '../components/Modal'
 import SearchSelect from '../components/SearchSelect'
 import RouteMap from '../components/RouteMap'
-import { buildRoutePoints, routeComplete } from '../lib/rideRoute'
+import { blockExtraKm, buildRoutePoints, routeComplete } from '../lib/rideRoute'
 import { routeInfo } from '../lib/ors'
 
 const NO_REASON_OPTIONS = [
@@ -77,6 +77,7 @@ export default function QuickReportModal({
   const [adhocNo, setAdhocNo] = useState(initV.adhoc)
 
   const [alsoCreatePaired, setAlsoCreatePaired] = useState(false)
+  const [bufferEnabled, setBufferEnabled] = useState(true)
   const [reasons, setReasons] = useState(() =>
     editMode && row.report_reason
       ? row.report_reason.split(', ').filter(Boolean)
@@ -178,8 +179,9 @@ export default function QuickReportModal({
     const vehicleNo = resolvedVehicleNo()
     const now = new Date().toISOString()
     const reporter = (profile?.full_name || '').trim() || profile?.email || ''
+    const extraKm = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
     const kmVal = routeData?.distanceKm != null
-      ? parseFloat(routeData.distanceKm.toFixed(2))
+      ? parseFloat((routeData.distanceKm + extraKm).toFixed(2))
       : null
 
     const base = {
@@ -314,10 +316,26 @@ export default function QuickReportModal({
           <p className="qrm-subtitle">
             {row.plan_date} &nbsp;·&nbsp; {row.origin} → {row.destination}
             {routeLoading && <span className="secondary" style={{ fontSize: 11 }}> Calculating…</span>}
-            {!routeLoading && routeData?.distanceKm != null && (
-              <span className="qrm-km-badge">
-                {Number(routeData.distanceKm).toFixed(2)} km
-              </span>
+            {!routeLoading && routeData?.distanceKm != null && (() => {
+              const extra = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
+              const total = routeData.distanceKm + extra
+              return (
+                <span className="qrm-km-badge">
+                  {extra > 0
+                    ? `${routeData.distanceKm.toFixed(2)} + ${extra.toFixed(2)} = ${total.toFixed(2)} km`
+                    : `${total.toFixed(2)} km`}
+                </span>
+              )
+            })()}
+            {['pickup', 'dropoff'].includes(row.block_type) && (
+              <label className="qrm-radio" style={{ marginLeft: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={bufferEnabled}
+                  onChange={(e) => setBufferEnabled(e.target.checked)}
+                />
+                Buffer KM
+              </label>
             )}
           </p>
 

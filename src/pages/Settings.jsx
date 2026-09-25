@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Pencil, Ruler, Satellite, Shield, Timer } from 'lucide-react'
+import { MapPinned, Pencil, Ruler, Satellite, Shield, Timer, LayoutList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -27,6 +27,7 @@ const SECTIONS = [
   { key: 'buffer', label: 'Ride Buffer Time', icon: Timer },
   { key: 'blockkm', label: 'Block KM Buffer', icon: Ruler },
   { key: 'tracker', label: 'Live Tracker', icon: Satellite },
+  { key: 'rideplan', label: 'Ride Plan', icon: LayoutList },
   // 'notify' hidden until a real WhatsApp/SMS provider is set up (see
   // Rides.jsx's NOTIFY_ENABLED) - NotificationsPanel/cities.notify_* are
   // untouched, just not reachable from this list right now.
@@ -81,6 +82,8 @@ export default function Settings() {
             <BlockKmBufferPanel />
           ) : section === 'tracker' ? (
             <LiveTrackerPanel />
+          ) : section === 'rideplan' ? (
+            <RidePlanSettingsPanel />
           ) : (
             <NotificationsPanel />
           )}
@@ -1013,6 +1016,84 @@ function NotificationsPanel() {
           )}
         </div>
       )}
+    </>
+  )
+}
+
+// ── Ride Plan Settings ───────────────────────────────────────────────────
+// Global (localStorage) toggles that control Ride Plan page behaviour.
+// No server writes — just reads/writes localStorage keys the Ride Plan page
+// already consults on mount.
+const RP_TOGGLES = [
+  {
+    key: 'rpAddRideEnabled',
+    label: 'Add Ride mode',
+    description: 'When ON, the Ride Plan page uses the full Add Ride modal (Follow / No). When OFF, it switches to the quick Off-mode report form.',
+    defaultOn: true,
+  },
+  {
+    key: 'rpBufferKmEnabled',
+    label: 'Buffer KM',
+    description: 'When ON, block extra KM (Pickup / Drop Off buffer) is included in Off-mode actual KM calculations.',
+    defaultOn: true,
+  },
+  {
+    key: 'rpShowExtraRides',
+    label: 'Show extra rides',
+    description: 'When ON, rides dispatched directly from the Ride page (not via Follow / No) appear as extra rows in the Ride Plan table.',
+    defaultOn: true,
+  },
+]
+
+function RidePlanSettingsPanel() {
+  const [values, setValues] = useState(() => {
+    const out = {}
+    for (const t of RP_TOGGLES) {
+      try { out[t.key] = localStorage.getItem(t.key) !== 'false' }
+      catch { out[t.key] = t.defaultOn }
+    }
+    return out
+  })
+
+  const toggle = (key, on) => {
+    setValues((v) => ({ ...v, [key]: on }))
+    try { localStorage.setItem(key, on ? 'true' : 'false') } catch {}
+    toast.success('Setting saved')
+  }
+
+  return (
+    <>
+      <div className="set-panel-head">
+        <div>
+          <h3>Ride Plan</h3>
+          <div className="sub">
+            Controls how the Ride Plan page behaves. Changes take effect the next
+            time the Ride Plan page loads.
+          </div>
+        </div>
+      </div>
+
+      <div className="set-form">
+        {RP_TOGGLES.map((t) => {
+          const on = values[t.key]
+          return (
+            <div key={t.key} className="set-toggle-row">
+              <div className="set-toggle-info">
+                <div className="set-toggle-label">{t.label}</div>
+                <div className="set-toggle-desc">{t.description}</div>
+              </div>
+              <button
+                type="button"
+                className={`set-toggle-btn${on ? ' on' : ''}`}
+                onClick={() => toggle(t.key, !on)}
+                title={on ? 'ON — click to turn off' : 'OFF — click to turn on'}
+              >
+                <span className="set-toggle-knob" />
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </>
   )
 }

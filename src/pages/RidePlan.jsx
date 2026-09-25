@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { addDays, fmtTime12, pkNow, pkToday } from '../lib/time'
-import { blockLabel, displayCrewCount } from '../lib/rideRoute'
+import { blockLabel, buildRoutePoints, displayCrewCount } from '../lib/rideRoute'
 import { gmapsRoute } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanInitial, buildPlanRows } from '../lib/planImport'
 import Modal from '../components/Modal'
+import ConfirmDialog from '../components/ConfirmDialog'
 import ConfirmDelete from '../components/ConfirmDelete'
 import DataTable from '../components/data/DataTable'
 import StatCards from '../components/data/StatCards'
@@ -271,7 +272,7 @@ function PlanTimeline({ rows }) {
 }
 
 export default function RidePlan() {
-  const { can, profile } = useAuth()
+  const { can, profile, isSuperAdmin, roles } = useAuth()
   const { allowedCities, cityId, cityName } = useCity()
 
   const canView = can('ride_plan', 'view')
@@ -279,6 +280,7 @@ export default function RidePlan() {
   const canEdit = can('ride_plan', 'edit')
   const canDelete = can('ride_plan', 'delete')
   const canAddRide = can('rides', 'add')
+  const isAdmin = profile?.role === 'admin' || (roles ?? []).includes('admin')
 
   const [planDate, setPlanDate] = useState(pkToday())
   const [rows, setRows] = useState([])
@@ -295,19 +297,28 @@ export default function RidePlan() {
   const [addRideEnabled, setAddRideEnabled] = useState(
     () => localStorage.getItem('rpAddRideEnabled') !== 'false',
   )
-  const toggleAddRide = (v) => {
-    setAddRideEnabled(v)
-    try { localStorage.setItem('rpAddRideEnabled', v ? 'true' : 'false') } catch {}
-  }
+  const [showExtraRides, setShowExtraRides] = useState(
+    () => localStorage.getItem('rpShowExtraRides') !== 'false',
+  )
   const [bufferKmEnabled, setBufferKmEnabled] = useState(
     () => localStorage.getItem('rpBufferKmEnabled') !== 'false',
   )
-  const toggleBufferKm = (v) => {
-    setBufferKmEnabled(v)
-    try { localStorage.setItem('rpBufferKmEnabled', v ? 'true' : 'false') } catch {}
-  }
+
+  // Re-sync from localStorage when Settings changes a key in another tab,
+  // or when the user navigates back from Settings in the same tab.
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'rpAddRideEnabled') setAddRideEnabled(e.newValue !== 'false')
+      if (e.key === 'rpBufferKmEnabled') setBufferKmEnabled(e.newValue !== 'false')
+      if (e.key === 'rpShowExtraRides') setShowExtraRides(e.newValue !== 'false')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   const [quickReport, setQuickReport] = useState(null) // { row, pairedRow } | null
   const [crewMerge, setCrewMerge] = useState(null) // { planRow, crewObj, sameFlightRows } | null
+  const [resetConfirm, setResetConfirm] = useState(null) // row to reset | null
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
@@ -532,25 +543,27 @@ export default function RidePlan() {
       else extraNoFlight.push(e)
     }
     const result = [...planRows]
-    const inserted = new Set()
-    for (const [fid, extras] of extraByFlight) {
-      let lastIdx = -1
-      for (let i = 0; i < result.length; i++) {
-        if (!result[i].isExtra && result[i].matched_flight_id === fid) lastIdx = i
+    if (showExtraRides) {
+      const inserted = new Set()
+      for (const [fid, extras] of extraByFlight) {
+        let lastIdx = -1
+        for (let i = 0; i < result.length; i++) {
+          if (!result[i].isExtra && result[i].matched_flight_id === fid) lastIdx = i
+        }
+        if (lastIdx >= 0) {
+          let pos = lastIdx + 1
+          while (pos < result.length && result[pos].isExtra) pos++
+          result.splice(pos, 0, ...extras.map((e) => ({ ...e, isChild: true })))
+          extras.forEach((e) => inserted.add(e.id))
+        }
       }
-      if (lastIdx >= 0) {
-        let pos = lastIdx + 1
-        while (pos < result.length && result[pos].isExtra) pos++
-        result.splice(pos, 0, ...extras.map((e) => ({ ...e, isChild: true })))
-        extras.forEach((e) => inserted.add(e.id))
+      for (const e of extraRows) {
+        if (!inserted.has(e.id)) result.push(e)
       }
-    }
-    for (const e of extraRows) {
-      if (!inserted.has(e.id)) result.push(e)
     }
     setRows(result)
     setLoading(false)
-  }, [canView, planDate, cityId, vehicles])
+  }, [canView, planDate, cityId, vehicles, showExtraRides])
 
   useEffect(() => {
     fetchRows()
@@ -658,7 +671,11 @@ export default function RidePlan() {
           next_flight_out: '',
           followed: r.status === 'followed' ? 'Yes' : 'No',
           reason: r.report_reason || r.skip_reason || '',
-          actual_km: r.actual_km != null ? Number(r.actual_km).toFixed(2) : '',
+          actual_km: (() => {
+            if (r.status !== 'followed') return ''
+            if (r.ride) return (Number(billableKm(r.ride)) || 0).toFixed(2)
+            return r.actual_km != null ? Number(r.actual_km).toFixed(2) : ''
+          })(),
           actual_vehicle: r.actual_vehicle_no || '',
           reported: r.reported_by_name || '',
           remarks: r.report_remarks || '',
@@ -699,12 +716,17 @@ export default function RidePlan() {
   // Off-mode simple follow: mark main row + paired row as followed directly.
   const doQuickFollow = async (r) => {
     const paired = findPairedRow(r)
-    const ids = [r.id, ...(paired ? [paired.id] : [])]
-    const { error } = await supabase
-      .from('ride_plan_rows')
-      .update({ status: 'followed', via_no: false })
-      .in('id', ids)
-    if (error) { toast.error('Could not mark as followed'); return }
+    const updates = [
+      supabase.from('ride_plan_rows')
+        .update({ status: 'followed', via_no: false, actual_km: r.planned_km ?? null })
+        .eq('id', r.id),
+      ...(paired ? [supabase.from('ride_plan_rows')
+        .update({ status: 'followed', via_no: false, actual_km: paired.planned_km ?? null })
+        .eq('id', paired.id)] : []),
+    ]
+    const results = await Promise.all(updates)
+    const err = results.find((res) => res.error)?.error
+    if (err) { toast.error('Could not mark as followed'); return }
     toast.success(paired ? 'Followed (+ paired row)' : 'Followed')
     fetchRows()
   }
@@ -944,6 +966,7 @@ export default function RidePlan() {
       cancelled_by: profile?.id ?? null,
       count_km: false,
     }
+
     // Cancel the main ride
     const { error: rideErr } = await supabase
       .from('rides')
@@ -951,31 +974,28 @@ export default function RidePlan() {
       .eq('id', cancelFor.ride.id)
     if (rideErr) return toast.error(rideErr.message)
 
-    // Also cancel any companion rides (deadhead / return leg) linked to this ride
+    // Cancel any companion rides (deadhead / return leg) chained to this ride
     const { data: companions, error: compErr } = await supabase
       .from('rides')
       .select('id')
       .eq('return_of_ride_id', cancelFor.ride.id)
       .neq('status', 'cancelled')
     if (compErr) toast.error('Companion query error: ' + compErr.message)
-    if (!companions?.length) {
-      toast('Koi companion nahi mila is ride ka (ride id: ' + cancelFor.ride.id + ')')
-    }
     if (companions?.length) {
-      const companionIds = companions.map((c) => c.id)
-      await supabase.from('rides').update(cancelPayload).in('id', companionIds)
-      // Reopen any plan rows that were linked to those companion rides
-      await supabase
-        .from('ride_plan_rows')
-        .update({ status: 'pending', ride_id: null, skip_reason: null, via_no: false })
-        .in('ride_id', companionIds)
+      await supabase.from('rides').update(cancelPayload).in('id', companions.map((c) => c.id))
     }
 
-    // Reopen the main plan row
-    await supabase
-      .from('ride_plan_rows')
-      .update({ status: 'pending', ride_id: null, skip_reason: null, via_no: false })
-      .eq('id', cancelFor.id)
+    // Also cancel the adjacent paired plan row (deadhead / return leg) if it is still pending
+    const pairedPlanRow = findPairedRow(cancelFor, { ignoreStatus: true })
+    if (pairedPlanRow && pairedPlanRow.status === 'pending') {
+      await supabase
+        .from('ride_plan_rows')
+        .update({ status: 'skipped', skip_reason: 'Paired ride cancelled' })
+        .eq('id', pairedPlanRow.id)
+    }
+
+    // Plan rows stay as 'followed' — the cancelled ride is still linked.
+    // SuperAdmin uses the Reset button (RotateCcw) to clear the row back to pending.
     setCancelFor(null)
     fetchRows()
   }
@@ -1015,6 +1035,29 @@ export default function RidePlan() {
       toast.success(`Deleted the plan for ${fmtDate(planDate)}`)
     }
     setDeletePlanOpen(false)
+    fetchRows()
+  }
+
+  const doReset = async () => {
+    const row = resetConfirm
+    setResetConfirm(null)
+    const paired = findPairedRow(row, { ignoreStatus: true })
+    const ids = [row.id, ...(paired ? [paired.id] : [])]
+    const { error } = await supabase.from('ride_plan_rows').update({
+      status: 'pending',
+      ride_id: null,
+      via_no: false,
+      skip_reason: null,
+      actual_crew_names: null,
+      actual_vehicle_no: null,
+      actual_km: null,
+      report_reason: null,
+      report_remarks: null,
+      reported_by_name: null,
+      reported_at: null,
+    }).in('id', ids)
+    if (error) { toast.error('Reset failed: ' + error.message); return }
+    toast.success(paired ? 'Reset to pending (+ paired row)' : 'Reset to pending')
     fetchRows()
   }
 
@@ -1063,14 +1106,16 @@ export default function RidePlan() {
     return byBlock
   }, [rows])
 
-  const statusCounts = useMemo(
-    () => ({
-      followed: rows.filter((r) => r.status === 'followed').length,
-      no: rows.filter((r) => r.status === 'skipped').length,
-      pending: rows.filter((r) => r.status === 'pending').length,
-    }),
-    [rows],
-  )
+  const statusCounts = useMemo(() => {
+    // Extra (synthetic) rows are not real plan rows — exclude from all counts
+    const planRows = rows.filter((r) => !r.isExtra)
+    return {
+      followed:  planRows.filter((r) => r.status === 'followed' && !r.via_no).length,
+      noFollow:  planRows.filter((r) => r.status === 'followed' && r.via_no).length,
+      cancelled: planRows.filter((r) => r.status === 'skipped').length,
+      pending:   planRows.filter((r) => r.status === 'pending').length,
+    }
+  }, [rows])
   const totalDelta = summary.total.actualKm - summary.total.plannedKm
 
   const flightFilterOpts = useMemo(
@@ -1223,14 +1268,21 @@ export default function RidePlan() {
     { key: 'status', header: 'Status', render: (r) => <StatusCell row={r} /> },
     { key: 'km', header: 'Planned KM', align: 'right', render: (r) => {
       const km = r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—'
-      const planUrl = (r.via_no && r.origin && r.destination)
-        ? `https://www.google.com/maps/dir/${encodeURIComponent(r.origin)}/${encodeURIComponent(r.destination)}`
-        : null
+      if (!r.via_no || !r.crew_matches?.length) return km
+      // Build planned crew route for No Follow rows
+      const rowCity = allowedCities.find((c) => c.id === r.city_id)
+      const airport = rowCity
+        ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+        : {}
+      const crewList = r.crew_matches
+        .map((m) => crew.find((c) => c.id === m.crew_id))
+        .filter(Boolean)
+      const planUrl = gmapsRoute(buildRoutePoints(r.block_type, null, crewList, airport))
       if (!planUrl) return km
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           {km}
-          <a href={planUrl} target="_blank" rel="noreferrer" className="icon-btn" title="Open planned route in Google Maps" style={{ padding: 2 }}>
+          <a href={planUrl} target="_blank" rel="noreferrer" className="icon-btn" title="Planned crew route" style={{ padding: 2 }}>
             <Navigation size={12} />
           </a>
         </span>
@@ -1262,12 +1314,27 @@ export default function RidePlan() {
       key: 'actions',
       header: 'Action',
       render: (r) => {
-        const textRoute = (r.origin && r.destination)
-          ? `https://www.google.com/maps/dir/${encodeURIComponent(r.origin)}/${encodeURIComponent(r.destination)}`
-          : null
-        const gmActual = r.status === 'followed'
-          ? (gmapsRoute(r.ride?.waypoints) ?? textRoute)
-          : null
+        // Build route URL from a crew list + airport (uses stop_lat/stop_lng)
+        const crewGm = (crewList, rowCityId, blockType) => {
+          if (!crewList.length) return null
+          const rowCity = allowedCities.find((c) => c.id === rowCityId)
+          const airport = rowCity
+            ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+            : {}
+          return gmapsRoute(buildRoutePoints(blockType, null, crewList, airport))
+        }
+
+        // Actual route: linked ride waypoints first, else match actual_crew_names → crew array
+        const gmActual = (() => {
+          if (r.status !== 'followed') return null
+          const fromRide = gmapsRoute(r.ride?.waypoints)
+          if (fromRide) return fromRide
+          if (!r.actual_crew_names) return null
+          const names = r.actual_crew_names.split(',').map((s) => s.trim()).filter(Boolean)
+          const crewList = names.map((n) => crew.find((c) => c.name === n)).filter(Boolean)
+          return crewGm(crewList, r.city_id, r.block_type)
+        })()
+
         return (
           <div className="rp-row-actions">
             {/* On mode: normal Follow/No via Add Ride modal */}
@@ -1328,11 +1395,6 @@ export default function RidePlan() {
                 <Ban size={15} />
               </button>
             )}
-            {canEdit && r.status === 'skipped' && (
-              <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => reopen(r)}>
-                Reopen
-              </button>
-            )}
             {r.skip_reason && (
               <button
                 type="button"
@@ -1343,7 +1405,7 @@ export default function RidePlan() {
                 <MessageSquare size={15} />
               </button>
             )}
-            {canEdit && !addRideEnabled && !r.isExtra && r.status === 'followed' && (
+            {!addRideEnabled && !r.isExtra && r.status === 'followed' && (isSuperAdmin || isAdmin) && (
               <button
                 type="button"
                 className="icon-btn"
@@ -1351,6 +1413,19 @@ export default function RidePlan() {
                 onClick={() => setQuickReport({ row: r, pairedRow: null, editMode: true })}
               >
                 <Pencil size={15} />
+              </button>
+            )}
+            {!r.isExtra && isSuperAdmin && (
+              (r.status === 'followed' && (!addRideEnabled || r.ride?.status === 'cancelled')) ||
+              r.status === 'skipped'
+            ) && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Reset"
+                onClick={() => setResetConfirm(r)}
+              >
+                <RotateCcw size={15} />
               </button>
             )}
             {r.ride?.id && (
@@ -1411,27 +1486,9 @@ export default function RidePlan() {
             >
               <Sigma size={13} /> Report
             </button>
-            <button
-              className={`btn btn-square btn-sm${addRideEnabled ? '' : ' btn-danger'}`}
-              style={{ minWidth: 100 }}
-              onClick={() => toggleAddRide(!addRideEnabled)}
-              title={addRideEnabled ? 'Add Ride is ON — click to disable' : 'Add Ride is OFF — click to enable'}
-            >
-              {addRideEnabled ? 'Add Ride: On' : 'Add Ride: Off'}
-            </button>
             {canAddRide && addRideEnabled && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={() => setRideModal({ initial: null, planRowId: null, pairedRowId: null, viaNo: false })}>
                 <Plus size={14} /> Add Ride
-              </button>
-            )}
-            {!addRideEnabled && (
-              <button
-                className={`btn btn-square btn-sm${bufferKmEnabled ? '' : ' btn-danger'}`}
-                style={{ minWidth: 110 }}
-                onClick={() => toggleBufferKm(!bufferKmEnabled)}
-                title={bufferKmEnabled ? 'Buffer KM is ON — click to disable' : 'Buffer KM is OFF — click to enable'}
-              >
-                {bufferKmEnabled ? 'Buffer KM: On' : 'Buffer KM: Off'}
               </button>
             )}
             {!addRideEnabled && rows.length > 0 && (
@@ -1487,7 +1544,13 @@ export default function RidePlan() {
             {
               key: 'no-count',
               label: 'No',
-              value: statusCounts.no,
+              value: statusCounts.noFollow,
+              hint: `${statusCounts.pending} pending`,
+            },
+            {
+              key: 'cancelled-count',
+              label: 'Cancelled',
+              value: statusCounts.cancelled,
               hint: `${statusCounts.pending} pending`,
             },
           ]}
@@ -1754,6 +1817,16 @@ export default function RidePlan() {
         busy={deleting}
         onConfirm={doDeletePlan}
         onClose={() => setDeletePlanOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(resetConfirm)}
+        title="Reset report?"
+        message={`This will clear all reported fields (actual crew, vehicle, KM, reason) and set the row back to pending.${resetConfirm && findPairedRow(resetConfirm, { ignoreStatus: true }) ? ' The paired deadhead / return leg row will also be reset.' : ''}`}
+        confirmLabel="Reset"
+        tone="danger"
+        onConfirm={doReset}
+        onClose={() => setResetConfirm(null)}
       />
     </div>
   )

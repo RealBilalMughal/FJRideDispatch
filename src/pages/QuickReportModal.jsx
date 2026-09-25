@@ -90,6 +90,8 @@ export default function QuickReportModal({
   const [busy, setBusy] = useState(false)
   const routeAlive = useRef(true)
   const dragIdx = useRef(null)
+  const [dragging, setDragging] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
 
   // Auto-assign Ad-Hoc number (only for new adhoc, not edit)
   useEffect(() => {
@@ -323,7 +325,7 @@ export default function QuickReportModal({
   return (
     <Modal
       open
-      width={520}
+      width="min(860px, 97vw)"
       title={modalTitle}
       onClose={onClose}
       footer={
@@ -337,24 +339,34 @@ export default function QuickReportModal({
         </>
       }
     >
-      <form id="qrm-form" className="modal-form" onSubmit={handleSubmit}>
-        <div>
+      <form id="qrm-form" onSubmit={handleSubmit} className="qrm-layout">
+
+        {/* ── Left column: all fields ── */}
+        <div className="qrm-fields">
+
+          {/* subtitle: date · route · KM badge */}
           <p className="qrm-subtitle">
             {row.plan_date} &nbsp;·&nbsp; {row.origin} → {row.destination}
-            {routeLoading && <span className="secondary" style={{ fontSize: 11 }}> Calculating…</span>}
-            {!routeLoading && routeData?.distanceKm != null && (() => {
-              const extra = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
-              const total = routeData.distanceKm + extra
-              return (
-                <span className="qrm-km-badge">
-                  {extra > 0
-                    ? `${routeData.distanceKm.toFixed(2)} + ${extra.toFixed(2)} = ${total.toFixed(2)} km`
-                    : `${total.toFixed(2)} km`}
-                </span>
-              )
-            })()}
+          </p>
+
+          {/* KM + buffer row */}
+          <div className="qrm-km-row">
+            {routeLoading
+              ? <span className="secondary" style={{ fontSize: 11 }}>Calculating…</span>
+              : routeData?.distanceKm != null && (() => {
+                  const extra = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
+                  const total = routeData.distanceKm + extra
+                  return (
+                    <span className="qrm-km-badge">
+                      {extra > 0
+                        ? `${routeData.distanceKm.toFixed(2)} + ${extra.toFixed(2)} = ${total.toFixed(2)} km`
+                        : `${total.toFixed(2)} km`}
+                    </span>
+                  )
+                })()
+            }
             {['pickup', 'dropoff'].includes(row.block_type) && (
-              <label className="qrm-radio" style={{ marginLeft: 4 }}>
+              <label className="qrm-radio">
                 <input
                   type="checkbox"
                   checked={bufferEnabled}
@@ -363,46 +375,51 @@ export default function QuickReportModal({
                 Buffer KM
               </label>
             )}
-          </p>
+          </div>
 
           {/* ── Crew ── */}
           <div className="field">
             <label>Crew</label>
-            <div className="qrm-crew-list">
-              {actualCrew.map((c, i) => (
-                <span
-                  key={c.id}
-                  className="qrm-crew-tag"
-                  draggable
-                  onDragStart={() => { dragIdx.current = i }}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    if (i === dragIdx.current) return
-                    e.currentTarget.style.boxShadow = 'inset 0 2px 0 0 var(--accent)'
-                  }}
-                  onDragLeave={(e) => { e.currentTarget.style.boxShadow = '' }}
-                  onDrop={(e) => {
-                    e.currentTarget.style.boxShadow = ''
-                    const from = dragIdx.current
-                    if (from == null || from === i) return
-                    setActualCrew((prev) => {
-                      const next = [...prev]
-                      const [moved] = next.splice(from, 1)
-                      next.splice(i, 0, moved)
-                      return next
-                    })
-                    dragIdx.current = null
-                  }}
-                  onDragEnd={() => { dragIdx.current = null }}
-                >
-                  <GripVertical size={11} style={{ opacity: 0.4, flexShrink: 0, cursor: 'grab' }} />
-                  {c.name}
-                  <button type="button" className="qrm-crew-remove" onClick={() => removeCrew(c.id)}>
-                    <X size={11} />
-                  </button>
-                </span>
-              ))}
-            </div>
+            {actualCrew.length > 0 && (
+              <ol className="ride-crew-list">
+                {actualCrew.map((c, i) => (
+                  <li
+                    key={c.id}
+                    draggable
+                    className={[dragging === i ? 'dragging' : '', dragOver === i ? 'drag-over' : ''].filter(Boolean).join(' ')}
+                    onDragStart={() => { dragIdx.current = i; setDragging(i) }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      if (i !== dragIdx.current) setDragOver(i)
+                    }}
+                    onDragLeave={() => setDragOver(null)}
+                    onDrop={() => {
+                      const from = dragIdx.current
+                      setDragOver(null)
+                      if (from == null || from === i) return
+                      setActualCrew((prev) => {
+                        const next = [...prev]
+                        const [moved] = next.splice(from, 1)
+                        next.splice(i, 0, moved)
+                        return next
+                      })
+                      dragIdx.current = null
+                    }}
+                    onDragEnd={() => { dragIdx.current = null; setDragging(null); setDragOver(null) }}
+                  >
+                    <span className="ride-crew-drag"><GripVertical size={13} /></span>
+                    <span className="ride-crew-seq">{i + 1}</span>
+                    <span className="ride-crew-name">
+                      {c.ref_no ? `(${c.ref_no}) ` : ''}{c.name}
+                      {c.stop_name ? ` · ${c.stop_name}` : ''}
+                    </span>
+                    <button type="button" className="ride-crew-x" onClick={() => removeCrew(c.id)}>
+                      <X size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
             <SearchSelect
               value=""
               onChange={addCrewById}
@@ -507,7 +524,7 @@ export default function QuickReportModal({
             <label>Remarks <span className="field-hint">(optional)</span></label>
             <textarea
               className="textarea"
-              rows={2}
+              rows={3}
               placeholder="Additional notes…"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
@@ -515,12 +532,16 @@ export default function QuickReportModal({
           </div>
         </div>
 
-        <RouteMap
-          points={routePts}
-          line={routeData?.line ?? null}
-          totalKm={routeData?.distanceKm ?? null}
-          height="260px"
-        />
+        {/* ── Right column: route map ── */}
+        <div className="qrm-map">
+          <RouteMap
+            points={routePts}
+            line={routeData?.line ?? null}
+            totalKm={routeData?.distanceKm ?? null}
+            height="100%"
+          />
+        </div>
+
       </form>
     </Modal>
   )

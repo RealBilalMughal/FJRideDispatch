@@ -289,6 +289,7 @@ export default function RidePlan() {
   const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [viewMode, setViewMode] = useState('list') // 'list' | 'timeline'
+  const [addRideEnabled, setAddRideEnabled] = useState(true)
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
@@ -1072,7 +1073,7 @@ export default function RidePlan() {
         const gm = r.status === 'followed' ? gmapsRoute(r.ride?.waypoints) : null
         return (
           <div className="rp-row-actions">
-            {canEdit && canAddRide && canFollow(r) && (
+            {canEdit && canAddRide && addRideEnabled && canFollow(r) && (
               <button
                 type="button"
                 className="btn btn-ghost btn-square btn-sm rp-follow-btn"
@@ -1081,7 +1082,7 @@ export default function RidePlan() {
                 Follow
               </button>
             )}
-            {canEdit && canFollow(r) && (
+            {canEdit && addRideEnabled && canFollow(r) && (
               <button
                 type="button"
                 className="btn btn-ghost btn-square btn-sm rp-no-btn"
@@ -1183,7 +1184,15 @@ export default function RidePlan() {
             >
               <Sigma size={13} /> Report
             </button>
-            {canAddRide && (
+            <button
+              className={`btn btn-square btn-sm${addRideEnabled ? '' : ' btn-danger'}`}
+              style={{ minWidth: 100 }}
+              onClick={() => setAddRideEnabled((v) => !v)}
+              title={addRideEnabled ? 'Add Ride is ON — click to disable' : 'Add Ride is OFF — click to enable'}
+            >
+              {addRideEnabled ? 'Add Ride: On' : 'Add Ride: Off'}
+            </button>
+            {canAddRide && addRideEnabled && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={() => setRideModal({ initial: null, planRowId: null, pairedRowId: null, viaNo: false })}>
                 <Plus size={14} /> Add Ride
               </button>

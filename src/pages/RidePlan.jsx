@@ -669,7 +669,10 @@ export default function RidePlan() {
           deadhead_from: deadheadFrom,
           return_after_flight: '',
           next_flight_out: '',
-          followed: r.status === 'followed' ? 'Yes' : 'No',
+          followed: r.status === 'followed' && !r.via_no ? 'Followed'
+            : r.status === 'followed' && r.via_no ? 'No'
+            : r.status === 'skipped' ? 'Cancelled'
+            : 'Pending',
           reason: r.report_reason || r.skip_reason || '',
           actual_km: (() => {
             if (r.status !== 'followed') return ''

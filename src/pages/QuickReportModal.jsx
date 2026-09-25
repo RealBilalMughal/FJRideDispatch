@@ -94,7 +94,7 @@ export default function QuickReportModal({
     supabase
       .from('rides')
       .select('adhoc_vehicle_no')
-      .eq('city_id', cityId)
+      .eq('city_id', row.city_id ?? cityId)
       .eq('ride_date', row.plan_date)
       .eq('is_adhoc_vehicle', true)
       .then(({ data }) => {
@@ -149,8 +149,9 @@ export default function QuickReportModal({
     .filter((c) => !actualCrew.find((x) => x.id === c.id))
     .map((c) => ({ value: c.id, label: `(${c.ref_no}) ${c.name}` }))
 
+  const effectiveCityId = row.city_id ?? cityId
   const vehicleOptions = vehicles
-    .filter((v) => v.city_id === cityId)
+    .filter((v) => !effectiveCityId || v.city_id === effectiveCityId)
     .map((v) => ({ value: v.id, label: v.vehicle_no }))
 
   const resolvedVehicleNo = () => {

@@ -16,8 +16,10 @@ import DataTable from '../components/data/DataTable'
 import StatCards from '../components/data/StatCards'
 import SearchSelect from '../components/SearchSelect'
 import { RideModal } from './Rides'
+import QuickReportModal from './QuickReportModal'
 import '../components/data/data.css'
 import './RidePlan.css'
+import './QuickReportModal.css'
 
 // Fixed order for the top KM summary - not the insertion order rows happen
 // to appear in.
@@ -290,6 +292,7 @@ export default function RidePlan() {
   const [reportOpen, setReportOpen] = useState(false)
   const [viewMode, setViewMode] = useState('list') // 'list' | 'timeline'
   const [addRideEnabled, setAddRideEnabled] = useState(true)
+  const [quickReport, setQuickReport] = useState(null) // { row, pairedRow } | null
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
@@ -576,6 +579,108 @@ export default function RidePlan() {
   }, [rows, fetchRows, canEdit])
 
   const canFollow = (r) => r.status === 'pending'
+
+  // Return the adjacent deadhead (seq-1 before a pickup) or return_leg
+  // (seq+1 after a dropoff) that pairs with this row, if it's pending.
+  const findPairedRow = (r) => {
+    if (r.block_type === 'pickup') {
+      return rows.find(
+        (x) => x.block_type === 'deadhead' && x.seq === r.seq - 1 && x.city_id === r.city_id &&
+          x.status === 'pending' && (!r.car || x.car === r.car),
+      ) ?? null
+    }
+    if (r.block_type === 'dropoff') {
+      return rows.find(
+        (x) => x.block_type === 'return_leg' && x.seq === r.seq + 1 && x.city_id === r.city_id &&
+          x.status === 'pending',
+      ) ?? null
+    }
+    return null
+  }
+
+  // Off-mode export — duty-sheet columns + reporting fields
+  const doExportReport = () => {
+    const seqMap = new Map(rows.map((r) => [r.seq, r]))
+    const cityObj = allowedCities.find((c) => c.id === cityId) || null
+    const base = cityObj?.airport_name?.slice(0, 3).toUpperCase() || ''
+
+    const data = rows
+      .filter((r) => !r.isExtra)
+      .map((r) => {
+        // Deadhead From: for pickups, look for adjacent deadhead at seq-1
+        let deadheadFrom = ''
+        if (r.block_type === 'pickup') {
+          const dh = seqMap.get(r.seq - 1)
+          if (dh?.block_type === 'deadhead') deadheadFrom = dh.origin || ''
+        }
+        return {
+          date: r.plan_date,
+          base,
+          car: r.is_adhoc_car ? '' : (r.car || ''),
+          adhoc_car: r.is_adhoc_car ? (r.car || 'Yes') : '',
+          block_type: r.block_type,
+          trip_id: r.trip_id || '',
+          flight_no: r.flight_no || '',
+          origin: r.origin || '',
+          destination: r.destination || '',
+          start_time: r.start_time || '',
+          end_time: r.end_time || '',
+          distance_km: r.planned_km != null ? Number(r.planned_km).toFixed(2) : '',
+          crew_count: r.crew_count != null ? r.crew_count : '',
+          crew: r.crew_raw || '',
+          deadhead_from: deadheadFrom,
+          return_after_flight: '',
+          next_flight_out: '',
+          followed: r.status === 'followed' ? 'Yes' : 'No',
+          reason: r.report_reason || r.skip_reason || '',
+          actual_km: r.actual_km != null ? Number(r.actual_km).toFixed(2) : '',
+          actual_vehicle: r.actual_vehicle_no || '',
+          reported: r.reported_by_name || '',
+          remarks: r.report_remarks || '',
+        }
+      })
+
+    const cols = [
+      { key: 'date', label: 'Date' },
+      { key: 'base', label: 'Base' },
+      { key: 'car', label: 'Car' },
+      { key: 'adhoc_car', label: 'Ad-hoc Car' },
+      { key: 'block_type', label: 'Block Type' },
+      { key: 'trip_id', label: 'Trip ID' },
+      { key: 'flight_no', label: 'Flight No' },
+      { key: 'origin', label: 'Origin' },
+      { key: 'destination', label: 'Destination' },
+      { key: 'start_time', label: 'Start Time' },
+      { key: 'end_time', label: 'End Time' },
+      { key: 'distance_km', label: 'Distance (km)' },
+      { key: 'crew_count', label: 'Crew Count' },
+      { key: 'crew', label: 'Crew' },
+      { key: 'deadhead_from', label: 'Deadhead From' },
+      { key: 'return_after_flight', label: 'Return After Flight' },
+      { key: 'next_flight_out', label: 'Next Flight Out' },
+      { key: 'followed', label: 'Followed' },
+      { key: 'reason', label: 'Reason' },
+      { key: 'actual_km', label: 'Actual KM' },
+      { key: 'actual_vehicle', label: 'Actual Vehicle' },
+      { key: 'reported', label: 'Reported' },
+      { key: 'remarks', label: 'Remarks' },
+    ]
+    downloadCsv(`ride-plan-report-${planDate}.csv`, toCsv(cols, data))
+    toast.success(`Exported ${data.length} row(s)`)
+  }
+
+  // Off-mode simple follow: mark main row + paired row as followed directly.
+  const doQuickFollow = async (r) => {
+    const paired = findPairedRow(r)
+    const ids = [r.id, ...(paired ? [paired.id] : [])]
+    const { error } = await supabase
+      .from('ride_plan_rows')
+      .update({ status: 'followed', via_no: false })
+      .in('id', ids)
+    if (error) { toast.error('Could not mark as followed'); return }
+    toast.success(paired ? 'Followed (+ paired row)' : 'Followed')
+    fetchRows()
+  }
 
   // Open the full ride view modal.  Cache hit = instant; miss = one fetch.
   const openRideView = useCallback(async (rideId) => {
@@ -1073,6 +1178,7 @@ export default function RidePlan() {
         const gm = r.status === 'followed' ? gmapsRoute(r.ride?.waypoints) : null
         return (
           <div className="rp-row-actions">
+            {/* On mode: normal Follow/No via Add Ride modal */}
             {canEdit && canAddRide && addRideEnabled && canFollow(r) && (
               <button
                 type="button"
@@ -1087,6 +1193,25 @@ export default function RidePlan() {
                 type="button"
                 className="btn btn-ghost btn-square btn-sm rp-no-btn"
                 onClick={() => setNoReasonFor(r)}
+              >
+                No
+              </button>
+            )}
+            {/* Off mode: Follow = direct mark; No = QuickReportModal */}
+            {canEdit && !addRideEnabled && canFollow(r) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm rp-follow-btn"
+                onClick={() => doQuickFollow(r)}
+              >
+                Follow
+              </button>
+            )}
+            {canEdit && !addRideEnabled && canFollow(r) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm rp-no-btn"
+                onClick={() => setQuickReport({ row: r, pairedRow: findPairedRow(r) })}
               >
                 No
               </button>
@@ -1195,6 +1320,11 @@ export default function RidePlan() {
             {canAddRide && addRideEnabled && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={() => setRideModal({ initial: null, planRowId: null, pairedRowId: null, viaNo: false })}>
                 <Plus size={14} /> Add Ride
+              </button>
+            )}
+            {!addRideEnabled && rows.length > 0 && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={doExportReport}>
+                <Download size={14} /> Export Report
               </button>
             )}
             {canAdd && (
@@ -1451,6 +1581,18 @@ export default function RidePlan() {
         <NoReasonModal row={noReasonFor} onClose={() => setNoReasonFor(null)} onContinue={doNoReason} />
       )}
       {reasonFor && <ReasonPopup row={reasonFor} onClose={() => setReasonFor(null)} />}
+
+      {quickReport && (
+        <QuickReportModal
+          row={quickReport.row}
+          pairedRow={quickReport.pairedRow}
+          crew={crew}
+          vehicles={vehicles}
+          cityId={cityId}
+          onDone={() => { setQuickReport(null); fetchRows() }}
+          onClose={() => setQuickReport(null)}
+        />
+      )}
 
       {rideModal && (
         <RideModal

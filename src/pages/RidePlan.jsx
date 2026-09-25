@@ -1756,12 +1756,19 @@ function NoReasonModal({ row, onClose, onContinue }) {
           <label>
             Reason <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
-          <select className="input" value={selected} onChange={(e) => setSelected(e.target.value)}>
-            <option value="">— Select reason —</option>
+          <div className="rp-reason-checklist">
             {NO_REASON_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
+              <label key={opt} className="rp-reason-check">
+                <input
+                  type="radio"
+                  name="no-reason"
+                  checked={selected === opt}
+                  onChange={() => setSelected(opt)}
+                />
+                {opt}
+              </label>
             ))}
-          </select>
+          </div>
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
@@ -1851,12 +1858,19 @@ function SkipModal({ row, onClose, onSkip }) {
       <div className="modal-form">
         <div className="field">
           <label>Reason <span className="required">*</span></label>
-          <select className="input" value={selected} onChange={(e) => setSelected(e.target.value)}>
-            <option value="">— Select reason —</option>
+          <div className="rp-reason-checklist">
             {NO_REASON_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
+              <label key={opt} className="rp-reason-check">
+                <input
+                  type="radio"
+                  name="skip-reason"
+                  checked={selected === opt}
+                  onChange={() => setSelected(opt)}
+                />
+                {opt}
+              </label>
             ))}
-          </select>
+          </div>
         </div>
         <div className="field">
           <label htmlFor="skip-refno">Ride ID (optional)</label>

@@ -991,6 +991,11 @@ export default function RidePlan() {
     fetchRows()
   }
 
+  const rowActualKm = (r) => {
+    if (r.ride) return Number(billableKm(r.ride)) || 0
+    return Number(r.actual_km) || 0
+  }
+
   const report = useMemo(() => {
     const byBlock = {}
     for (const r of rows) {
@@ -1013,11 +1018,6 @@ export default function RidePlan() {
   // Top summary: the WHOLE day's planned KM per block type (every row, not
   // just followed ones - this is the plan itself), alongside how much of it
   // has actually happened so far (followed rows only).
-  const rowActualKm = (r) => {
-    if (r.ride) return Number(billableKm(r.ride)) || 0
-    return Number(r.actual_km) || 0
-  }
-
   const summary = useMemo(() => {
     const byBlock = Object.fromEntries(SUMMARY_BLOCKS.map((b) => [b, { plannedKm: 0, actualKm: 0, followed: 0 }]))
     for (const r of rows) {

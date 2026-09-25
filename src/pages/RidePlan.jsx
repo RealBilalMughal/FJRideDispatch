@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -450,7 +450,11 @@ export default function RidePlan() {
     }
 
     const planRows = list.map((r) => {
-      const names = r.ride?.id ? crewByRide.get(r.ride.id) || [] : null
+      const names = r.ride?.id
+        ? crewByRide.get(r.ride.id) || []
+        : r.actual_crew_names
+          ? r.actual_crew_names.split(',').map((n) => n.trim()).filter(Boolean)
+          : null
       const actualVehicleNo = r.ride?.is_adhoc_vehicle
         ? (r.ride.adhoc_vehicle_no || '—').replace(/^Ad-Hoc 0*(\d+)$/, 'Ad-Hoc $1')
         : r.ride?.vehicle_id
@@ -689,6 +693,13 @@ export default function RidePlan() {
     toast.success(paired ? 'Followed (+ paired row)' : 'Followed')
     fetchRows()
   }
+
+  // Off-mode UserPlus: open QuickReportModal for a single crew member as a NEW row.
+  const openQuickReportForCrew = useCallback((planRowId, crewId) => {
+    const planRow = rows.find((r) => r.id === planRowId)
+    if (!planRow) return
+    setQuickReport({ row: planRow, pairedRow: findPairedRow(planRow), singleCrewId: crewId, isNew: true })
+  }, [rows, findPairedRow])
 
   // Open the full ride view modal.  Cache hit = instant; miss = one fetch.
   const openRideView = useCallback(async (rideId) => {
@@ -1102,7 +1113,11 @@ export default function RidePlan() {
         <CrewMatchCell
           row={r}
           crew={crew}
-          onDispatchCrew={canEdit && canAddRide ? openCrewDispatchModal : null}
+          onDispatchCrew={
+            canEdit && addRideEnabled ? openCrewDispatchModal
+            : canEdit && !addRideEnabled ? openQuickReportForCrew
+            : null
+          }
           extraCrewSet={extraCrewSet}
         />
       )
@@ -1262,6 +1277,16 @@ export default function RidePlan() {
                 onClick={() => setReasonFor(r)}
               >
                 <MessageSquare size={15} />
+              </button>
+            )}
+            {canEdit && !addRideEnabled && !r.isExtra && r.status === 'followed' && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Edit report"
+                onClick={() => setQuickReport({ row: r, pairedRow: null, editMode: true })}
+              >
+                <Pencil size={15} />
               </button>
             )}
             {r.ride?.id && (
@@ -1604,6 +1629,9 @@ export default function RidePlan() {
           cityId={cityId}
           city={allowedCities.find((c) => c.id === (quickReport.row.city_id ?? cityId)) ?? null}
           rows={rows}
+          singleCrewId={quickReport.singleCrewId ?? null}
+          editMode={quickReport.editMode ?? false}
+          isNew={quickReport.isNew ?? false}
           onDone={() => { setQuickReport(null); fetchRows() }}
           onClose={() => setQuickReport(null)}
         />

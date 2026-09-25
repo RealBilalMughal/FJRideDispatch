@@ -26,32 +26,68 @@ const NO_REASON_OPTIONS = [
   'Extra Pickup',
 ]
 
-function initCrewFromRow(row, crew) {
-  return (row.crew_matches ?? [])
-    .filter((m) => m.crew_id)
+function initCrew({ row, crew, singleCrewId, editMode }) {
+  if (editMode && row.actual_crew_names) {
+    // Re-populate from saved names — match against crew list by name
+    return row.actual_crew_names
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean)
+      .map((name) => crew.find((c) => c.name === name) ?? { id: `name_${name}`, name })
+      .filter(Boolean)
+  }
+  const matches = (row.crew_matches ?? []).filter((m) => m.crew_id)
+  if (singleCrewId) {
+    const m = matches.find((m) => m.crew_id === singleCrewId)
+    if (m) {
+      const found = crew.find((c) => c.id === m.crew_id)
+      return found ? [found] : [{ id: m.crew_id, name: m.name }]
+    }
+    return []
+  }
+  return matches
     .map((m) => crew.find((c) => c.id === m.crew_id) ?? { id: m.crew_id, name: m.name })
     .filter(Boolean)
 }
 
-// rows prop: all plan rows (to find max seq for split-row insertion)
+function initVehicleState({ row, vehicles, editMode }) {
+  if (!editMode || !row.actual_vehicle_no) return { mode: 'same', type: 'fleet', fleetId: '', adhoc: '' }
+  const saved = row.actual_vehicle_no
+  if (saved === (row.car || null)) return { mode: 'same', type: 'fleet', fleetId: '', adhoc: '' }
+  const fleet = vehicles.find((v) => v.vehicle_no === saved)
+  if (fleet) return { mode: 'different', type: 'fleet', fleetId: fleet.id, adhoc: '' }
+  return { mode: 'different', type: 'adhoc', fleetId: '', adhoc: saved }
+}
+
 export default function QuickReportModal({
-  row, pairedRow, crew, vehicles, cityId, city, rows, onDone, onClose,
+  row, pairedRow, crew, vehicles, cityId, city, rows,
+  singleCrewId = null, editMode = false, isNew = false,
+  onDone, onClose,
 }) {
   const { profile } = useAuth()
 
-  const [actualCrew, setActualCrew] = useState(() => initCrewFromRow(row, crew))
-  const [vehicleMode, setVehicleMode] = useState('same')
-  const [vehicleType, setVehicleType] = useState('fleet')
-  const [fleetVehicleId, setFleetVehicleId] = useState('')
-  const [adhocNo, setAdhocNo] = useState('')
-  const [reasons, setReasons] = useState([])
-  const [remarks, setRemarks] = useState('')
+  const [actualCrew, setActualCrew] = useState(() =>
+    initCrew({ row, crew, singleCrewId, editMode }),
+  )
+
+  const initV = initVehicleState({ row, vehicles, editMode })
+  const [vehicleMode, setVehicleMode] = useState(initV.mode)
+  const [vehicleType, setVehicleType] = useState(initV.type)
+  const [fleetVehicleId, setFleetVehicleId] = useState(initV.fleetId)
+  const [adhocNo, setAdhocNo] = useState(initV.adhoc)
+
+  const [reasons, setReasons] = useState(() =>
+    editMode && row.report_reason
+      ? row.report_reason.split(', ').filter(Boolean)
+      : [],
+  )
+  const [remarks, setRemarks] = useState(editMode ? (row.report_remarks || '') : '')
   const [routeData, setRouteData] = useState(null)
   const [routeLoading, setRouteLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const routeAlive = useRef(true)
 
-  // Auto-assign Ad-Hoc number
+  // Auto-assign Ad-Hoc number (only for new adhoc, not edit)
   useEffect(() => {
     if (vehicleMode !== 'different' || vehicleType !== 'adhoc' || adhocNo) return
     let alive = true
@@ -156,31 +192,13 @@ export default function QuickReportModal({
       reported_at: now,
     }
 
-    const { error: e1 } = await supabase
-      .from('ride_plan_rows')
-      .update(base)
-      .eq('id', row.id)
-
-    if (e1) { toast.error('Save failed: ' + e1.message); setBusy(false); return }
-
-    // Update paired row silently with same crew/vehicle
-    if (pairedRow) {
-      await supabase.from('ride_plan_rows').update({ ...base }).eq('id', pairedRow.id)
-    }
-
-    // ── Crew split: insert new rows for any planned crew not in actualCrew ──
-    const remainingMatches = (row.crew_matches ?? []).filter(
-      (m) => m.crew_id && !actualCrew.find((c) => c.id === m.crew_id),
-    )
-
-    if (remainingMatches.length > 0) {
+    // ── isNew: INSERT a new ride_plan_rows record (single crew dispatch) ──
+    if (isNew) {
       const maxSeq = Math.max(
         ...((rows ?? []).filter((r) => !r.isExtra).map((r) => r.seq || 0)),
         0,
       )
-      const remainingNames = remainingMatches.map((m) => m.name).join(', ')
-
-      const newMain = {
+      const newRow = {
         import_id: row.import_id,
         plan_date: row.plan_date,
         city_id: row.city_id,
@@ -192,18 +210,19 @@ export default function QuickReportModal({
         destination: row.destination,
         start_time: row.start_time,
         end_time: row.end_time,
-        planned_km: row.planned_km,
-        crew_raw: remainingNames,
-        crew_matches: remainingMatches,
-        crew_count: remainingMatches.length,
-        car: row.car,
-        matched_vehicle_id: row.matched_vehicle_id,
-        is_adhoc_car: row.is_adhoc_car ?? false,
-        status: 'pending',
+        planned_km: null,
+        crew_raw: crewNames,
+        crew_matches: actualCrew.map((c) => ({ crew_id: c.id, name: c.name })),
+        crew_count: actualCrew.length,
+        car: vehicleNo,
+        matched_vehicle_id: null,
+        is_adhoc_car: vehicleType === 'adhoc',
+        ...base,
       }
 
       const toInsert = []
-
+      // For pickup: deadhead BEFORE main (seq+1, then seq+2)
+      // For dropoff: return_leg AFTER main (main seq+1, paired seq+2)
       if (pairedRow) {
         const newPaired = {
           import_id: pairedRow.import_id,
@@ -217,31 +236,126 @@ export default function QuickReportModal({
           destination: pairedRow.destination,
           start_time: pairedRow.start_time,
           end_time: pairedRow.end_time,
-          planned_km: pairedRow.planned_km,
-          crew_raw: remainingNames,
-          crew_matches: remainingMatches,
-          crew_count: remainingMatches.length,
-          car: pairedRow.car,
-          matched_vehicle_id: pairedRow.matched_vehicle_id,
-          is_adhoc_car: pairedRow.is_adhoc_car ?? false,
-          status: 'pending',
+          planned_km: null,
+          crew_raw: crewNames,
+          crew_matches: actualCrew.map((c) => ({ crew_id: c.id, name: c.name })),
+          crew_count: actualCrew.length,
+          car: vehicleNo,
+          matched_vehicle_id: null,
+          is_adhoc_car: vehicleType === 'adhoc',
+          ...base,
         }
         if (row.block_type === 'pickup') {
           toInsert.push({ ...newPaired, seq: maxSeq + 1 })
-          toInsert.push({ ...newMain, seq: maxSeq + 2 })
+          toInsert.push({ ...newRow, seq: maxSeq + 2 })
         } else {
-          toInsert.push({ ...newMain, seq: maxSeq + 1 })
+          toInsert.push({ ...newRow, seq: maxSeq + 1 })
           toInsert.push({ ...newPaired, seq: maxSeq + 2 })
         }
       } else {
-        toInsert.push({ ...newMain, seq: maxSeq + 1 })
+        toInsert.push({ ...newRow, seq: maxSeq + 1 })
       }
 
-      const { error: e2 } = await supabase.from('ride_plan_rows').insert(toInsert)
-      if (e2) toast.error('Split rows insert failed: ' + e2.message)
-      else toast.success(`Split: ${remainingMatches.length} crew added as new row(s)`)
+      const { error } = await supabase.from('ride_plan_rows').insert(toInsert)
+      if (error) { toast.error('Insert failed: ' + error.message); setBusy(false); return }
+      toast.success('Ride dispatched')
+      setBusy(false)
+      onDone()
+      return
+    }
+
+    // ── editMode: UPDATE existing row ──
+    const { error: e1 } = await supabase
+      .from('ride_plan_rows')
+      .update(base)
+      .eq('id', row.id)
+
+    if (e1) { toast.error('Save failed: ' + e1.message); setBusy(false); return }
+
+    // Update paired row silently with same data
+    if (pairedRow) {
+      await supabase.from('ride_plan_rows').update({ ...base }).eq('id', pairedRow.id)
+    }
+
+    // ── Crew split: insert new rows for planned crew not in actualCrew ──
+    // (only when NOT in isNew / editMode single-crew dispatch)
+    if (!editMode) {
+      const remainingMatches = (row.crew_matches ?? []).filter(
+        (m) => m.crew_id && !actualCrew.find((c) => c.id === m.crew_id),
+      )
+
+      if (remainingMatches.length > 0) {
+        const maxSeq = Math.max(
+          ...((rows ?? []).filter((r) => !r.isExtra).map((r) => r.seq || 0)),
+          0,
+        )
+        const remainingNames = remainingMatches.map((m) => m.name).join(', ')
+
+        const newMain = {
+          import_id: row.import_id,
+          plan_date: row.plan_date,
+          city_id: row.city_id,
+          trip_id: row.trip_id,
+          block_type: row.block_type,
+          flight_no: row.flight_no,
+          matched_flight_id: row.matched_flight_id,
+          origin: row.origin,
+          destination: row.destination,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          planned_km: row.planned_km,
+          crew_raw: remainingNames,
+          crew_matches: remainingMatches,
+          crew_count: remainingMatches.length,
+          car: row.car,
+          matched_vehicle_id: row.matched_vehicle_id,
+          is_adhoc_car: row.is_adhoc_car ?? false,
+          status: 'pending',
+        }
+
+        const toInsert = []
+
+        if (pairedRow) {
+          const newPaired = {
+            import_id: pairedRow.import_id,
+            plan_date: pairedRow.plan_date,
+            city_id: pairedRow.city_id,
+            trip_id: pairedRow.trip_id,
+            block_type: pairedRow.block_type,
+            flight_no: pairedRow.flight_no,
+            matched_flight_id: pairedRow.matched_flight_id,
+            origin: pairedRow.origin,
+            destination: pairedRow.destination,
+            start_time: pairedRow.start_time,
+            end_time: pairedRow.end_time,
+            planned_km: pairedRow.planned_km,
+            crew_raw: remainingNames,
+            crew_matches: remainingMatches,
+            crew_count: remainingMatches.length,
+            car: pairedRow.car,
+            matched_vehicle_id: pairedRow.matched_vehicle_id,
+            is_adhoc_car: pairedRow.is_adhoc_car ?? false,
+            status: 'pending',
+          }
+          if (row.block_type === 'pickup') {
+            toInsert.push({ ...newPaired, seq: maxSeq + 1 })
+            toInsert.push({ ...newMain, seq: maxSeq + 2 })
+          } else {
+            toInsert.push({ ...newMain, seq: maxSeq + 1 })
+            toInsert.push({ ...newPaired, seq: maxSeq + 2 })
+          }
+        } else {
+          toInsert.push({ ...newMain, seq: maxSeq + 1 })
+        }
+
+        const { error: e2 } = await supabase.from('ride_plan_rows').insert(toInsert)
+        if (e2) toast.error('Split rows insert failed: ' + e2.message)
+        else toast.success(`Split: ${remainingMatches.length} crew added as new row(s)`)
+      } else {
+        toast.success('Report saved')
+      }
     } else {
-      toast.success('Report saved')
+      toast.success('Report updated')
     }
 
     setBusy(false)
@@ -249,12 +363,17 @@ export default function QuickReportModal({
   }
 
   const blockLabel = row.block_type?.replace('_', ' ') || '—'
+  const modalTitle = isNew
+    ? `Dispatch · ${blockLabel} · ${row.flight_no || '—'}`
+    : editMode
+    ? `Edit Report · ${blockLabel} · ${row.flight_no || '—'}`
+    : `Report · ${blockLabel} · ${row.flight_no || '—'}`
 
   return (
     <Modal
       open
       size="full"
-      title={`Report · ${blockLabel} · ${row.flight_no || '—'}`}
+      title={modalTitle}
       onClose={onClose}
       footer={
         <>
@@ -262,7 +381,7 @@ export default function QuickReportModal({
             Cancel
           </button>
           <button type="submit" form="qrm-form" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : 'Save Report'}
+            {busy ? 'Saving…' : editMode ? 'Update Report' : 'Save Report'}
           </button>
         </>
       }

@@ -1221,7 +1221,21 @@ export default function RidePlan() {
       },
     },
     { key: 'status', header: 'Status', render: (r) => <StatusCell row={r} /> },
-    { key: 'km', header: 'Planned KM', align: 'right', render: (r) => (r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—') },
+    { key: 'km', header: 'Planned KM', align: 'right', render: (r) => {
+      const km = r.planned_km != null ? Number(r.planned_km).toFixed(2) : '—'
+      const planUrl = (r.via_no && r.origin && r.destination)
+        ? `https://www.google.com/maps/dir/${encodeURIComponent(r.origin)}/${encodeURIComponent(r.destination)}`
+        : null
+      if (!planUrl) return km
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {km}
+          <a href={planUrl} target="_blank" rel="noreferrer" className="icon-btn" title="Open planned route in Google Maps" style={{ padding: 2 }}>
+            <Navigation size={12} />
+          </a>
+        </span>
+      )
+    } },
     {
       key: 'actual',
       header: 'Actual KM',
@@ -1248,7 +1262,12 @@ export default function RidePlan() {
       key: 'actions',
       header: 'Action',
       render: (r) => {
-        const gm = r.status === 'followed' ? gmapsRoute(r.ride?.waypoints) : null
+        const textRoute = (r.origin && r.destination)
+          ? `https://www.google.com/maps/dir/${encodeURIComponent(r.origin)}/${encodeURIComponent(r.destination)}`
+          : null
+        const gmActual = r.status === 'followed'
+          ? (gmapsRoute(r.ride?.waypoints) ?? textRoute)
+          : null
         return (
           <div className="rp-row-actions">
             {/* On mode: normal Follow/No via Add Ride modal */}
@@ -1344,8 +1363,8 @@ export default function RidePlan() {
                 <Eye size={15} />
               </button>
             )}
-            {gm && (
-              <a href={gm} target="_blank" rel="noreferrer" className="icon-btn" title="Open ride route in Google Maps">
+            {gmActual && (
+              <a href={gmActual} target="_blank" rel="noreferrer" className="icon-btn" title="Open route in Google Maps">
                 <Navigation size={15} />
               </a>
             )}

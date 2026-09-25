@@ -197,13 +197,31 @@ export default function QuickReportModal({
       reported_at: now,
     }
 
-    // ── isNew: INSERT a new ride_plan_rows record (single crew dispatch) ──
+    // ── isNew: INSERT new row(s) right below the original pickup/deadhead group ──
     if (isNew) {
-      const maxSeq = Math.max(
-        ...((rows ?? []).filter((r) => !r.isExtra).map((r) => r.seq || 0)),
-        0,
-      )
-      const newRow = {
+      const crewMatches = actualCrew.map((c) => ({ crew_id: c.id, name: c.name }))
+      const withPaired = Boolean(pairedRow && alsoCreatePaired)
+      const insertCount = withPaired ? 2 : 1
+
+      // Anchor = last seq in the original group we insert after:
+      // pickup: insert after the pickup itself (deadhead at row.seq-1, pickup at row.seq)
+      // dropoff + paired return_leg: insert after the return_leg (pairedRow.seq)
+      // dropoff without paired: insert after the dropoff (row.seq)
+      const anchorSeq = (row.block_type === 'dropoff' && withPaired && pairedRow)
+        ? pairedRow.seq
+        : row.seq
+
+      // Shift all rows after anchor to make room
+      const effectiveCityId2 = row.city_id ?? cityId
+      const { error: shiftErr } = await supabase.rpc('shift_plan_row_seqs', {
+        p_plan_date: row.plan_date,
+        p_city_id: effectiveCityId2,
+        p_after_seq: anchorSeq,
+        p_increment: insertCount,
+      })
+      if (shiftErr) { toast.error('Seq shift failed: ' + shiftErr.message); setBusy(false); return }
+
+      const newMain = {
         import_id: row.import_id,
         plan_date: row.plan_date,
         city_id: row.city_id,
@@ -217,7 +235,7 @@ export default function QuickReportModal({
         end_time: row.end_time,
         planned_km: null,
         crew_raw: crewNames,
-        crew_matches: actualCrew.map((c) => ({ crew_id: c.id, name: c.name })),
+        crew_matches: crewMatches,
         crew_count: actualCrew.length,
         car: vehicleNo,
         matched_vehicle_id: null,
@@ -226,8 +244,7 @@ export default function QuickReportModal({
       }
 
       const toInsert = []
-      // For pickup: deadhead BEFORE main; for dropoff: return_leg AFTER main
-      if (pairedRow && alsoCreatePaired) {
+      if (withPaired) {
         const newPaired = {
           import_id: pairedRow.import_id,
           plan_date: pairedRow.plan_date,
@@ -242,7 +259,7 @@ export default function QuickReportModal({
           end_time: pairedRow.end_time,
           planned_km: null,
           crew_raw: crewNames,
-          crew_matches: actualCrew.map((c) => ({ crew_id: c.id, name: c.name })),
+          crew_matches: crewMatches,
           crew_count: actualCrew.length,
           car: vehicleNo,
           matched_vehicle_id: null,
@@ -250,14 +267,16 @@ export default function QuickReportModal({
           ...base,
         }
         if (row.block_type === 'pickup') {
-          toInsert.push({ ...newPaired, seq: maxSeq + 1 })
-          toInsert.push({ ...newRow, seq: maxSeq + 2 })
+          // deadhead first (anchorSeq+1), pickup after (anchorSeq+2)
+          toInsert.push({ ...newPaired, seq: anchorSeq + 1 })
+          toInsert.push({ ...newMain, seq: anchorSeq + 2 })
         } else {
-          toInsert.push({ ...newRow, seq: maxSeq + 1 })
-          toInsert.push({ ...newPaired, seq: maxSeq + 2 })
+          // dropoff first (anchorSeq+1), return_leg after (anchorSeq+2)
+          toInsert.push({ ...newMain, seq: anchorSeq + 1 })
+          toInsert.push({ ...newPaired, seq: anchorSeq + 2 })
         }
       } else {
-        toInsert.push({ ...newRow, seq: maxSeq + 1 })
+        toInsert.push({ ...newMain, seq: anchorSeq + 1 })
       }
 
       const { error } = await supabase.from('ride_plan_rows').insert(toInsert)

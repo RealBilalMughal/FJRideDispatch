@@ -648,6 +648,11 @@ export default function RidePlan() {
           crew_count: r.crew_count != null ? r.crew_count : '',
           crew: r.crew_raw || '',
           actual_crew: r.actual_crew_names || '',
+          actual_crew_count: (() => {
+            if (r.block_type === 'deadhead' || r.block_type === 'return_leg') return 0
+            if (!r.actual_crew_names) return ''
+            return r.actual_crew_names.split(',').map((s) => s.trim()).filter(Boolean).length
+          })(),
           deadhead_from: deadheadFrom,
           return_after_flight: '',
           next_flight_out: '',
@@ -677,6 +682,7 @@ export default function RidePlan() {
       { key: 'crew_count', label: 'Crew Count' },
       { key: 'crew', label: 'Crew' },
       { key: 'actual_crew', label: 'Actual Crew' },
+      { key: 'actual_crew_count', label: 'A Crew C' },
       { key: 'deadhead_from', label: 'Deadhead From' },
       { key: 'return_after_flight', label: 'Return After Flight' },
       { key: 'next_flight_out', label: 'Next Flight Out' },

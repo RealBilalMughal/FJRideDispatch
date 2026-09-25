@@ -5,6 +5,10 @@
   "ye krdo", "kya hua", "theek hai"). Always reply and explain in **Roman Urdu**
   when the user's message is in Roman Urdu. Never switch to English explanations
   for a Roman Urdu message — even for technical topics, explain them in Roman Urdu.
+- **UI language is English only.** Never use Urdu script or Roman Urdu in any
+  part of the portal — labels, hints, tooltips, error messages, placeholders,
+  toasts, buttons, table headers, or any other UI text. All user-facing strings
+  must be in English.
 
 ## Overview
 Internal **ride-dispatch console**. Standalone project - **completely separate**
@@ -1096,8 +1100,21 @@ keys, tables or deploy targets with any other project.
     read-only-until-Edit shell. Powers the ride **Notify** action (see the Ride
     section). Webhook URLs are written straight into `cities` through this
     panel, never committed.
-  (SECTIONS list is now five: Airport Locations, Ride Buffer Time, Block KM
-  Buffer, Live Tracker, Notifications.)
+  - **Ride Plan** - three iOS-style pill toggles (no city picker - these are
+    global behavioural flags, not per-city data): **Add Ride mode** (when off,
+    the Follow/No buttons on RidePlan are hidden and no new rides can be
+    dispatched from the plan page), **Buffer KM** (when off, the Block KM
+    buffer is not added to rides created via Follow/No), **Show extra rides**
+    (when off, rides dispatched straight from the Rides page that have no
+    `ride_plan_rows` row do not appear as synthetic extra rows in the RidePlan
+    table). Each toggle writes its boolean to `localStorage`
+    (`rpAddRideEnabled` / `rpBufferKmEnabled` / `rpShowExtraRides`). RidePlan
+    reads these on mount and syncs across other tabs via a `storage` event
+    listener. These three toggles were previously header buttons on the
+    RidePlan page itself (red pill buttons) - moved here so the page header
+    stays clean and the setting is persistent across sessions.
+  (SECTIONS list is now six: Airport Locations, Ride Buffer Time, Block KM
+  Buffer, Live Tracker, Notifications, Ride Plan.)
 - `RidePlan` (`/ride-plan`, sidebar label "Ride Plan", group "Dispatch",
   `ride_plan` perm - migration `20260911140000_ride_plan.sql`) - upload the
   planning team's daily dispatch plan (an Excel sheet, **exported as CSV**
@@ -1365,9 +1382,14 @@ keys, tables or deploy targets with any other project.
     block's **Planned KM summed over every row of the day's plan** (Total =
     all four blocks summed; regardless of status - this is the whole plan,
     not just what's been dispatched), its hint line the **Actual KM so far**
-    (followed rows only, via `billableKm()`) plus a followed count. Two more
-    cards close the row: **Followed** and **No**, each just a plain count of
-    that day's rows in that status (hint = how many are still pending).
+    (followed rows only, via `billableKm()`) plus a followed count. Three more
+    cards close the row — **Followed** (rows where `status === 'followed'` AND
+    `via_no === false`), **No** (rows where `status === 'followed'` AND
+    `via_no === true`, i.e. dispatched via the "No" path), **Cancelled**
+    (`status === 'skipped'`) — each a plain count of that day's non-extra plan
+    rows in that state. Extra-ride synthetic rows (`isExtra: true`) are excluded
+    from all four status counts so that ride-page dispatches don't inflate the
+    Followed card.
   - **Delete plan** (`Trash2`, needs `ride_plan.delete`, hidden when there's
     nothing to delete) - a type-`DELETE` `ConfirmDelete` (never
     `window.confirm`) that removes every `ride_plan_rows` row for the
@@ -1416,6 +1438,20 @@ keys, tables or deploy targets with any other project.
     rows only** here too - this panel is about comparing plan vs actual only
     where the plan WAS followed), the delta, and a **Crew mismatch** count
     (how many of that block's followed rows have one).
+  - **QuickReportModal** (`src/pages/QuickReportModal.jsx` + `QuickReportModal.css`)
+    - the modal that opens when a dispatcher clicks the Report action on a
+    followed plan row (shows the linked ride + lets the crew/vehicle/km be
+    edited before logging it). **Two-column layout** (`min(860px, 97vw)` wide):
+    `.qrm-layout` CSS grid `360px 1fr` - left `.qrm-fields` column (flex
+    column, `border-right`, all form fields including the `SearchSelect` crew
+    picker + a KM badge row) and right `.qrm-map` column (fills the full height
+    with `RouteMap height="100%"`; stacks on ≤680px). The crew list is a
+    **vertical `ride-crew-list` `<ol>/<li>`** (same drag-to-reorder pattern as
+    `RideModal`'s crew section: `GripVertical` handle, numbered circle, crew
+    name + stop, X remove, `dragging`/`dragOver` class-based styling via
+    `dragIdx.current` ref). CSS classes `.ride-crew-*` are defined in
+    `QuickReportModal.css` (not scoped to `.qrm-wrap` - the component has no
+    such wrapper class).
 - `Profile` - **read-only view by default**; "Edit" reveals the details form,
   "Change" reveals the password form. Nothing is editable until you click in.
 

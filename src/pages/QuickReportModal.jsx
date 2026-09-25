@@ -76,6 +76,7 @@ export default function QuickReportModal({
   const [fleetVehicleId, setFleetVehicleId] = useState(initV.fleetId)
   const [adhocNo, setAdhocNo] = useState(initV.adhoc)
 
+  const [alsoCreatePaired, setAlsoCreatePaired] = useState(false)
   const [reasons, setReasons] = useState(() =>
     editMode && row.report_reason
       ? row.report_reason.split(', ').filter(Boolean)
@@ -222,9 +223,8 @@ export default function QuickReportModal({
       }
 
       const toInsert = []
-      // For pickup: deadhead BEFORE main (seq+1, then seq+2)
-      // For dropoff: return_leg AFTER main (main seq+1, paired seq+2)
-      if (pairedRow) {
+      // For pickup: deadhead BEFORE main; for dropoff: return_leg AFTER main
+      if (pairedRow && alsoCreatePaired) {
         const newPaired = {
           import_id: pairedRow.import_id,
           plan_date: pairedRow.plan_date,
@@ -341,6 +341,20 @@ export default function QuickReportModal({
               placeholder="Add crew…"
             />
           </div>
+
+          {/* ── Also create Return Leg / Deadhead (isNew only) ── */}
+          {isNew && pairedRow && (
+            <div className="field">
+              <label className="qrm-radio" style={{ fontWeight: 500 }}>
+                <input
+                  type="checkbox"
+                  checked={alsoCreatePaired}
+                  onChange={(e) => setAlsoCreatePaired(e.target.checked)}
+                />
+                {row.block_type === 'pickup' ? 'Also create Deadhead' : 'Also create Return Leg'}
+              </label>
+            </div>
+          )}
 
           {/* ── Actual Vehicle ── */}
           <div className="field">

@@ -1603,6 +1603,7 @@ export default function RidePlan() {
           vehicles={vehicles}
           cityId={cityId}
           city={allowedCities.find((c) => c.id === (quickReport.row.city_id ?? cityId)) ?? null}
+          rows={rows}
           onDone={() => { setQuickReport(null); fetchRows() }}
           onClose={() => setQuickReport(null)}
         />

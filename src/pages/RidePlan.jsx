@@ -1136,11 +1136,17 @@ export default function RidePlan() {
       // Names from extra child rides for this plan row (same flight + block),
       // used to hide the dispatch icon once that crew member's ride exists.
       const extraCrewSet = (!r.isExtra && r.matched_flight_id)
-        ? new Set(
-            filteredRows
+        ? new Set([
+            // names from extra/synthetic child rides on the same flight
+            ...filteredRows
               .filter((e) => e.isExtra && e.isChild && e.ride?.flight_id === r.matched_flight_id && e.block_type === r.block_type)
-              .flatMap((e) => e.actualCrewNames ?? [])
-          )
+              .flatMap((e) => e.actualCrewNames ?? []),
+            // names from other real plan rows on the same flight (any status)
+            // — so the icon disappears once crew is added to another row via Add In or New Row
+            ...filteredRows
+              .filter((e) => !e.isExtra && e.id !== r.id && e.matched_flight_id === r.matched_flight_id && e.block_type === r.block_type)
+              .flatMap((e) => (e.crew_matches ?? []).map((m) => m.name).filter(Boolean)),
+          ])
         : null
       return (
         <CrewMatchCell

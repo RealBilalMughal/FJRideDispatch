@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { GripVertical, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
@@ -89,6 +89,7 @@ export default function QuickReportModal({
   const [routeLoading, setRouteLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const routeAlive = useRef(true)
+  const dragIdx = useRef(null)
 
   // Auto-assign Ad-Hoc number (only for new adhoc, not edit)
   useEffect(() => {
@@ -368,8 +369,33 @@ export default function QuickReportModal({
           <div className="field">
             <label>Crew</label>
             <div className="qrm-crew-list">
-              {actualCrew.map((c) => (
-                <span key={c.id} className="qrm-crew-tag">
+              {actualCrew.map((c, i) => (
+                <span
+                  key={c.id}
+                  className="qrm-crew-tag"
+                  draggable
+                  onDragStart={() => { dragIdx.current = i }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    if (i === dragIdx.current) return
+                    e.currentTarget.style.boxShadow = 'inset 0 2px 0 0 var(--accent)'
+                  }}
+                  onDragLeave={(e) => { e.currentTarget.style.boxShadow = '' }}
+                  onDrop={(e) => {
+                    e.currentTarget.style.boxShadow = ''
+                    const from = dragIdx.current
+                    if (from == null || from === i) return
+                    setActualCrew((prev) => {
+                      const next = [...prev]
+                      const [moved] = next.splice(from, 1)
+                      next.splice(i, 0, moved)
+                      return next
+                    })
+                    dragIdx.current = null
+                  }}
+                  onDragEnd={() => { dragIdx.current = null }}
+                >
+                  <GripVertical size={11} style={{ opacity: 0.4, flexShrink: 0, cursor: 'grab' }} />
                   {c.name}
                   <button type="button" className="qrm-crew-remove" onClick={() => removeCrew(c.id)}>
                     <X size={11} />

@@ -17,6 +17,7 @@ import StatCards from '../components/data/StatCards'
 import SearchSelect from '../components/SearchSelect'
 import { RideModal } from './Rides'
 import QuickReportModal from './QuickReportModal'
+import CrewMergeModal from './CrewMergeModal'
 import '../components/data/data.css'
 import './RidePlan.css'
 import './QuickReportModal.css'
@@ -306,6 +307,7 @@ export default function RidePlan() {
     try { localStorage.setItem('rpBufferKmEnabled', v ? 'true' : 'false') } catch {}
   }
   const [quickReport, setQuickReport] = useState(null) // { row, pairedRow } | null
+  const [crewMerge, setCrewMerge] = useState(null) // { planRow, crewObj, sameFlightRows } | null
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
@@ -701,12 +703,31 @@ export default function RidePlan() {
     fetchRows()
   }
 
-  // Off-mode UserPlus: open QuickReportModal for a single crew member as a NEW row.
+  // Off-mode UserPlus: if same-flight pending plan rows exist, show merge picker first.
+  // Otherwise fall through to creating a new row via QuickReportModal.
   const openQuickReportForCrew = useCallback((planRowId, crewId) => {
     const planRow = rows.find((r) => r.id === planRowId)
     if (!planRow) return
-    setQuickReport({ row: planRow, pairedRow: findPairedRow(planRow, { ignoreStatus: true }), singleCrewId: crewId, isNew: true })
-  }, [rows, findPairedRow])
+    const crewObj = crew.find((c) => c.id === crewId) ?? null
+
+    const sameFlightRows = rows.filter(
+      (r) =>
+        r.id !== planRowId &&
+        !r.isExtra &&
+        r.matched_flight_id &&
+        r.matched_flight_id === planRow.matched_flight_id &&
+        r.block_type === planRow.block_type &&
+        r.status === 'pending' &&
+        r.plan_date === planRow.plan_date &&
+        r.city_id === planRow.city_id,
+    )
+
+    if (sameFlightRows.length > 0) {
+      setCrewMerge({ planRow, crewObj, sameFlightRows })
+    } else {
+      setQuickReport({ row: planRow, pairedRow: findPairedRow(planRow, { ignoreStatus: true }), singleCrewId: crewId, isNew: true })
+    }
+  }, [rows, crew, findPairedRow])
 
   // Open the full ride view modal.  Cache hit = instant; miss = one fetch.
   const openRideView = useCallback(async (rideId) => {
@@ -1641,6 +1662,26 @@ export default function RidePlan() {
         <NoReasonModal row={noReasonFor} onClose={() => setNoReasonFor(null)} onContinue={doNoReason} />
       )}
       {reasonFor && <ReasonPopup row={reasonFor} onClose={() => setReasonFor(null)} />}
+
+      {crewMerge && (
+        <CrewMergeModal
+          crewObj={crewMerge.crewObj}
+          planRow={crewMerge.planRow}
+          sameFlightRows={crewMerge.sameFlightRows}
+          onAddIn={() => { setCrewMerge(null); fetchRows() }}
+          onNewRide={() => {
+            const { planRow, crewObj } = crewMerge
+            setCrewMerge(null)
+            setQuickReport({
+              row: planRow,
+              pairedRow: findPairedRow(planRow, { ignoreStatus: true }),
+              singleCrewId: crewObj?.id ?? null,
+              isNew: true,
+            })
+          }}
+          onClose={() => setCrewMerge(null)}
+        />
+      )}
 
       {quickReport && (
         <QuickReportModal

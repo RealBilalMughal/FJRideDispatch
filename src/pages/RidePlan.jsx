@@ -291,7 +291,13 @@ export default function RidePlan() {
   const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [viewMode, setViewMode] = useState('list') // 'list' | 'timeline'
-  const [addRideEnabled, setAddRideEnabled] = useState(true)
+  const [addRideEnabled, setAddRideEnabled] = useState(
+    () => localStorage.getItem('rpAddRideEnabled') !== 'false',
+  )
+  const toggleAddRide = (v) => {
+    setAddRideEnabled(v)
+    try { localStorage.setItem('rpAddRideEnabled', v ? 'true' : 'false') } catch {}
+  }
   const [quickReport, setQuickReport] = useState(null) // { row, pairedRow } | null
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
@@ -1312,7 +1318,7 @@ export default function RidePlan() {
             <button
               className={`btn btn-square btn-sm${addRideEnabled ? '' : ' btn-danger'}`}
               style={{ minWidth: 100 }}
-              onClick={() => setAddRideEnabled((v) => !v)}
+              onClick={() => toggleAddRide(!addRideEnabled)}
               title={addRideEnabled ? 'Add Ride is ON — click to disable' : 'Add Ride is OFF — click to enable'}
             >
               {addRideEnabled ? 'Add Ride: On' : 'Add Ride: Off'}

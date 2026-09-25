@@ -127,9 +127,9 @@ export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityI
 
   return (
     <Modal
+      open
       title={`Report · ${row.block_type?.replace('_', ' ')} · ${row.flight_no || '—'}`}
       onClose={onClose}
-      size="md"
     >
       <form className="modal-form qrm-form" onSubmit={handleSubmit}>
         <p className="qrm-subtitle">

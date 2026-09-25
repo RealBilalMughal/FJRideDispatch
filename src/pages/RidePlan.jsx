@@ -634,6 +634,7 @@ export default function RidePlan() {
           distance_km: r.planned_km != null ? Number(r.planned_km).toFixed(2) : '',
           crew_count: r.crew_count != null ? r.crew_count : '',
           crew: r.crew_raw || '',
+          actual_crew: r.actual_crew_names || '',
           deadhead_from: deadheadFrom,
           return_after_flight: '',
           next_flight_out: '',
@@ -659,14 +660,15 @@ export default function RidePlan() {
       { key: 'start_time', label: 'Start Time' },
       { key: 'end_time', label: 'End Time' },
       { key: 'distance_km', label: 'Distance (km)' },
+      { key: 'actual_km', label: 'Actual KM' },
       { key: 'crew_count', label: 'Crew Count' },
       { key: 'crew', label: 'Crew' },
+      { key: 'actual_crew', label: 'Actual Crew' },
       { key: 'deadhead_from', label: 'Deadhead From' },
       { key: 'return_after_flight', label: 'Return After Flight' },
       { key: 'next_flight_out', label: 'Next Flight Out' },
       { key: 'followed', label: 'Followed' },
       { key: 'reason', label: 'Reason' },
-      { key: 'actual_km', label: 'Actual KM' },
       { key: 'actual_vehicle', label: 'Actual Vehicle' },
       { key: 'reported', label: 'Reported' },
       { key: 'remarks', label: 'Remarks' },
@@ -1164,7 +1166,12 @@ export default function RidePlan() {
       key: 'actual',
       header: 'Actual KM',
       align: 'right',
-      render: (r) => (r.status === 'followed' && r.ride ? (Number(billableKm(r.ride)) || 0).toFixed(2) : '—'),
+      render: (r) => {
+        if (r.status !== 'followed') return '—'
+        if (r.ride) return (Number(billableKm(r.ride)) || 0).toFixed(2)
+        if (r.actual_km != null) return Number(r.actual_km).toFixed(2)
+        return '—'
+      },
     },
     {
       key: 'delta',
@@ -1595,6 +1602,7 @@ export default function RidePlan() {
           crew={crew}
           vehicles={vehicles}
           cityId={cityId}
+          city={allowedCities.find((c) => c.id === (quickReport.row.city_id ?? cityId)) ?? null}
           onDone={() => { setQuickReport(null); fetchRows() }}
           onClose={() => setQuickReport(null)}
         />

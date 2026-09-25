@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import Modal from '../components/Modal'
 import SearchSelect from '../components/SearchSelect'
+import RouteMap from '../components/RouteMap'
+import { buildRoutePoints, routeComplete } from '../lib/rideRoute'
+import { routeInfo } from '../lib/ors'
 
-// Initialise crew list from plan row's crew_matches (jsonb [{crew_id, name, ...}])
 function initCrewFromRow(row, crew) {
   return (row.crew_matches ?? [])
     .filter((m) => m.crew_id)
@@ -14,23 +16,20 @@ function initCrewFromRow(row, crew) {
     .filter(Boolean)
 }
 
-export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityId, onDone, onClose }) {
+export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityId, city, onDone, onClose }) {
   const { profile } = useAuth()
 
   const [actualCrew, setActualCrew] = useState(() => initCrewFromRow(row, crew))
-  // vehicle: 'same' | 'different'
   const [vehicleMode, setVehicleMode] = useState('same')
-  // when different: 'fleet' | 'adhoc'
   const [vehicleType, setVehicleType] = useState('fleet')
   const [fleetVehicleId, setFleetVehicleId] = useState('')
   const [adhocNo, setAdhocNo] = useState('')
-  const [actualKm, setActualKm] = useState(row.planned_km != null ? String(row.planned_km) : '')
-  const [pairedKm, setPairedKm] = useState(
-    pairedRow?.planned_km != null ? String(pairedRow.planned_km) : '',
-  )
   const [reason, setReason] = useState('')
   const [remarks, setRemarks] = useState('')
+  const [routeData, setRouteData] = useState(null) // { distanceKm, line }
+  const [routeLoading, setRouteLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const routeAbort = useRef(null)
 
   // Auto-assign Ad-Hoc number (same logic as RideModal)
   useEffect(() => {
@@ -53,7 +52,30 @@ export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityI
     return () => { alive = false }
   }, [vehicleMode, vehicleType, adhocNo, cityId, row.plan_date])
 
-  // Clear adhocNo when switching away
+  // Recompute route when actualCrew changes
+  useEffect(() => {
+    if (routeAbort.current) { routeAbort.current = false }
+    const airport = city
+      ? { name: city.airport_name, lat: city.airport_lat, lng: city.airport_lng }
+      : {}
+    const pts = buildRoutePoints(row.block_type, null, actualCrew, airport)
+    if (!routeComplete(pts)) {
+      setRouteData(null)
+      return
+    }
+    let alive = true
+    routeAbort.current = true
+    setRouteLoading(true)
+    routeInfo(pts.map((p) => [p.lng, p.lat])).then((info) => {
+      if (!alive) return
+      setRouteData(info ?? null)
+      setRouteLoading(false)
+    }).catch(() => {
+      if (alive) setRouteLoading(false)
+    })
+    return () => { alive = false }
+  }, [actualCrew, row.block_type, city])
+
   const setVehicleModeSafe = (m) => {
     setVehicleMode(m)
     if (m === 'same') { setFleetVehicleId(''); setAdhocNo('') }
@@ -84,6 +106,12 @@ export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityI
     return adhocNo || null
   }
 
+  // Build route points for RouteMap display
+  const airport = city
+    ? { name: city.airport_name, lat: city.airport_lat, lng: city.airport_lng }
+    : {}
+  const routePts = buildRoutePoints(row.block_type, null, actualCrew, airport)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setBusy(true)
@@ -92,12 +120,14 @@ export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityI
     const vehicleNo = resolvedVehicleNo()
     const now = new Date().toISOString()
     const reporter = (profile?.full_name || '').trim() || profile?.email || ''
+    const kmVal = routeData?.distanceKm != null ? parseFloat(routeData.distanceKm.toFixed(2)) : null
 
     const base = {
       status: 'followed',
       via_no: false,
       actual_crew_names: crewNames,
       actual_vehicle_no: vehicleNo,
+      actual_km: kmVal,
       report_reason: reason.trim() || null,
       report_remarks: remarks.trim() || null,
       reported_by_name: reporter || null,
@@ -106,15 +136,16 @@ export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityI
 
     const { error: e1 } = await supabase
       .from('ride_plan_rows')
-      .update({ ...base, actual_km: actualKm ? parseFloat(actualKm) : null })
+      .update(base)
       .eq('id', row.id)
 
     if (e1) { toast.error('Save failed: ' + e1.message); setBusy(false); return }
 
+    // Update paired row (deadhead / return leg) silently with same crew/vehicle
     if (pairedRow) {
       await supabase
         .from('ride_plan_rows')
-        .update({ ...base, actual_km: pairedKm ? parseFloat(pairedKm) : null })
+        .update({ ...base })
         .eq('id', pairedRow.id)
     }
 
@@ -123,176 +154,162 @@ export default function QuickReportModal({ row, pairedRow, crew, vehicles, cityI
     onDone()
   }
 
-  const pairedLabel = pairedRow?.block_type === 'deadhead' ? 'Deadhead' : 'Return Leg'
+  const blockLabel = row.block_type?.replace('_', ' ') || '—'
 
   return (
     <Modal
       open
-      title={`Report · ${row.block_type?.replace('_', ' ')} · ${row.flight_no || '—'}`}
+      size="full"
+      title={`Report · ${blockLabel} · ${row.flight_no || '—'}`}
       onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" form="qrm-form" className="btn btn-primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Save Report'}
+          </button>
+        </>
+      }
     >
-      <form className="modal-form qrm-form" onSubmit={handleSubmit}>
-        <p className="qrm-subtitle">
-          {row.plan_date} &nbsp;·&nbsp; {row.origin} → {row.destination}
-        </p>
+      <div className="ride-view ride-view--split">
+        {/* ── Left column: form ── */}
+        <div className="ride-view-info modal-form">
+          <form id="qrm-form" onSubmit={handleSubmit}>
+            <p className="qrm-subtitle">
+              {row.plan_date} &nbsp;·&nbsp; {row.origin} → {row.destination}
+              {routeData?.distanceKm != null && (
+                <span className="qrm-km-badge">
+                  {Number(routeData.distanceKm).toFixed(2)} km
+                  {routeLoading && ' …'}
+                </span>
+              )}
+              {routeLoading && routeData == null && (
+                <span className="qrm-km-badge secondary"> Calculating…</span>
+              )}
+            </p>
 
-        {/* ── Crew ── */}
-        <div className="field">
-          <label>Crew</label>
-          <div className="qrm-crew-list">
-            {actualCrew.map((c) => (
-              <span key={c.id} className="qrm-crew-tag">
-                {c.name}
-                <button type="button" className="qrm-crew-remove" onClick={() => removeCrew(c.id)}>
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-          <SearchSelect
-            value=""
-            onChange={addCrewById}
-            options={crewOptions}
-            placeholder="Add crew…"
-          />
-        </div>
-
-        {/* ── Actual Vehicle ── */}
-        <div className="field">
-          <label>Actual vehicle</label>
-          <div className="qrm-radio-row">
-            <label className="qrm-radio">
-              <input
-                type="radio"
-                name="vmode"
-                checked={vehicleMode === 'same'}
-                onChange={() => setVehicleModeSafe('same')}
+            {/* ── Crew ── */}
+            <div className="field">
+              <label>Crew</label>
+              <div className="qrm-crew-list">
+                {actualCrew.map((c) => (
+                  <span key={c.id} className="qrm-crew-tag">
+                    {c.name}
+                    <button type="button" className="qrm-crew-remove" onClick={() => removeCrew(c.id)}>
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <SearchSelect
+                value=""
+                onChange={addCrewById}
+                options={crewOptions}
+                placeholder="Add crew…"
               />
-              Yes — same{row.car ? ` (${row.car})` : ''}
-            </label>
-            <label className="qrm-radio">
-              <input
-                type="radio"
-                name="vmode"
-                checked={vehicleMode === 'different'}
-                onChange={() => setVehicleModeSafe('different')}
-              />
-              No — different
-            </label>
-          </div>
+            </div>
 
-          {vehicleMode === 'different' && (
-            <div className="qrm-vehicle-sub">
+            {/* ── Actual Vehicle ── */}
+            <div className="field">
+              <label>Actual vehicle</label>
               <div className="qrm-radio-row">
                 <label className="qrm-radio">
                   <input
                     type="radio"
-                    name="vtype"
-                    checked={vehicleType === 'fleet'}
-                    onChange={() => setVehicleTypeSafe('fleet')}
+                    name="vmode"
+                    checked={vehicleMode === 'same'}
+                    onChange={() => setVehicleModeSafe('same')}
                   />
-                  Fleet vehicle
+                  Yes — same{row.car ? ` (${row.car})` : ''}
                 </label>
                 <label className="qrm-radio">
                   <input
                     type="radio"
-                    name="vtype"
-                    checked={vehicleType === 'adhoc'}
-                    onChange={() => setVehicleTypeSafe('adhoc')}
+                    name="vmode"
+                    checked={vehicleMode === 'different'}
+                    onChange={() => setVehicleModeSafe('different')}
                   />
-                  Ad-Hoc
+                  No — different
                 </label>
               </div>
-              {vehicleType === 'fleet' && (
-                <SearchSelect
-                  value={fleetVehicleId}
-                  onChange={setFleetVehicleId}
-                  options={[{ value: '', label: 'Select vehicle…' }, ...vehicleOptions]}
-                  placeholder="Search vehicle…"
-                />
-              )}
-              {vehicleType === 'adhoc' && adhocNo && (
-                <span className="qrm-adhoc-tag">{adhocNo}</span>
-              )}
-              {vehicleType === 'adhoc' && !adhocNo && (
-                <span className="secondary" style={{ fontSize: 12 }}>Assigning…</span>
+
+              {vehicleMode === 'different' && (
+                <div className="qrm-vehicle-sub">
+                  <div className="qrm-radio-row">
+                    <label className="qrm-radio">
+                      <input
+                        type="radio"
+                        name="vtype"
+                        checked={vehicleType === 'fleet'}
+                        onChange={() => setVehicleTypeSafe('fleet')}
+                      />
+                      Fleet vehicle
+                    </label>
+                    <label className="qrm-radio">
+                      <input
+                        type="radio"
+                        name="vtype"
+                        checked={vehicleType === 'adhoc'}
+                        onChange={() => setVehicleTypeSafe('adhoc')}
+                      />
+                      Ad-Hoc
+                    </label>
+                  </div>
+                  {vehicleType === 'fleet' && (
+                    <SearchSelect
+                      value={fleetVehicleId}
+                      onChange={setFleetVehicleId}
+                      options={[{ value: '', label: 'Select vehicle…' }, ...vehicleOptions]}
+                      placeholder="Search vehicle…"
+                    />
+                  )}
+                  {vehicleType === 'adhoc' && adhocNo && (
+                    <span className="qrm-adhoc-tag">{adhocNo}</span>
+                  )}
+                  {vehicleType === 'adhoc' && !adhocNo && (
+                    <span className="secondary" style={{ fontSize: 12 }}>Assigning…</span>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* ── Actual KM ── */}
-        <div className="field">
-          <label>Actual KM</label>
-          <input
-            className="input"
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="0.00"
-            value={actualKm}
-            onChange={(e) => setActualKm(e.target.value)}
-          />
-        </div>
-
-        {/* ── Paired row (deadhead / return leg) ── */}
-        {pairedRow && (
-          <div className="qrm-paired-section">
-            <p className="qrm-paired-head">{pairedLabel}</p>
+            {/* ── Reason ── */}
             <div className="field">
-              <label>Crew <span className="secondary" style={{ fontSize: 11 }}>(same as above)</span></label>
-              <p className="qrm-paired-crew">
-                {actualCrew.length ? actualCrew.map((c) => c.name).join(', ') : '—'}
-              </p>
-            </div>
-            <div className="field">
-              <label>Actual KM</label>
+              <label>Reason <span className="field-hint">(optional)</span></label>
               <input
                 className="input"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={pairedKm}
-                onChange={(e) => setPairedKm(e.target.value)}
+                type="text"
+                placeholder="What changed from plan?"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
               />
             </div>
-          </div>
-        )}
 
-        {/* ── Reason ── */}
-        <div className="field">
-          <label>Reason <span className="field-hint">(optional)</span></label>
-          <input
-            className="input"
-            type="text"
-            placeholder="What changed from plan?"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            {/* ── Remarks ── */}
+            <div className="field">
+              <label>Remarks <span className="field-hint">(optional)</span></label>
+              <textarea
+                className="textarea"
+                rows={3}
+                placeholder="Additional notes…"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
+            </div>
+          </form>
+        </div>
+
+        {/* ── Right column: map ── */}
+        <div className="ride-view-map">
+          <RouteMap
+            points={routePts}
+            line={routeData?.line ?? null}
+            totalKm={routeData?.distanceKm ?? null}
           />
         </div>
-
-        {/* ── Remarks ── */}
-        <div className="field">
-          <label>Remarks <span className="field-hint">(optional)</span></label>
-          <textarea
-            className="textarea"
-            rows={2}
-            placeholder="Additional notes…"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : 'Save Report'}
-          </button>
-        </div>
-      </form>
+      </div>
     </Modal>
   )
 }

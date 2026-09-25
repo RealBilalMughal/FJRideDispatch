@@ -1,9 +1,21 @@
-.qrm-form { display: flex; flex-direction: column; gap: 14px; }
-
 .qrm-subtitle {
   font-size: 13px;
   color: var(--muted);
-  margin: -6px 0 0;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.qrm-km-badge {
+  display: inline-block;
+  background: var(--accent-soft, rgba(52,113,184,0.09));
+  color: var(--accent);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* crew tags */
@@ -69,26 +81,4 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--heading);
-}
-
-/* paired row section */
-.qrm-paired-section {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.qrm-paired-head {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--muted);
-  margin: 0;
-}
-.qrm-paired-crew {
-  font-size: 13px;
-  color: var(--heading);
-  margin: 0;
 }

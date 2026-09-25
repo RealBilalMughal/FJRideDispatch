@@ -298,6 +298,13 @@ export default function RidePlan() {
     setAddRideEnabled(v)
     try { localStorage.setItem('rpAddRideEnabled', v ? 'true' : 'false') } catch {}
   }
+  const [bufferKmEnabled, setBufferKmEnabled] = useState(
+    () => localStorage.getItem('rpBufferKmEnabled') !== 'false',
+  )
+  const toggleBufferKm = (v) => {
+    setBufferKmEnabled(v)
+    try { localStorage.setItem('rpBufferKmEnabled', v ? 'true' : 'false') } catch {}
+  }
   const [quickReport, setQuickReport] = useState(null) // { row, pairedRow } | null
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
@@ -592,17 +599,17 @@ export default function RidePlan() {
 
   // Return the adjacent deadhead (seq-1 before a pickup) or return_leg
   // (seq+1 after a dropoff) that pairs with this row, if it's pending.
-  const findPairedRow = (r) => {
+  const findPairedRow = (r, { ignoreStatus = false } = {}) => {
     if (r.block_type === 'pickup') {
       return rows.find(
         (x) => x.block_type === 'deadhead' && x.seq === r.seq - 1 && x.city_id === r.city_id &&
-          x.status === 'pending' && (!r.car || x.car === r.car),
+          (ignoreStatus || x.status === 'pending') && (!r.car || x.car === r.car),
       ) ?? null
     }
     if (r.block_type === 'dropoff') {
       return rows.find(
         (x) => x.block_type === 'return_leg' && x.seq === r.seq + 1 && x.city_id === r.city_id &&
-          x.status === 'pending',
+          (ignoreStatus || x.status === 'pending'),
       ) ?? null
     }
     return null
@@ -698,7 +705,7 @@ export default function RidePlan() {
   const openQuickReportForCrew = useCallback((planRowId, crewId) => {
     const planRow = rows.find((r) => r.id === planRowId)
     if (!planRow) return
-    setQuickReport({ row: planRow, pairedRow: findPairedRow(planRow), singleCrewId: crewId, isNew: true })
+    setQuickReport({ row: planRow, pairedRow: findPairedRow(planRow, { ignoreStatus: true }), singleCrewId: crewId, isNew: true })
   }, [rows, findPairedRow])
 
   // Open the full ride view modal.  Cache hit = instant; miss = one fetch.
@@ -1360,6 +1367,16 @@ export default function RidePlan() {
                 <Plus size={14} /> Add Ride
               </button>
             )}
+            {!addRideEnabled && (
+              <button
+                className={`btn btn-square btn-sm${bufferKmEnabled ? '' : ' btn-danger'}`}
+                style={{ minWidth: 110 }}
+                onClick={() => toggleBufferKm(!bufferKmEnabled)}
+                title={bufferKmEnabled ? 'Buffer KM is ON — click to disable' : 'Buffer KM is OFF — click to enable'}
+              >
+                {bufferKmEnabled ? 'Buffer KM: On' : 'Buffer KM: Off'}
+              </button>
+            )}
             {!addRideEnabled && rows.length > 0 && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={doExportReport}>
                 <Download size={14} /> Export Report
@@ -1632,6 +1649,7 @@ export default function RidePlan() {
           singleCrewId={quickReport.singleCrewId ?? null}
           editMode={quickReport.editMode ?? false}
           isNew={quickReport.isNew ?? false}
+          defaultBufferEnabled={bufferKmEnabled}
           onDone={() => { setQuickReport(null); fetchRows() }}
           onClose={() => setQuickReport(null)}
         />

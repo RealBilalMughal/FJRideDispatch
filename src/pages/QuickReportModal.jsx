@@ -62,6 +62,7 @@ function initVehicleState({ row, vehicles, editMode }) {
 export default function QuickReportModal({
   row, pairedRow, crew, vehicles, cityId, city, rows,
   singleCrewId = null, editMode = false, isNew = false,
+  defaultBufferEnabled = true,
   onDone, onClose,
 }) {
   const { profile } = useAuth()
@@ -77,7 +78,7 @@ export default function QuickReportModal({
   const [adhocNo, setAdhocNo] = useState(initV.adhoc)
 
   const [alsoCreatePaired, setAlsoCreatePaired] = useState(false)
-  const [bufferEnabled, setBufferEnabled] = useState(true)
+  const [bufferEnabled, setBufferEnabled] = useState(defaultBufferEnabled)
   const [reasons, setReasons] = useState(() =>
     editMode && row.report_reason
       ? row.report_reason.split(', ').filter(Boolean)

@@ -1055,8 +1055,10 @@ function RidePlanSettingsPanel() {
   const [values, setValues] = useState(() => {
     const out = {}
     for (const t of RP_TOGGLES) {
-      try { out[t.key] = localStorage.getItem(t.key) !== 'false' }
-      catch { out[t.key] = t.defaultOn }
+      try {
+        const stored = localStorage.getItem(t.key)
+        out[t.key] = stored === null ? t.defaultOn : stored === 'true'
+      } catch { out[t.key] = t.defaultOn }
     }
     return out
   })

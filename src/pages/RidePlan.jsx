@@ -1589,12 +1589,7 @@ export default function RidePlan() {
             value={planDate}
             onChange={(e) => setPlanDate(e.target.value)}
           />
-          {planDates.length > 0 && (() => {
-            const idx = planDates.indexOf(planDate)
-            return idx >= 0
-              ? <span className="rp-date-pos">{idx + 1} / {planDates.length}</span>
-              : null
-          })()}
+
           <button
             type="button"
             className="icon-btn"

@@ -569,6 +569,16 @@ export default function RidePlan() {
     fetchRows()
   }, [fetchRows])
 
+  // ── Distinct plan dates (for smart prev/next navigation) ─────────────────
+  const [planDates, setPlanDates] = useState([])
+  const fetchPlanDates = useCallback(async () => {
+    let q = supabase.from('ride_plan_rows').select('plan_date').order('plan_date')
+    if (cityId != null) q = q.eq('city_id', cityId)
+    const { data } = await q
+    if (data) setPlanDates([...new Set(data.map((r) => r.plan_date))])
+  }, [cityId])
+  useEffect(() => { fetchPlanDates() }, [fetchPlanDates])
+
   // Deadhead / Return Leg rows aren't dispatched directly - they ride along on
   // the ALREADY-BUILT "Also create a Deadhead" (Pickup) / "Also create a
   // Return Leg" (Dropoff) features. Once this row's own sibling is followed,
@@ -1038,6 +1048,7 @@ export default function RidePlan() {
       toast.success(`Deleted the plan for ${fmtDate(planDate)}`)
     }
     setDeletePlanOpen(false)
+    fetchPlanDates()
     fetchRows()
   }
 
@@ -1560,7 +1571,16 @@ export default function RidePlan() {
         />
 
         <div className="rp-datebar">
-          <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, -1))}>
+          <button
+            type="button"
+            className="icon-btn"
+            disabled={planDates.length > 0 && planDate <= planDates[0]}
+            onClick={() => {
+              const idx = planDates.indexOf(planDate)
+              if (idx > 0) setPlanDate(planDates[idx - 1])
+              else setPlanDate((d) => addDays(d, -1))
+            }}
+          >
             <ChevronLeft size={16} />
           </button>
           <input
@@ -1569,7 +1589,22 @@ export default function RidePlan() {
             value={planDate}
             onChange={(e) => setPlanDate(e.target.value)}
           />
-          <button type="button" className="icon-btn" onClick={() => setPlanDate((d) => addDays(d, 1))}>
+          {planDates.length > 0 && (() => {
+            const idx = planDates.indexOf(planDate)
+            return idx >= 0
+              ? <span className="rp-date-pos">{idx + 1} / {planDates.length}</span>
+              : null
+          })()}
+          <button
+            type="button"
+            className="icon-btn"
+            disabled={planDates.length > 0 && planDate >= planDates[planDates.length - 1]}
+            onClick={() => {
+              const idx = planDates.indexOf(planDate)
+              if (idx >= 0 && idx < planDates.length - 1) setPlanDate(planDates[idx + 1])
+              else setPlanDate((d) => addDays(d, 1))
+            }}
+          >
             <ChevronRight size={16} />
           </button>
           {planDate !== pkToday() && (
@@ -1702,6 +1737,7 @@ export default function RidePlan() {
           onClose={() => setImportOpen(false)}
           onDone={(earliestDate) => {
             setImportOpen(false)
+            fetchPlanDates()
             if (earliestDate && earliestDate !== planDate) setPlanDate(earliestDate)
             else fetchRows()
           }}

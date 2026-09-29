@@ -9,6 +9,13 @@
   width: auto;
 }
 
+.rp-date-pos {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .rp-report {
   border: 1px solid var(--border);
   border-radius: var(--r-md);

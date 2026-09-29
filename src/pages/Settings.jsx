@@ -1029,13 +1029,19 @@ const RP_TOGGLES = [
     key: 'rpAddRideEnabled',
     label: 'Add Ride mode',
     description: 'When ON, the Ride Plan page uses the full Add Ride modal (Follow / No). When OFF, it switches to the quick Off-mode report form.',
-    defaultOn: true,
+    defaultOn: false,
   },
   {
     key: 'rpBufferKmEnabled',
     label: 'Buffer KM',
     description: 'When ON, block extra KM (Pickup / Drop Off buffer) is included in Off-mode actual KM calculations.',
     defaultOn: true,
+  },
+  {
+    key: 'rpAddRowEnabled',
+    label: 'Add Row',
+    description: 'When ON, the Add Row button and the + icon on flight numbers are visible. Rides created via Add Row also appear on the Rides page.',
+    defaultOn: false,
   },
   {
     key: 'rpShowExtraRides',

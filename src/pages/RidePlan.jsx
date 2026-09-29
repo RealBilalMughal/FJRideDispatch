@@ -295,7 +295,10 @@ export default function RidePlan() {
   const [reportOpen, setReportOpen] = useState(false)
   const [viewMode, setViewMode] = useState('list') // 'list' | 'timeline'
   const [addRideEnabled, setAddRideEnabled] = useState(
-    () => localStorage.getItem('rpAddRideEnabled') !== 'false',
+    () => localStorage.getItem('rpAddRideEnabled') === 'true',
+  )
+  const [addRowEnabled, setAddRowEnabled] = useState(
+    () => localStorage.getItem('rpAddRowEnabled') === 'true',
   )
   const [showExtraRides, setShowExtraRides] = useState(
     () => localStorage.getItem('rpShowExtraRides') !== 'false',
@@ -308,7 +311,8 @@ export default function RidePlan() {
   // or when the user navigates back from Settings in the same tab.
   useEffect(() => {
     const onStorage = (e) => {
-      if (e.key === 'rpAddRideEnabled') setAddRideEnabled(e.newValue !== 'false')
+      if (e.key === 'rpAddRideEnabled') setAddRideEnabled(e.newValue === 'true')
+      if (e.key === 'rpAddRowEnabled') setAddRowEnabled(e.newValue === 'true')
       if (e.key === 'rpBufferKmEnabled') setBufferKmEnabled(e.newValue !== 'false')
       if (e.key === 'rpShowExtraRides') setShowExtraRides(e.newValue !== 'false')
     }
@@ -329,6 +333,10 @@ export default function RidePlan() {
 
   // Inline Add Ride modal (Follow / No / plain Add Ride button)
   const [rideModal, setRideModal] = useState(null) // { initial, planRowId, pairedRowId, viaNo } | null
+
+  // Add Row modal — pick flight + block type + reason, then opens Add Ride pre-filled
+  const [addRowOpen, setAddRowOpen] = useState(false)
+  const [addRowAfter, setAddRowAfter] = useState(null) // { seq, flightObj } | null — insert after this seq
 
   // Filters
   const [blockFilter, setBlockFilter] = useState('all')
@@ -647,7 +655,6 @@ export default function RidePlan() {
     const base = cityObj?.airport_name?.slice(0, 3).toUpperCase() || ''
 
     const data = rows
-      .filter((r) => !r.isExtra)
       .map((r) => {
         // Deadhead From: for pickups, look for adjacent deadhead at seq-1
         let deadheadFrom = ''
@@ -913,6 +920,107 @@ export default function RidePlan() {
   const onRideModalDone = async (result) => {
     const m = rideModal
     setRideModal(null)
+
+    if (m?.isAddRow) {
+      const { flightObj, skipReason } = m.addRowData
+      const { afterSeq } = m.addRowData
+      const parts = (flightObj.flight_code || '').split('-')
+      const origin = parts[0] || ''
+      const destination = parts.slice(1).join('-') || ''
+      const planRows = rows.filter((r) => !r.isExtra)
+      const maxSeq = Math.max(0, ...planRows.map((r) => r.seq))
+
+      // If inserting after a specific row, shift all rows with seq > afterSeq up
+      // to make room for the new row(s).
+      const totalNew = (result?.deadheadRideId || result?.returnLegRideId) ? 2 : 1
+      if (afterSeq != null) {
+        const toShift = planRows.filter((r) => r.seq > afterSeq).map((r) => r.id)
+        if (toShift.length) {
+          // Supabase doesn't support bulk conditional increment, so update in batch
+          for (const id of toShift) {
+            await supabase.from('ride_plan_rows').update({ seq: planRows.find((r) => r.id === id).seq + totalNew }).eq('id', id)
+          }
+        }
+      }
+      const baseSeq = afterSeq != null ? afterSeq + 1 : maxSeq + 1
+
+      // Helper: fetch a ride's actual data + crew, then insert a plan row for it
+      const insertAddRow = async (rideId, seqOffset) => {
+        let actualCrewNames = null
+        let actualVehicleNo = null
+        let rideNotes = null
+        let actualKm = null
+        let blockType = flightObj.block_type || 'pickup'
+        if (rideId) {
+          const [{ data: rideData }, { data: rc }] = await Promise.all([
+            supabase.from('rides').select('notes, distance_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no, block_type').eq('id', rideId).maybeSingle(),
+            supabase.from('ride_crew').select('crew:crew(name)').eq('ride_id', rideId).order('seq'),
+          ])
+          if (rideData) {
+            rideNotes = rideData.notes || null
+            actualKm = rideData.distance_km || null
+            blockType = rideData.block_type || blockType
+            if (rideData.is_adhoc_vehicle) {
+              actualVehicleNo = rideData.adhoc_vehicle_no || 'Ad-Hoc'
+            } else if (rideData.vehicle_id) {
+              const v = vehicles.find((vv) => vv.id === rideData.vehicle_id)
+              actualVehicleNo = v?.vehicle_no || null
+            }
+          }
+          const names = (rc ?? []).map((x) => x.crew?.name).filter(Boolean)
+          if (names.length) actualCrewNames = names.join(', ')
+        }
+        const { data: imp, error: impErr } = await supabase
+          .from('ride_plan_imports')
+          .insert({ city_id: flightObj.city_id, file_name: null, row_count: 1, created_by: profile?.id ?? null })
+          .select('id').single()
+        if (impErr) { toast.error(impErr.message); return false }
+        const { error } = await supabase.from('ride_plan_rows').insert({
+          plan_date: planDate,
+          city_id: flightObj.city_id,
+          block_type: blockType,
+          matched_flight_id: flightObj.id,
+          flight_no: flightObj.flight_no,
+          trip_id: '',
+          origin,
+          destination,
+          status: 'followed',
+          via_no: true,
+          skip_reason: skipReason || null,
+          ride_id: rideId,
+          crew_matches: [],
+          seq: baseSeq + seqOffset - 1,
+          import_id: imp.id,
+          actual_crew_names: actualCrewNames,
+          actual_vehicle_no: actualVehicleNo,
+          report_remarks: rideNotes,
+          reported_by_name: profile?.full_name || null,
+          actual_km: actualKm,
+        })
+        if (error) { toast.error(error.message); return false }
+        return true
+      }
+
+      const mainId = result?.rideId ?? null
+      const deadheadId = result?.deadheadRideId ?? null
+      const returnLegId = result?.returnLegRideId ?? null
+
+      if (deadheadId) {
+        // Deadhead comes BEFORE pickup
+        await insertAddRow(deadheadId, 1)
+        await insertAddRow(mainId, 2)
+      } else if (returnLegId) {
+        // Return Leg comes AFTER dropoff
+        await insertAddRow(mainId, 1)
+        await insertAddRow(returnLegId, 2)
+      } else {
+        await insertAddRow(mainId, 1)
+      }
+      fetchRows()
+      fetchPlanDates()
+      return
+    }
+
     if (!m?.planRowId) { fetchRows(); return }
     const rideId = result?.rideId ?? null
     const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId ?? null
@@ -1183,7 +1291,30 @@ export default function RidePlan() {
       return r.isChild ? <span className="rp-child-ref">↳ {ref}</span> : ref
     } },
     { key: 'block', header: 'Block', render: (r) => blockLabel(r.block_type) },
-    { key: 'flight', header: 'Flight', render: (r) => r.flight_no || '—' },
+    { key: 'flight', header: 'Flight', render: (r) => {
+      const flightObj = r.matched_flight_id ? flights.find((f) => f.id === r.matched_flight_id) : null
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {r.flight_no || '—'}
+          {canAddRide && addRowEnabled && flightObj && !r.isExtra && (
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ padding: '1px 2px', color: 'var(--accent)', opacity: 0.6 }}
+              title={`Add row for ${flightObj.flight_no}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                const lastSeq = Math.max(...rows.filter((x) => !x.isExtra && x.matched_flight_id === flightObj.id).map((x) => x.seq))
+                setAddRowAfter({ seq: lastSeq, flightObj })
+                setAddRowOpen(true)
+              }}
+            >
+              <Plus size={12} />
+            </button>
+          )}
+        </span>
+      )
+    } },
     {
       key: 'route',
       header: 'Route',
@@ -1500,12 +1631,17 @@ export default function RidePlan() {
             >
               <Sigma size={13} /> Report
             </button>
+            {canAddRide && addRowEnabled && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={() => { setAddRowAfter(null); setAddRowOpen(true) }}>
+                <Plus size={14} /> Add Row
+              </button>
+            )}
             {canAddRide && addRideEnabled && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={() => setRideModal({ initial: null, planRowId: null, pairedRowId: null, viaNo: false })}>
                 <Plus size={14} /> Add Ride
               </button>
             )}
-            {!addRideEnabled && rows.length > 0 && (
+            {rows.length > 0 && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={doExportReport}>
                 <Download size={14} /> Export Report
               </button>
@@ -1829,6 +1965,33 @@ export default function RidePlan() {
         />
       )}
 
+      {addRowOpen && (
+        <AddRowModal
+          flights={cityId != null ? flights.filter((f) => f.city_id === cityId) : flights}
+          preselectedFlight={addRowAfter?.flightObj ?? null}
+          onClose={() => { setAddRowOpen(false); setAddRowAfter(null) }}
+          onContinue={(flightObj, skipReason) => {
+            const fakeRow = {
+              matched_flight_id: flightObj.id,
+              flight_no: flightObj.flight_no,
+              block_type: flightObj.block_type || 'pickup',
+              city_id: flightObj.city_id,
+              plan_date: planDate,
+              is_adhoc_car: false,
+              matched_vehicle_id: null,
+              crew_matches: [],
+              trip_id: '',
+              start_time: null,
+            }
+            const initial = { ...buildPlanInitial(fakeRow, { flights, crew, viaNo: false }), notes: '' }
+            setAddRowOpen(false)
+            const afterSeq = addRowAfter?.seq ?? null
+            setAddRowAfter(null)
+            setRideModal({ initial, planRowId: null, pairedRowId: null, viaNo: false, isAddRow: true, addRowData: { flightObj, skipReason, afterSeq } })
+          }}
+        />
+      )}
+
       {rideModal && (
         <RideModal
           flights={flights}
@@ -1882,6 +2045,57 @@ const NO_REASON_OPTIONS = [
   'Completed with Off load',
   'Extra Pickup',
 ]
+
+function AddRowModal({ flights, preselectedFlight, onClose, onContinue }) {
+  const [flightId, setFlightId] = useState(preselectedFlight?.id ?? '')
+  const [reason, setReason] = useState('')
+
+  const flightOptions = flights.map((f) => ({
+    value: f.id,
+    label: `${f.flight_no} · ${f.route || f.flight_code || ''}`,
+  }))
+
+  return (
+    <Modal open onClose={onClose} title="Add Row" width={440}>
+      <div className="modal-form">
+        <div className="field">
+          <label>Flight</label>
+          {preselectedFlight ? (
+            <input className="input" readOnly value={`${preselectedFlight.flight_no} · ${preselectedFlight.route || preselectedFlight.flight_code || ''}`} />
+          ) : (
+            <SearchSelect options={flightOptions} value={flightId} onChange={setFlightId} placeholder="Search flight..." />
+          )}
+        </div>
+        <div className="field">
+          <label>Reason <span style={{ color: 'var(--danger)' }}>*</span></label>
+          <div className="rp-reason-checklist">
+            {NO_REASON_OPTIONS.map((opt) => (
+              <label key={opt} className="rp-reason-check">
+                <input type="radio" name="add-row-reason" checked={reason === opt} onChange={() => setReason(opt)} />
+                {opt}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="btn btn-square"
+            disabled={!flightId || !reason}
+            onClick={() => {
+              const flightObj = flights.find((f) => f.id === flightId)
+              if (!flightObj) return
+              onContinue(flightObj, reason)
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 function NoReasonModal({ row, onClose, onContinue }) {
   const [selected, setSelected] = useState('')

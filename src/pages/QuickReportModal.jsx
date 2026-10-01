@@ -183,7 +183,7 @@ export default function QuickReportModal({
     const extraKm = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
     const kmVal = routeData?.distanceKm != null
       ? parseFloat((routeData.distanceKm + extraKm).toFixed(2))
-      : null
+      : row.planned_km != null ? parseFloat(Number(row.planned_km).toFixed(2)) : null
 
     const base = {
       status: 'followed',

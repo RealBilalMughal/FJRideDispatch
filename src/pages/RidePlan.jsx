@@ -1513,27 +1513,6 @@ export default function RidePlan() {
       key: 'actions',
       header: 'Action',
       render: (r) => {
-        // Build route URL from a crew list + airport (uses stop_lat/stop_lng)
-        const crewGm = (crewList, rowCityId, blockType) => {
-          if (!crewList.length) return null
-          const rowCity = allowedCities.find((c) => c.id === rowCityId)
-          const airport = rowCity
-            ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
-            : {}
-          return gmapsRoute(buildRoutePoints(blockType, null, crewList, airport))
-        }
-
-        // Actual route: linked ride waypoints first, else match actual_crew_names → crew array
-        const gmActual = (() => {
-          if (r.status !== 'followed') return null
-          const fromRide = gmapsRoute(r.ride?.waypoints)
-          if (fromRide) return fromRide
-          if (!r.actual_crew_names) return null
-          const names = r.actual_crew_names.split(',').map((s) => s.trim()).filter(Boolean)
-          const crewList = names.map((n) => crew.find((c) => c.name === n)).filter(Boolean)
-          return crewGm(crewList, r.city_id, r.block_type)
-        })()
-
         return (
           <div className="rp-row-actions">
             {/* On mode: normal Follow/No via Add Ride modal */}
@@ -1637,6 +1616,35 @@ export default function RidePlan() {
                 <Eye size={15} />
               </button>
             )}
+          </div>
+        )
+      },
+    },
+    {
+      key: 'km_help',
+      header: 'KM Help',
+      render: (r) => {
+        // Build route URL from a crew list + airport
+        const crewGm = (crewList, rowCityId, blockType) => {
+          if (!crewList.length) return null
+          const rowCity = allowedCities.find((c) => c.id === rowCityId)
+          const airport = rowCity
+            ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+            : {}
+          return gmapsRoute(buildRoutePoints(blockType, null, crewList, airport))
+        }
+        const gmActual = (() => {
+          if (r.status !== 'followed') return null
+          const fromRide = gmapsRoute(r.ride?.waypoints)
+          if (fromRide) return fromRide
+          if (!r.actual_crew_names) return null
+          const names = r.actual_crew_names.split(',').map((s) => s.trim()).filter(Boolean)
+          const crewList = names.map((n) => crew.find((c) => c.name === n)).filter(Boolean)
+          return crewGm(crewList, r.city_id, r.block_type)
+        })()
+
+        return (
+          <div className="rp-row-actions">
             {!addRideEnabled && !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && r.actual_km == null && (
               <button
                 type="button"

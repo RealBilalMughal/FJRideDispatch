@@ -3,6 +3,8 @@
 // key is missing or the call fails.
 
 const KEY = import.meta.env.VITE_ORS_API_KEY
+// ORS requires api_key as a query param for browser requests (CORS preflight
+// blocks the Authorization header from browser origins).
 const ENDPOINT = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
 
 // Session cache: the same ordered coordinate list only ever hits ORS once per
@@ -16,9 +18,9 @@ const coordKey = (coords) => coords.map((c) => `${c[0].toFixed(5)},${c[1].toFixe
 
 async function fetchRoute(clean) {
   try {
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(`${ENDPOINT}?api_key=${encodeURIComponent(KEY)}`, {
       method: 'POST',
-      headers: { Authorization: KEY, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         coordinates: clean,
         radiuses: clean.map(() => -1),
@@ -76,9 +78,9 @@ export async function optimizeCrewOrder(block, crewCoords, airport) {
   if (block === 'pickup') vehicle.end = [airport.lng, airport.lat]
   else vehicle.start = [airport.lng, airport.lat]
   try {
-    const res = await fetch('https://api.openrouteservice.org/optimization', {
+    const res = await fetch(`https://api.openrouteservice.org/optimization?api_key=${encodeURIComponent(KEY)}`, {
       method: 'POST',
-      headers: { Authorization: KEY, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jobs: cc.map((c, i) => ({ id: i + 1, location: [c.lng, c.lat] })),
         vehicles: [vehicle],

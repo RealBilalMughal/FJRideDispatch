@@ -1219,9 +1219,8 @@ export default function RidePlan() {
     const coords = pts.map((p) => [p.lng, p.lat])
     const info = await routeInfo(coords)
     if (!info) {
-      // ORS unavailable — open Edit Report so dispatcher can type KM manually
+      toast.error('Route calculation failed')
       setRecalcBusy((p) => ({ ...p, [r.id]: false }))
-      setQuickReport({ row: r, pairedRow: null, editMode: true })
       return
     }
     const extraKm = blockExtraKm(r.block_type, rowCity)

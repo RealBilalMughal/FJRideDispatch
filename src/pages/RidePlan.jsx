@@ -1191,10 +1191,16 @@ export default function RidePlan() {
   const [recalcBusy, setRecalcBusy] = useState({})
   const doRecalcKm = async (r) => {
     setRecalcBusy((p) => ({ ...p, [r.id]: true }))
-    const crewObjs = (r.crew_matches ?? [])
-      .filter((m) => m.crew_id)
-      .map((m) => crew.find((c) => c.id === m.crew_id))
-      .filter(Boolean)
+    // Prefer actual_crew_names (set by QRM) over planned crew_matches
+    let crewObjs = []
+    if (r.actual_crew_names) {
+      crewObjs = r.actual_crew_names.split(',').map((n) => n.trim()).filter(Boolean)
+        .map((name) => crew.find((c) => c.name === name)).filter(Boolean)
+    }
+    if (!crewObjs.length) {
+      crewObjs = (r.crew_matches ?? []).filter((m) => m.crew_id)
+        .map((m) => crew.find((c) => c.id === m.crew_id)).filter(Boolean)
+    }
     const rowCity = allowedCities.find((c) => c.id === r.city_id)
     const airport = rowCity
       ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
@@ -1205,9 +1211,15 @@ export default function RidePlan() {
       setRecalcBusy((p) => ({ ...p, [r.id]: false }))
       return
     }
-    const info = await routeInfo(pts.map((p) => [p.lng, p.lat]))
+    if (!import.meta.env.VITE_ORS_API_KEY) {
+      toast.error('ORS API key not configured in Vercel env vars')
+      setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+      return
+    }
+    const coords = pts.map((p) => [p.lng, p.lat])
+    const info = await routeInfo(coords)
     if (!info) {
-      toast.error('Route calculation failed')
+      toast.error('ORS route failed — check F12 console for [ORS] error details')
       setRecalcBusy((p) => ({ ...p, [r.id]: false }))
       return
     }

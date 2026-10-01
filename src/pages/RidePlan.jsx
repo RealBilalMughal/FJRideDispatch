@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, Check, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, Check, ChevronLeft, ChevronRight, Download, Eye, GanttChart, Hash, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -1668,7 +1668,7 @@ export default function RidePlan() {
                   title="Enter actual KM"
                   onClick={() => { setKmEditVal(r.actual_km != null ? String(Number(r.actual_km).toFixed(2)) : ''); setKmEditId(r.id) }}
                 >
-                  <Pencil size={15} />
+                  <Hash size={15} />
                 </button>
               )
             )}

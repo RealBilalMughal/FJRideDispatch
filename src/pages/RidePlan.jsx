@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, Check, ChevronLeft, ChevronRight, Download, Eye, GanttChart, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -1189,6 +1189,18 @@ export default function RidePlan() {
   }
 
   const [recalcBusy, setRecalcBusy] = useState({})
+  const [kmEditId, setKmEditId] = useState(null)
+  const [kmEditVal, setKmEditVal] = useState('')
+
+  const saveKmEdit = async (id) => {
+    const val = parseFloat(kmEditVal)
+    if (!Number.isFinite(val) || val < 0) { setKmEditId(null); return }
+    const { error } = await supabase.from('ride_plan_rows')
+      .update({ actual_km: parseFloat(val.toFixed(2)) }).eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setKmEditId(null)
+    fetchRows()
+  }
   const doRecalcKm = async (r) => {
     setRecalcBusy((p) => ({ ...p, [r.id]: true }))
     // Prefer actual_crew_names (set by QRM) over planned crew_matches
@@ -1582,17 +1594,6 @@ export default function RidePlan() {
                 <Ban size={15} />
               </button>
             )}
-            {!addRideEnabled && !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && r.actual_km == null && (
-              <button
-                type="button"
-                className="icon-btn"
-                title="Recalculate KM"
-                disabled={recalcBusy[r.id]}
-                onClick={() => doRecalcKm(r)}
-              >
-                <RefreshCw size={15} />
-              </button>
-            )}
             {r.skip_reason && (
               <button
                 type="button"
@@ -1635,6 +1636,41 @@ export default function RidePlan() {
               >
                 <Eye size={15} />
               </button>
+            )}
+            {!addRideEnabled && !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && (
+              kmEditId === r.id ? (
+                <>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    autoFocus
+                    className="input"
+                    style={{ width: 72, padding: '2px 6px', fontSize: 12, height: 26 }}
+                    value={kmEditVal}
+                    onChange={(e) => setKmEditVal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveKmEdit(r.id)
+                      if (e.key === 'Escape') setKmEditId(null)
+                    }}
+                  />
+                  <button type="button" className="icon-btn" title="Save" onClick={() => saveKmEdit(r.id)}>
+                    <Check size={14} />
+                  </button>
+                  <button type="button" className="icon-btn" title="Cancel" onClick={() => setKmEditId(null)}>
+                    <XCircle size={14} />
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Enter actual KM"
+                  onClick={() => { setKmEditVal(r.actual_km != null ? String(Number(r.actual_km).toFixed(2)) : ''); setKmEditId(r.id) }}
+                >
+                  <Pencil size={15} />
+                </button>
+              )
             )}
             {gmActual && (
               <a href={gmActual} target="_blank" rel="noreferrer" className="icon-btn" title="Open route in Google Maps">

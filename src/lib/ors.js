@@ -1,39 +1,36 @@
 // OpenRouteService - road distance / duration / geometry for a ride's route.
 // Falls back to null (the UI then shows "—" / a straight-line preview) when the
 // key is missing or the call fails.
+//
+// All ORS calls go through the `ors-route` Supabase Edge Function (server-side
+// proxy) because direct browser requests to api.openrouteservice.org are blocked
+// by CORS preflight on some networks. The function has no JWT requirement and
+// handles CORS itself.
 
-const KEY = import.meta.env.VITE_ORS_API_KEY
-// ORS requires api_key as a query param for browser requests (CORS preflight
-// blocks the Authorization header from browser origins).
-const ENDPOINT = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
+import { supabase } from './supabase'
+
+const KEY = import.meta.env.VITE_ORS_API_KEY   // still needed to know if ORS is configured
 
 // Session cache: the same ordered coordinate list only ever hits ORS once per
 // page load (keyed on the coords rounded to ~1 m). Value is the in-flight
 // Promise first - so concurrent callers share one request - then the resolved
-// result. Failures are NOT cached (so a later retry can succeed). This is what
-// keeps re-opening / re-editing a ride, or a Generate run over one flight, from
-// burning API credits: the rounded key matches even across component remounts.
+// result. Failures are NOT cached (so a later retry can succeed).
 const routeCache = new Map()
 const coordKey = (coords) => coords.map((c) => `${c[0].toFixed(5)},${c[1].toFixed(5)}`).join(';')
 
 async function fetchRoute(clean) {
   try {
-    const res = await fetch(`${ENDPOINT}?api_key=${encodeURIComponent(KEY)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const { data, error } = await supabase.functions.invoke('ors-route', {
+      body: {
         coordinates: clean,
         radiuses: clean.map(() => -1),
         preference: 'fastest',
-      }),
+      },
     })
-    if (!res.ok) {
-      let body = ''
-      try { body = await res.text() } catch {}
-      console.error(`[ORS] HTTP ${res.status}:`, body)
+    if (error) {
+      console.error('[ORS] edge function error:', error)
       return null
     }
-    const data = await res.json()
     const feat = data?.features?.[0]
     const sum = feat?.properties?.summary
     if (!sum) { console.error('[ORS] Unexpected response shape:', data); return null }
@@ -78,16 +75,13 @@ export async function optimizeCrewOrder(block, crewCoords, airport) {
   if (block === 'pickup') vehicle.end = [airport.lng, airport.lat]
   else vehicle.start = [airport.lng, airport.lat]
   try {
-    const res = await fetch(`https://api.openrouteservice.org/optimization?api_key=${encodeURIComponent(KEY)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const { data, error } = await supabase.functions.invoke('ors-optimize', {
+      body: {
         jobs: cc.map((c, i) => ({ id: i + 1, location: [c.lng, c.lat] })),
         vehicles: [vehicle],
-      }),
+      },
     })
-    if (!res.ok) return null
-    const data = await res.json()
+    if (error || !data) return null
     const steps = (data?.routes?.[0]?.steps || []).filter((s) => s.type === 'job')
     if (steps.length !== cc.length) return null
     return steps.map((s) => cc[s.id - 1].id)

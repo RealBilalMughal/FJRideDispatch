@@ -394,7 +394,7 @@ export default function RidePlan() {
     supabase
       .from('crew')
       .select('id, ref_no, name, employee_no, stop_name, stop_lat, stop_lng, city_id, is_active')
-      .then(({ data }) => setCrew((data ?? []).filter((c) => c.is_active)))
+      .then(({ data }) => setCrew(data ?? []))
     supabase
       .from('vehicles')
       .select('id, ref_no, vehicle_no, city_id, is_active, driver_id, night_driver_id')

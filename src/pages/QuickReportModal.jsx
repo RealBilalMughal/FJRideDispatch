@@ -149,7 +149,7 @@ export default function QuickReportModal({
   }
 
   const crewOptions = crew
-    .filter((c) => !actualCrew.find((x) => x.id === c.id))
+    .filter((c) => c.is_active && !actualCrew.find((x) => x.id === c.id))
     .map((c) => ({ value: c.id, label: `(${c.ref_no}) ${c.name}` }))
 
   const effectiveCityId = row.city_id ?? cityId

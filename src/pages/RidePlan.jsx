@@ -6,8 +6,8 @@ import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
 import { fmtDate } from '../lib/format'
 import { addDays, fmtTime12, pkNow, pkToday } from '../lib/time'
-import { blockLabel, buildRoutePoints, displayCrewCount } from '../lib/rideRoute'
-import { gmapsRoute } from '../lib/ors'
+import { blockExtraKm, blockLabel, buildRoutePoints, displayCrewCount, routeComplete } from '../lib/rideRoute'
+import { gmapsRoute, routeInfo } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanInitial, buildPlanRows } from '../lib/planImport'
 import Modal from '../components/Modal'
@@ -1188,6 +1188,36 @@ export default function RidePlan() {
     return Number(r.actual_km) || 0
   }
 
+  const [recalcBusy, setRecalcBusy] = useState({})
+  const doRecalcKm = async (r) => {
+    setRecalcBusy((p) => ({ ...p, [r.id]: true }))
+    const crewObjs = (r.crew_matches ?? [])
+      .filter((m) => m.crew_id)
+      .map((m) => crew.find((c) => c.id === m.crew_id))
+      .filter(Boolean)
+    const rowCity = allowedCities.find((c) => c.id === r.city_id)
+    const airport = rowCity
+      ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+      : {}
+    const pts = buildRoutePoints(r.block_type, null, crewObjs, airport)
+    if (!routeComplete(pts)) {
+      toast.error('Crew coordinates missing — edit the report to fix')
+      setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+      return
+    }
+    const info = await routeInfo(pts.map((p) => [p.lng, p.lat]))
+    if (!info) {
+      toast.error('Route calculation failed')
+      setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+      return
+    }
+    const extraKm = blockExtraKm(r.block_type, rowCity)
+    const kmVal = parseFloat((info.distanceKm + extraKm).toFixed(2))
+    const { error } = await supabase.from('ride_plan_rows').update({ actual_km: kmVal }).eq('id', r.id)
+    if (error) { toast.error(error.message) } else { toast.success(`KM updated: ${kmVal}`); fetchRows() }
+    setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+  }
+
   const report = useMemo(() => {
     const byBlock = {}
     for (const r of rows) {
@@ -1538,6 +1568,17 @@ export default function RidePlan() {
                 onClick={() => setCancelFor(r)}
               >
                 <Ban size={15} />
+              </button>
+            )}
+            {!addRideEnabled && !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && r.actual_km == null && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Recalculate KM"
+                disabled={recalcBusy[r.id]}
+                onClick={() => doRecalcKm(r)}
+              >
+                <RefreshCw size={15} />
               </button>
             )}
             {r.skip_reason && (

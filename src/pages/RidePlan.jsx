@@ -1637,6 +1637,17 @@ export default function RidePlan() {
                 <Eye size={15} />
               </button>
             )}
+            {!addRideEnabled && !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && r.actual_km == null && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Auto-calculate KM"
+                disabled={recalcBusy[r.id]}
+                onClick={() => doRecalcKm(r)}
+              >
+                <RefreshCw size={15} />
+              </button>
+            )}
             {!addRideEnabled && !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && (
               kmEditId === r.id ? (
                 <>

@@ -87,6 +87,7 @@ export default function QuickReportModal({
   const [remarks, setRemarks] = useState(editMode ? (row.report_remarks || '') : '')
   const [routeData, setRouteData] = useState(null)
   const [routeLoading, setRouteLoading] = useState(false)
+  const [manualKm, setManualKm] = useState(editMode && row.actual_km != null ? String(Number(row.actual_km).toFixed(2)) : '')
   const [busy, setBusy] = useState(false)
   const routeAlive = useRef(true)
   const dragIdx = useRef(null)
@@ -183,7 +184,7 @@ export default function QuickReportModal({
     const extraKm = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
     const kmVal = routeData?.distanceKm != null
       ? parseFloat((routeData.distanceKm + extraKm).toFixed(2))
-      : null
+      : manualKm !== '' ? parseFloat(Number(manualKm).toFixed(2)) : null
 
     const base = {
       status: 'followed',
@@ -353,17 +354,33 @@ export default function QuickReportModal({
           <div className="qrm-km-row">
             {routeLoading
               ? <span className="secondary" style={{ fontSize: 11 }}>Calculating…</span>
-              : routeData?.distanceKm != null && (() => {
-                  const extra = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
-                  const total = routeData.distanceKm + extra
-                  return (
-                    <span className="qrm-km-badge">
-                      {extra > 0
-                        ? `${routeData.distanceKm.toFixed(2)} + ${extra.toFixed(2)} = ${total.toFixed(2)} km`
-                        : `${total.toFixed(2)} km`}
-                    </span>
-                  )
-                })()
+              : routeData?.distanceKm != null
+                ? (() => {
+                    const extra = bufferEnabled ? blockExtraKm(row.block_type, city) : 0
+                    const total = routeData.distanceKm + extra
+                    return (
+                      <span className="qrm-km-badge">
+                        {extra > 0
+                          ? `${routeData.distanceKm.toFixed(2)} + ${extra.toFixed(2)} = ${total.toFixed(2)} km`
+                          : `${total.toFixed(2)} km`}
+                      </span>
+                    )
+                  })()
+                : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="input"
+                      style={{ width: 100, padding: '3px 8px', fontSize: 13 }}
+                      placeholder="KM"
+                      value={manualKm}
+                      onChange={(e) => setManualKm(e.target.value)}
+                    />
+                    <span className="secondary" style={{ fontSize: 11 }}>km (enter manually)</span>
+                  </div>
+                )
             }
             {['pickup', 'dropoff'].includes(row.block_type) && (
               <label className="qrm-radio">

@@ -19,31 +19,30 @@ async function fetchRoute(clean) {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { Authorization: KEY, 'Content-Type': 'application/json' },
-      // radiuses -1 => snap each point to the nearest road (airports / stops
-      // often sit a few hundred metres off the road network).
-      // preference 'fastest' (ORS defaults to 'recommended' when omitted,
-      // which favours road quality/distance and can route onto slower local
-      // roads even where a highway is available) - biases toward
-      // motorways/highways the way a real driver (and Google Maps) would,
-      // which is also usually the longer-but-faster route in km terms.
       body: JSON.stringify({
         coordinates: clean,
         radiuses: clean.map(() => -1),
         preference: 'fastest',
       }),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      let body = ''
+      try { body = await res.text() } catch {}
+      console.error(`[ORS] HTTP ${res.status}:`, body)
+      return null
+    }
     const data = await res.json()
     const feat = data?.features?.[0]
     const sum = feat?.properties?.summary
-    if (!sum) return null
+    if (!sum) { console.error('[ORS] Unexpected response shape:', data); return null }
     const line = (feat.geometry?.coordinates || []).map(([lng, lat]) => [lat, lng])
     return {
       distanceKm: Math.round((sum.distance / 1000) * 100) / 100,
       durationMin: Math.round(sum.duration / 60),
       line,
     }
-  } catch {
+  } catch (e) {
+    console.error('[ORS] fetch error:', e)
     return null
   }
 }

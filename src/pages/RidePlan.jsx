@@ -407,9 +407,9 @@ export default function RidePlan() {
       .then(({ data }) => setDrivers(data ?? []))
   }, [canView])
 
-  const fetchRows = useCallback(async () => {
+  const fetchRows = useCallback(async (silent = false) => {
     if (!canView) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     let q = supabase
       .from('ride_plan_rows')
       .select(
@@ -572,7 +572,7 @@ export default function RidePlan() {
       }
     }
     setRows(result)
-    setLoading(false)
+    if (!silent) setLoading(false)
   }, [canView, planDate, cityId, vehicles, showExtraRides])
 
   useEffect(() => {
@@ -626,7 +626,7 @@ export default function RidePlan() {
         }
       }
       reconciling.current = false
-      if (changed) fetchRows()
+      if (changed) fetchRows(true)
     })()
   }, [rows, fetchRows, canEdit])
 
@@ -750,7 +750,7 @@ export default function RidePlan() {
     const err = results.find((res) => res.error)?.error
     if (err) { toast.error('Could not mark as followed'); return }
     toast.success(paired ? 'Followed (+ paired row)' : 'Followed')
-    fetchRows()
+    fetchRows(true)
   }
 
   // Off-mode UserPlus: if same-flight pending plan rows exist, show merge picker first.
@@ -1018,12 +1018,12 @@ export default function RidePlan() {
       } else {
         await insertAddRow(mainId, 1)
       }
-      fetchRows()
+      fetchRows(true)
       fetchPlanDates()
       return
     }
 
-    if (!m?.planRowId) { fetchRows(); return }
+    if (!m?.planRowId) { fetchRows(true); return }
     const rideId = result?.rideId ?? null
     const pairedRideId = result?.deadheadRideId ?? result?.returnLegRideId ?? null
     const upd = await supabase
@@ -1040,7 +1040,7 @@ export default function RidePlan() {
         .update({ status: 'followed', ride_id: pairedRideId, via_no: m.viaNo ?? false })
         .eq('id', m.pairedRowId)
     }
-    fetchRows()
+    fetchRows(true)
   }
 
   // A "Skip" can instead LINK an already-created ride (e.g. one dispatched
@@ -1069,7 +1069,7 @@ export default function RidePlan() {
       if (error) return toast.error(error.message)
       toast.success(`Linked to ride ${refNo}`)
       setSkipFor(null)
-      return fetchRows()
+      return fetchRows(true)
     }
     const { error } = await supabase
       .from('ride_plan_rows')
@@ -1077,7 +1077,7 @@ export default function RidePlan() {
       .eq('id', skipFor.id)
     if (error) return toast.error(error.message)
     setSkipFor(null)
-    fetchRows()
+    fetchRows(true)
   }
 
   const doCancelPlanRide = async (reason) => {
@@ -1120,7 +1120,7 @@ export default function RidePlan() {
     // Plan rows stay as 'followed' — the cancelled ride is still linked.
     // SuperAdmin uses the Reset button (RotateCcw) to clear the row back to pending.
     setCancelFor(null)
-    fetchRows()
+    fetchRows(true)
   }
 
   const reopen = async (row) => {
@@ -1129,7 +1129,7 @@ export default function RidePlan() {
       .update({ status: 'pending', skip_reason: null, ride_id: null, via_no: false })
       .eq('id', row.id)
     if (error) return toast.error(error.message)
-    fetchRows()
+    fetchRows(true)
   }
 
   // Deletes this day's plan rows only (not the rides they were followed
@@ -1159,7 +1159,7 @@ export default function RidePlan() {
     }
     setDeletePlanOpen(false)
     fetchPlanDates()
-    fetchRows()
+    fetchRows(true)
   }
 
   const doReset = async () => {
@@ -1182,7 +1182,7 @@ export default function RidePlan() {
     }).in('id', ids)
     if (error) { toast.error('Reset failed: ' + error.message); return }
     toast.success(paired ? 'Reset to pending (+ paired row)' : 'Reset to pending')
-    fetchRows()
+    fetchRows(true)
   }
 
   const rowActualKm = (r) => {
@@ -1201,7 +1201,7 @@ export default function RidePlan() {
       .update({ actual_km: parseFloat(val.toFixed(2)) }).eq('id', id)
     if (error) { toast.error(error.message); return }
     setKmEditId(null)
-    fetchRows()
+    fetchRows(true)
   }
 
   // ── Bulk recalculate ────────────────────────────────────────────────────────
@@ -1255,7 +1255,7 @@ export default function RidePlan() {
       }
     }
     setKmBulkRunning(false)
-    fetchRows()
+    fetchRows(true)
   }
 
   const toggleBulkRow = (id) => setKmBulkSel((prev) => {
@@ -1300,7 +1300,7 @@ export default function RidePlan() {
     const extraKm = blockExtraKm(r.block_type, rowCity)
     const kmVal = parseFloat((info.distanceKm + extraKm).toFixed(2))
     const { error } = await supabase.from('ride_plan_rows').update({ actual_km: kmVal }).eq('id', r.id)
-    if (error) { toast.error(error.message) } else { toast.success(`KM updated: ${kmVal}`); fetchRows() }
+    if (error) { toast.error(error.message) } else { toast.success(`KM updated: ${kmVal}`); fetchRows(true) }
     setRecalcBusy((p) => ({ ...p, [r.id]: false }))
   }
 
@@ -1417,7 +1417,7 @@ export default function RidePlan() {
     toast.success(`${selected.length} row${selected.length > 1 ? 's' : ''} cancelled`)
     setBulkCancelSel(new Set())
     setBulkCancelOpen(false)
-    fetchRows()
+    fetchRows(true)
   }
 
   const allCancelableSelected = cancelableRows.length > 0 && cancelableRows.every((r) => bulkCancelSel.has(r.id))
@@ -2107,7 +2107,7 @@ export default function RidePlan() {
             setImportOpen(false)
             fetchPlanDates()
             if (earliestDate && earliestDate !== planDate) setPlanDate(earliestDate)
-            else fetchRows()
+            else fetchRows(true)
           }}
         />
       )}
@@ -2153,7 +2153,7 @@ export default function RidePlan() {
           onDone={() => {
             rideCache.current.delete(viewRide.id) // invalidate so edit changes reflect
             setViewRide(null)
-            fetchRows()
+            fetchRows(true)
           }}
         />
       )}
@@ -2176,7 +2176,7 @@ export default function RidePlan() {
           crewObj={crewMerge.crewObj}
           planRow={crewMerge.planRow}
           sameFlightRows={crewMerge.sameFlightRows}
-          onAddIn={() => { setCrewMerge(null); fetchRows() }}
+          onAddIn={() => { setCrewMerge(null); fetchRows(true) }}
           onNewRide={() => {
             const { planRow, crewObj } = crewMerge
             setCrewMerge(null)
@@ -2204,7 +2204,7 @@ export default function RidePlan() {
           editMode={quickReport.editMode ?? false}
           isNew={quickReport.isNew ?? false}
           defaultBufferEnabled={bufferKmEnabled}
-          onDone={() => { setQuickReport(null); fetchRows() }}
+          onDone={() => { setQuickReport(null); fetchRows(true) }}
           onClose={() => setQuickReport(null)}
         />
       )}

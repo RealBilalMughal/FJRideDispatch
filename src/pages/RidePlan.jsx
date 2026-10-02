@@ -1395,7 +1395,7 @@ export default function RidePlan() {
   const hasActiveFilter = blockFilter !== 'all' || statusFilter !== 'all' || flightFilter || vehicleFilter
 
   const cancelableRows = useMemo(
-    () => filteredRows.filter((r) => !r.isExtra && r.status === 'followed' && r.ride?.id && r.ride?.status !== 'cancelled'),
+    () => filteredRows.filter((r) => !r.isExtra && r.status === 'pending'),
     [filteredRows],
   )
 
@@ -1409,20 +1409,12 @@ export default function RidePlan() {
   const doBulkCancel = async (reason) => {
     const selected = cancelableRows.filter((r) => bulkCancelSel.has(r.id))
     if (!selected.length) return
-    const payload = {
-      status: 'cancelled',
-      cancel_reason: reason,
-      cancelled_at: new Date().toISOString(),
-      cancelled_by: profile?.id ?? null,
-      count_km: false,
-    }
-    const rideIds = selected.map((r) => r.ride.id)
-    const { error } = await supabase.from('rides').update(payload).in('id', rideIds)
+    const { error } = await supabase
+      .from('ride_plan_rows')
+      .update({ status: 'skipped', skip_reason: reason })
+      .in('id', selected.map((r) => r.id))
     if (error) { toast.error(error.message); return }
-    // Cancel companion rides (deadhead / return leg)
-    const { data: companions } = await supabase.from('rides').select('id').in('return_of_ride_id', rideIds).neq('status', 'cancelled')
-    if (companions?.length) await supabase.from('rides').update(payload).in('id', companions.map((c) => c.id))
-    toast.success(`${selected.length} ride${selected.length > 1 ? 's' : ''} cancelled`)
+    toast.success(`${selected.length} row${selected.length > 1 ? 's' : ''} cancelled`)
     setBulkCancelSel(new Set())
     setBulkCancelOpen(false)
     fetchRows()
@@ -1447,7 +1439,7 @@ export default function RidePlan() {
         />
       ),
       render: (r) => {
-        if (r.isExtra || r.status !== 'followed' || !r.ride?.id || r.ride?.status === 'cancelled') return null
+        if (r.isExtra || r.status !== 'pending') return null
         return (
           <input
             type="checkbox"

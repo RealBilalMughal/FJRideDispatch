@@ -2288,6 +2288,7 @@ const NO_REASON_OPTIONS = [
   'Double Sector',
   'Single Pickup / Combine',
   'Flight Delay',
+  'Flight Cancel',
   'Off Load',
   'Completed with Off load',
   'Extra Pickup',

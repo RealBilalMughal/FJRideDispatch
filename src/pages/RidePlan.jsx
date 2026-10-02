@@ -489,7 +489,7 @@ export default function RidePlan() {
         ? (r.ride.adhoc_vehicle_no || '—').replace(/^Ad-Hoc 0*(\d+)$/, 'Ad-Hoc $1')
         : r.ride?.vehicle_id
           ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? null
-          : null
+          : r.actual_vehicle_no || null  // off-mode No: saved directly on the plan row
       return {
         ...r,
         displayRef: rideDisplayRef(r.ride),

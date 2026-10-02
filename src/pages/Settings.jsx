@@ -1041,7 +1041,7 @@ const RP_TOGGLES = [
     key: 'rpAddRowEnabled',
     label: 'Add Row',
     description: 'When ON, the Add Row button and the + icon on flight numbers are visible. Rides created via Add Row also appear on the Rides page.',
-    defaultOn: false,
+    defaultOn: true,
   },
   {
     key: 'rpShowExtraRides',

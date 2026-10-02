@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, Check, ChevronLeft, ChevronRight, Download, Eye, GanttChart, Hash, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, Check, ChevronLeft, ChevronRight, Download, Eye, GanttChart, Globe, Hash, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -298,7 +298,7 @@ export default function RidePlan() {
     () => localStorage.getItem('rpAddRideEnabled') === 'true',
   )
   const [addRowEnabled, setAddRowEnabled] = useState(
-    () => localStorage.getItem('rpAddRowEnabled') === 'true',
+    () => localStorage.getItem('rpAddRowEnabled') !== 'false',
   )
   const [showExtraRides, setShowExtraRides] = useState(
     () => localStorage.getItem('rpShowExtraRides') !== 'false',
@@ -312,7 +312,7 @@ export default function RidePlan() {
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === 'rpAddRideEnabled') setAddRideEnabled(e.newValue === 'true')
-      if (e.key === 'rpAddRowEnabled') setAddRowEnabled(e.newValue === 'true')
+      if (e.key === 'rpAddRowEnabled') setAddRowEnabled(e.newValue !== 'false')
       if (e.key === 'rpBufferKmEnabled') setBufferKmEnabled(e.newValue !== 'false')
       if (e.key === 'rpShowExtraRides') setShowExtraRides(e.newValue !== 'false')
     }
@@ -1201,6 +1201,66 @@ export default function RidePlan() {
     setKmEditId(null)
     fetchRows()
   }
+
+  // ── Bulk recalculate ────────────────────────────────────────────────────────
+  const missingKmRows = useMemo(
+    () => rows.filter((r) => !r.isExtra && r.status === 'followed' && r.via_no && !r.ride && r.actual_km == null),
+    [rows],
+  )
+  const [kmBulkOpen, setKmBulkOpen] = useState(false)
+  const [kmBulkSel, setKmBulkSel] = useState(new Set())
+  const [kmBulkProg, setKmBulkProg] = useState({}) // id -> 'calc'|'done'|'error'
+  const [kmBulkRunning, setKmBulkRunning] = useState(false)
+
+  const openKmBulk = () => {
+    setKmBulkSel(new Set(missingKmRows.map((r) => r.id)))
+    setKmBulkProg({})
+    setKmBulkOpen(true)
+  }
+
+  const calcKmForRow = async (r) => {
+    let crewObjs = []
+    if (r.actual_crew_names) {
+      crewObjs = r.actual_crew_names.split(',').map((n) => n.trim()).filter(Boolean)
+        .map((name) => crew.find((c) => c.name === name)).filter(Boolean)
+    }
+    if (!crewObjs.length) {
+      crewObjs = (r.crew_matches ?? []).filter((m) => m.crew_id)
+        .map((m) => crew.find((c) => c.id === m.crew_id)).filter(Boolean)
+    }
+    const rowCity = allowedCities.find((c) => c.id === r.city_id)
+    const airport = rowCity
+      ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+      : {}
+    const pts = buildRoutePoints(r.block_type, null, crewObjs, airport)
+    if (!routeComplete(pts) || !import.meta.env.VITE_ORS_API_KEY) return null
+    const info = await routeInfo(pts.map((p) => [p.lng, p.lat]))
+    if (!info) return null
+    return parseFloat((info.distanceKm + blockExtraKm(r.block_type, rowCity)).toFixed(2))
+  }
+
+  const runKmBulk = async () => {
+    setKmBulkRunning(true)
+    const selected = missingKmRows.filter((r) => kmBulkSel.has(r.id))
+    for (const r of selected) {
+      setKmBulkProg((p) => ({ ...p, [r.id]: 'calc' }))
+      const km = await calcKmForRow(r)
+      if (km != null) {
+        await supabase.from('ride_plan_rows').update({ actual_km: km }).eq('id', r.id)
+        setKmBulkProg((p) => ({ ...p, [r.id]: 'done' }))
+      } else {
+        setKmBulkProg((p) => ({ ...p, [r.id]: 'error' }))
+      }
+    }
+    setKmBulkRunning(false)
+    fetchRows()
+  }
+
+  const toggleBulkRow = (id) => setKmBulkSel((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
   const doRecalcKm = async (r) => {
     setRecalcBusy((p) => ({ ...p, [r.id]: true }))
     // Prefer actual_crew_names (set by QRM) over planned crew_matches
@@ -1725,6 +1785,11 @@ export default function RidePlan() {
             <button className="icon-btn" onClick={fetchRows} title="Refresh">
               <RefreshCw size={15} />
             </button>
+            {!addRideEnabled && missingKmRows.length > 0 && (
+              <button className="icon-btn" onClick={openKmBulk} title={`Recalculate missing KM (${missingKmRows.length})`}>
+                <Globe size={15} />
+              </button>
+            )}
             <div className="rpt-viewswitch">
               <button className={viewMode === 'list' ? 'on' : ''} onClick={() => setViewMode('list')}>
                 <LayoutList size={13} /> List
@@ -2133,6 +2198,80 @@ export default function RidePlan() {
         onConfirm={doReset}
         onClose={() => setResetConfirm(null)}
       />
+
+      {/* ── Bulk Recalculate KM modal ── */}
+      {kmBulkOpen && (
+        <Modal
+          open
+          title={`Recalculate Missing KM · ${missingKmRows.length} row${missingKmRows.length !== 1 ? 's' : ''}`}
+          width="min(560px, 97vw)"
+          onClose={() => !kmBulkRunning && setKmBulkOpen(false)}
+          footer={
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => setKmBulkOpen(false)} disabled={kmBulkRunning}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={kmBulkRunning || kmBulkSel.size === 0}
+                onClick={runKmBulk}
+              >
+                {kmBulkRunning ? 'Calculating…' : `Recalculate (${kmBulkSel.size})`}
+              </button>
+            </>
+          }
+        >
+          <div style={{ marginBottom: 10, display: 'flex', gap: 12 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setKmBulkSel(new Set(missingKmRows.map((r) => r.id)))}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setKmBulkSel(new Set())}
+            >
+              Deselect all
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {missingKmRows.map((r) => {
+              const prog = kmBulkProg[r.id]
+              return (
+                <label
+                  key={r.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '6px 8px', borderRadius: 6,
+                    background: prog === 'done' ? 'var(--success-bg, #f0fdf4)' : prog === 'error' ? 'var(--danger-bg, #fef2f2)' : 'transparent',
+                    cursor: kmBulkRunning ? 'default' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={kmBulkSel.has(r.id)}
+                    disabled={kmBulkRunning}
+                    onChange={() => toggleBulkRow(r.id)}
+                  />
+                  <span style={{ flex: 1, fontSize: 13 }}>
+                    <span style={{ fontWeight: 500 }}>{r.flight_no || '—'}</span>
+                    <span className="secondary" style={{ marginLeft: 6 }}>
+                      {r.block_type?.replace('_', ' ')} · {r.origin} → {r.destination}
+                    </span>
+                  </span>
+                  {prog === 'calc' && <span className="secondary" style={{ fontSize: 11 }}>Calculating…</span>}
+                  {prog === 'done' && <span style={{ fontSize: 11, color: 'var(--success, #16a34a)' }}>Done</span>}
+                  {prog === 'error' && <span style={{ fontSize: 11, color: 'var(--danger)' }}>Failed</span>}
+                </label>
+              )
+            })}
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

@@ -290,6 +290,8 @@ export default function RidePlan() {
   const [importOpen, setImportOpen] = useState(false)
   const [skipFor, setSkipFor] = useState(null)
   const [cancelFor, setCancelFor] = useState(null)
+  const [bulkCancelSel, setBulkCancelSel] = useState(new Set())
+  const [bulkCancelOpen, setBulkCancelOpen] = useState(false)
   const [noReasonFor, setNoReasonFor] = useState(null)
   const [reasonFor, setReasonFor] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
@@ -1392,7 +1394,69 @@ export default function RidePlan() {
 
   const hasActiveFilter = blockFilter !== 'all' || statusFilter !== 'all' || flightFilter || vehicleFilter
 
+  const cancelableRows = useMemo(
+    () => filteredRows.filter((r) => !r.isExtra && r.status === 'followed' && r.ride?.id && r.ride?.status !== 'cancelled'),
+    [filteredRows],
+  )
+
+  const toggleBulkCancel = (id) =>
+    setBulkCancelSel((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
+  const doBulkCancel = async (reason) => {
+    const selected = cancelableRows.filter((r) => bulkCancelSel.has(r.id))
+    if (!selected.length) return
+    const payload = {
+      status: 'cancelled',
+      cancel_reason: reason,
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: profile?.id ?? null,
+      count_km: false,
+    }
+    const rideIds = selected.map((r) => r.ride.id)
+    const { error } = await supabase.from('rides').update(payload).in('id', rideIds)
+    if (error) { toast.error(error.message); return }
+    // Cancel companion rides (deadhead / return leg)
+    const { data: companions } = await supabase.from('rides').select('id').in('return_of_ride_id', rideIds).neq('status', 'cancelled')
+    if (companions?.length) await supabase.from('rides').update(payload).in('id', companions.map((c) => c.id))
+    toast.success(`${selected.length} ride${selected.length > 1 ? 's' : ''} cancelled`)
+    setBulkCancelSel(new Set())
+    setBulkCancelOpen(false)
+    fetchRows()
+  }
+
+  const allCancelableSelected = cancelableRows.length > 0 && cancelableRows.every((r) => bulkCancelSel.has(r.id))
+
   const columns = [
+    canEdit ? {
+      key: 'bulk_sel',
+      header: (
+        <input
+          type="checkbox"
+          title="Select all cancelable rows"
+          checked={allCancelableSelected}
+          disabled={cancelableRows.length === 0}
+          onChange={() =>
+            setBulkCancelSel(
+              allCancelableSelected ? new Set() : new Set(cancelableRows.map((r) => r.id)),
+            )
+          }
+        />
+      ),
+      render: (r) => {
+        if (r.isExtra || r.status !== 'followed' || !r.ride?.id || r.ride?.status === 'cancelled') return null
+        return (
+          <input
+            type="checkbox"
+            checked={bulkCancelSel.has(r.id)}
+            onChange={() => toggleBulkCancel(r.id)}
+          />
+        )
+      },
+    } : null,
     { key: 'trip', header: 'Trip', render: (r) => {
       const mins = minutesUntil(r)
       const badge =
@@ -1760,7 +1824,7 @@ export default function RidePlan() {
         )
       },
     },
-  ]
+  ].filter(Boolean)
 
   if (!canView) {
     return (
@@ -1785,6 +1849,14 @@ export default function RidePlan() {
             <button className="icon-btn" onClick={fetchRows} title="Refresh">
               <RefreshCw size={15} />
             </button>
+            {canEdit && bulkCancelSel.size > 0 && (
+              <button
+                className="btn btn-danger btn-square btn-sm"
+                onClick={() => setBulkCancelOpen(true)}
+              >
+                <Ban size={14} /> Cancel ({bulkCancelSel.size})
+              </button>
+            )}
             {!addRideEnabled && missingKmRows.length > 0 && (
               <button className="icon-btn" onClick={openKmBulk} title={`Recalculate missing KM (${missingKmRows.length})`}>
                 <Globe size={15} />
@@ -2095,6 +2167,13 @@ export default function RidePlan() {
       )}
       {skipFor && <SkipModal row={skipFor} onClose={() => setSkipFor(null)} onSkip={doSkip} />}
       {cancelFor && <CancelPlanRideModal row={cancelFor} onClose={() => setCancelFor(null)} onConfirm={doCancelPlanRide} />}
+      {bulkCancelOpen && (
+        <BulkCancelModal
+          count={bulkCancelSel.size}
+          onClose={() => setBulkCancelOpen(false)}
+          onConfirm={doBulkCancel}
+        />
+      )}
       {noReasonFor && (
         <NoReasonModal row={noReasonFor} onClose={() => setNoReasonFor(null)} onContinue={doNoReason} />
       )}
@@ -2438,6 +2517,43 @@ function CancelPlanRideModal({ row, onClose, onConfirm }) {
             }}
           >
             {busy ? 'Cancelling…' : 'Cancel Ride'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function BulkCancelModal({ count, onClose, onConfirm }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal open onClose={onClose} title={`Cancel ${count} Ride${count !== 1 ? 's' : ''}`} width={440}>
+      <div className="modal-form">
+        <div className="field">
+          <label>Reason <span className="required">*</span></label>
+          <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+            <option value="">— Select reason —</option>
+            {NO_REASON_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose} disabled={busy}>
+            Close
+          </button>
+          <button
+            type="button"
+            className="btn btn-square btn-danger"
+            disabled={busy || !reason}
+            onClick={async () => {
+              setBusy(true)
+              await onConfirm(reason)
+              setBusy(false)
+            }}
+          >
+            {busy ? 'Cancelling…' : `Cancel ${count} Ride${count !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

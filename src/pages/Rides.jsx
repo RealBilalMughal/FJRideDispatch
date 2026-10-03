@@ -5,7 +5,9 @@ import {
   CalendarRange,
   Download,
   Eye,
+  Check,
   GripVertical,
+  Hash,
   MessageSquare,
   Navigation,
   Pencil,
@@ -339,6 +341,9 @@ export default function Rides() {
   const today = pkToday()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [kmEditId, setKmEditId] = useState(null)
+  const [kmEditVal, setKmEditVal] = useState('')
+  const [recalcBusy, setRecalcBusy] = useState({})
   // A ?q= from the sidebar's Cmd+K quick search seeds the search box AND
   // switches the date range to All - the default "Today" filter would
   // otherwise hide whatever the search was actually looking for if it
@@ -565,6 +570,47 @@ export default function Rides() {
   }, [filtered])
   const summaryKm = useMemo(() => filtered.reduce((a, r) => a + billableKm(r), 0), [filtered])
 
+  const saveKmEdit = async (id) => {
+    const val = parseFloat(kmEditVal)
+    if (!id || isNaN(val) || val < 0) return
+    const rounded = parseFloat(val.toFixed(2))
+    const { error } = await supabase.from('rides').update({ distance_km: rounded }).eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, distance_km: rounded } : r))
+    setKmEditId(null)
+    setKmEditVal('')
+    toast.success('KM updated')
+  }
+
+  const doRecalcKm = async (r) => {
+    if (recalcBusy[r.id]) return
+    setRecalcBusy((p) => ({ ...p, [r.id]: true }))
+    const cityObj = allowedCities.find((c) => c.id === r.city_id)
+    const airport = cityObj ? { name: cityObj.airport_name, lat: cityObj.airport_lat, lng: cityObj.airport_lng } : {}
+    const crewObjs = (r.ride_crew || [])
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+      .map((rc) => crew.find((c) => c.id === rc.crew_id))
+      .filter(Boolean)
+    const pts = buildRoutePoints(r.block_type, null, crewObjs, airport)
+    if (!routeComplete(pts)) {
+      toast.error('Route points incomplete')
+      setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+      return
+    }
+    const info = await routeInfo(pts.map((p) => [p.lng, p.lat]))
+    if (!info) {
+      toast.error('Route calculation failed')
+      setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+      return
+    }
+    const newKm = parseFloat((info.distanceKm + blockExtraKm(r.block_type, cityObj)).toFixed(2))
+    const { error } = await supabase.from('rides').update({ distance_km: newKm }).eq('id', r.id)
+    if (error) { toast.error(error.message); setRecalcBusy((p) => ({ ...p, [r.id]: false })); return }
+    setRows((prev) => prev.map((x) => x.id === r.id ? { ...x, distance_km: newKm } : x))
+    setRecalcBusy((p) => ({ ...p, [r.id]: false }))
+    toast.success(`KM updated: ${newKm}`)
+  }
+
   const doDelete = async () => {
     if (!pending) return
     setDeleting(true)
@@ -721,6 +767,67 @@ export default function Rides() {
         )
       },
     },
+    canEdit ? {
+      key: 'km_help',
+      header: 'KM Help',
+      render: (r) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* ↻ Recalculate via ORS */}
+          <button
+            className="icon-btn"
+            title="Recalculate KM via route"
+            disabled={!!recalcBusy[r.id]}
+            onClick={() => doRecalcKm(r)}
+          >
+            <RefreshCw size={12} style={recalcBusy[r.id] ? { animation: 'spin 1s linear infinite' } : undefined} />
+          </button>
+
+          {/* # Inline KM edit */}
+          {kmEditId === r.id ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                autoFocus
+                className="input"
+                style={{ width: 70, padding: '2px 6px', fontSize: 12 }}
+                value={kmEditVal}
+                onChange={(e) => setKmEditVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveKmEdit(r.id)
+                  if (e.key === 'Escape') { setKmEditId(null); setKmEditVal('') }
+                }}
+              />
+              <button className="icon-btn" title="Save" onClick={() => saveKmEdit(r.id)}>
+                <Check size={12} style={{ color: 'var(--accent)' }} />
+              </button>
+            </span>
+          ) : (
+            <button
+              className="icon-btn"
+              title="Edit KM"
+              onClick={() => { setKmEditId(r.id); setKmEditVal(r.distance_km != null ? String(Number(r.distance_km).toFixed(2)) : '') }}
+            >
+              <Hash size={12} />
+            </button>
+          )}
+
+          {/* Google Maps route */}
+          {gmapsRoute(r.waypoints) && (
+            <a
+              className="icon-btn"
+              href={gmapsRoute(r.waypoints)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open route in Google Maps"
+            >
+              <Navigation size={12} />
+            </a>
+          )}
+        </div>
+      ),
+    } : null,
     {
       key: 'actions',
       header: 'Action',
@@ -804,7 +911,7 @@ export default function Rides() {
         )
       },
     },
-  ]
+  ].filter(Boolean)
 
   return (
     <div className="page">

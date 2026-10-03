@@ -196,7 +196,7 @@ export default function Rides() {
   const canEdit = can('rides', 'edit')
   const canDelete = can('rides', 'delete')
 
-  const { rows, loading, fetchRows } = useEntityRows({
+  const { rows, setRows, loading, fetchRows } = useEntityRows({
     table: 'rides',
     select: SELECT,
     canView,

@@ -444,6 +444,17 @@ table.data-table {
   cursor: not-allowed;
 }
 
+.pagination .pg-size-select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--body);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 /* ---------- small status text (flat, no multi-colour pills) ---------- */
 .status-text {
   font-size: 12px;

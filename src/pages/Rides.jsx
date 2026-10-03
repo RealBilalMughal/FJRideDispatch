@@ -82,7 +82,7 @@ import StatCards from '../components/data/StatCards'
 import { buildPlanInitial } from '../lib/planImport'
 import './Rides.css'
 
-const PAGE_SIZE = 15
+const DEFAULT_PAGE_SIZE = 25
 const BUFFER_MIN = 30 // turnaround buffer around a ride's road time (vehicle busy window)
 // WhatsApp/SMS Notify - hidden from the UI until a real webhook provider
 // (WhatsApp Business API / SMS gateway) is actually set up. The backend
@@ -338,6 +338,7 @@ export default function Rides() {
 
   const today = pkToday()
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   // A ?q= from the sidebar's Cmd+K quick search seeds the search box AND
   // switches the date range to All - the default "Today" filter would
   // otherwise hide whatever the search was actually looking for if it
@@ -495,7 +496,7 @@ export default function Rides() {
     return list.filter((r) => matchRide(r, 'ride_date'))
   }, [list, search, blockFilter, dateFrom, dateTo, flightFilter, vehicleFilter, shiftFilter, driverFilter])
 
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize)
 
   // type-to-search filter option lists (Flight/Vehicle/Driver can get long)
   const flightFilterOpts = useMemo(
@@ -1005,7 +1006,13 @@ export default function Rides() {
         subtitle={`${filtered.length} shown`}
       />
 
-      <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
+      <Pagination
+        page={page}
+        pageSize={pageSize}
+        total={filtered.length}
+        onPage={setPage}
+        onPageSize={(s) => { setPageSize(s); setPage(1) }}
+      />
 
       {addOpen && (
         <RideModal

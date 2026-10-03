@@ -1,8 +1,10 @@
 import './data.css'
 
-export default function Pagination({ page, pageSize, total, onPage }) {
+const PAGE_SIZE_OPTIONS = [25, 50, 75, 100]
+
+export default function Pagination({ page, pageSize, total, onPage, onPageSize }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  if (total <= pageSize) return null
+  if (total <= pageSize && !onPageSize) return null
 
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
@@ -17,24 +19,37 @@ export default function Pagination({ page, pageSize, total, onPage }) {
       <span className="pg-info">
         Showing {start}&ndash;{end} of {total.toLocaleString()}
       </span>
-      <div className="pg-btns">
-        <button type="button" onClick={() => onPage(page - 1)} disabled={page === 1}>
-          Prev
-        </button>
-        {pages.map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={p === page ? 'active' : undefined}
-            onClick={() => onPage(p)}
-          >
-            {p}
+      {onPageSize && (
+        <select
+          className="pg-size-select"
+          value={pageSize}
+          onChange={(e) => onPageSize(Number(e.target.value))}
+        >
+          {PAGE_SIZE_OPTIONS.map((s) => (
+            <option key={s} value={s}>{s} / page</option>
+          ))}
+        </select>
+      )}
+      {total > pageSize && (
+        <div className="pg-btns">
+          <button type="button" onClick={() => onPage(page - 1)} disabled={page === 1}>
+            Prev
           </button>
-        ))}
-        <button type="button" onClick={() => onPage(page + 1)} disabled={page === totalPages}>
-          Next
-        </button>
-      </div>
+          {pages.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={p === page ? 'active' : undefined}
+              onClick={() => onPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+          <button type="button" onClick={() => onPage(page + 1)} disabled={page === totalPages}>
+            Next
+          </button>
+        </div>
+      )}
     </div>
   )
 }

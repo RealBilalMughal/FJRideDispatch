@@ -10,6 +10,7 @@ import { blockExtraKm, blockLabel, buildRoutePoints, displayCrewCount, routeComp
 import { gmapsRoute, routeInfo } from '../lib/ors'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
 import { PLAN_REQUIRED_COLUMNS, buildPlanInitial, buildPlanRows } from '../lib/planImport'
+import DateRangePicker from '../components/DateRangePicker'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -326,6 +327,9 @@ export default function RidePlan() {
   const [crewMerge, setCrewMerge] = useState(null) // { planRow, crewObj, sameFlightRows } | null
   const [resetConfirm, setResetConfirm] = useState(null) // row to reset | null
   const [deletePlanOpen, setDeletePlanOpen] = useState(false)
+  const [exportRangeOpen, setExportRangeOpen] = useState(false)
+  const [exportRange, setExportRange] = useState({ preset: 'today', from: pkToday(), to: pkToday() })
+  const [exportRangeBusy, setExportRangeBusy] = useState(false)
   const [crewConflict, setCrewConflict] = useState(null) // { names, onProceed }
   const [viewRide, setViewRide] = useState(null) // ride row to view
   const [viewLoading, setViewLoading] = useState(false)
@@ -733,6 +737,159 @@ export default function RidePlan() {
     ]
     downloadCsv(`ride-plan-report-${planDate}.csv`, toCsv(cols, data))
     toast.success(`Exported ${data.length} row(s)`)
+  }
+
+  const doExportRange = async () => {
+    const { from, to } = exportRange
+    if (!from || !to) return
+    setExportRangeBusy(true)
+    try {
+      // Paginated fetch for the date range
+      let allRows = []
+      let offset = 0
+      const PAGE = 1000
+      while (true) {
+        let q = supabase
+          .from('ride_plan_rows')
+          .select('*, ride:rides(id, ref_no, return_of_ride_id, deadhead_mode, block_type, distance_km, status, count_km, vehicle_id, is_adhoc_vehicle, adhoc_vehicle_no)')
+          .gte('plan_date', from)
+          .lte('plan_date', to)
+          .order('plan_date')
+          .order('seq')
+          .range(offset, offset + PAGE - 1)
+        if (cityId != null) q = q.eq('city_id', cityId)
+        const { data: pageData, error } = await q
+        if (error) { toast.error('Export failed'); return }
+        allRows = allRows.concat(pageData ?? [])
+        if ((pageData ?? []).length < PAGE) break
+        offset += PAGE
+      }
+
+      // Fetch crew for all linked rides
+      const rideIds = [...new Set(allRows.filter((r) => r.ride?.id).map((r) => r.ride.id))]
+      let crewByRide = new Map()
+      if (rideIds.length) {
+        const { data: rc } = await supabase
+          .from('ride_crew')
+          .select('ride_id, seq, crew:crew(name)')
+          .in('ride_id', rideIds)
+          .order('seq')
+        crewByRide = (rc ?? []).reduce((m, x) => {
+          const arr = m.get(x.ride_id) || []
+          if (x.crew?.name) arr.push(x.crew.name)
+          return m.set(x.ride_id, arr)
+        }, new Map())
+      }
+
+      // Per-date seq maps for deadhead_from lookup
+      const rowsByDate = {}
+      allRows.forEach((r) => {
+        if (!rowsByDate[r.plan_date]) rowsByDate[r.plan_date] = []
+        rowsByDate[r.plan_date].push(r)
+      })
+      const seqMapsByDate = {}
+      Object.entries(rowsByDate).forEach(([d, rs]) => {
+        seqMapsByDate[d] = new Map(rs.map((r) => [r.seq, r]))
+      })
+
+      const cityMap = Object.fromEntries(allowedCities.map((c) => [c.id, c]))
+
+      const csvData = allRows.map((r) => {
+        const cityObj = cityMap[r.city_id] || null
+        const base = cityObj?.airport_name?.slice(0, 3).toUpperCase() || ''
+        const actualCrewArr = r.ride?.id
+          ? (crewByRide.get(r.ride.id) || [])
+          : r.actual_crew_names
+            ? r.actual_crew_names.split(',').map((n) => n.trim()).filter(Boolean)
+            : []
+        const actualCrewNames = actualCrewArr.join(', ')
+        const actualVehicleNo = r.ride?.is_adhoc_vehicle
+          ? (r.ride.adhoc_vehicle_no || '').replace(/^Ad-Hoc 0*(\d+)$/, 'Ad-Hoc $1')
+          : r.ride?.vehicle_id
+            ? vehicles.find((v) => v.id === r.ride.vehicle_id)?.vehicle_no ?? ''
+            : r.actual_vehicle_no || ''
+        let deadheadFrom = ''
+        if (r.block_type === 'pickup') {
+          const sm = seqMapsByDate[r.plan_date] || new Map()
+          const dh = sm.get(r.seq - 1)
+          if (dh?.block_type === 'deadhead') deadheadFrom = dh.origin || ''
+        }
+        return {
+          date: r.plan_date,
+          base,
+          car: r.is_adhoc_car ? '' : (r.car || ''),
+          adhoc_car: r.is_adhoc_car ? (r.car || 'Yes') : '',
+          block_type: r.block_type,
+          trip_id: r.trip_id || '',
+          flight_no: r.flight_no || '',
+          origin: r.origin || '',
+          destination: r.destination || '',
+          start_time: r.start_time || '',
+          end_time: r.end_time || '',
+          distance_km: r.planned_km != null ? Number(r.planned_km).toFixed(2) : '',
+          actual_km: (() => {
+            if (r.status !== 'followed') return ''
+            if (r.ride) return (Number(billableKm(r.ride)) || 0).toFixed(2)
+            return r.actual_km != null ? Number(r.actual_km).toFixed(2) : ''
+          })(),
+          crew_count: r.crew_count != null ? r.crew_count : '',
+          crew: r.crew_raw || '',
+          actual_crew: actualCrewNames,
+          actual_crew_count: (() => {
+            if (r.block_type === 'deadhead' || r.block_type === 'return_leg') return 0
+            if (!actualCrewNames) return ''
+            return actualCrewArr.length
+          })(),
+          deadhead_from: deadheadFrom,
+          return_after_flight: '',
+          next_flight_out: '',
+          followed: r.status === 'followed' && !r.via_no ? 'Followed'
+            : r.status === 'followed' && r.via_no ? 'No'
+            : r.status === 'skipped' ? 'Cancelled'
+            : 'Pending',
+          reason: r.report_reason || r.skip_reason || '',
+          actual_vehicle: actualVehicleNo,
+          reported: r.reported_by_name || '',
+          remarks: r.report_remarks || '',
+        }
+      })
+
+      const cols = [
+        { key: 'date', label: 'Date' },
+        { key: 'base', label: 'Base' },
+        { key: 'car', label: 'Car' },
+        { key: 'adhoc_car', label: 'Ad-hoc Car' },
+        { key: 'block_type', label: 'Block Type' },
+        { key: 'trip_id', label: 'Trip ID' },
+        { key: 'flight_no', label: 'Flight No' },
+        { key: 'origin', label: 'Origin' },
+        { key: 'destination', label: 'Destination' },
+        { key: 'start_time', label: 'Start Time' },
+        { key: 'end_time', label: 'End Time' },
+        { key: 'distance_km', label: 'Distance (km)' },
+        { key: 'actual_km', label: 'Actual KM' },
+        { key: 'crew_count', label: 'Crew Count' },
+        { key: 'crew', label: 'Crew' },
+        { key: 'actual_crew', label: 'Actual Crew' },
+        { key: 'actual_crew_count', label: 'A Crew C' },
+        { key: 'deadhead_from', label: 'Deadhead From' },
+        { key: 'return_after_flight', label: 'Return After Flight' },
+        { key: 'next_flight_out', label: 'Next Flight Out' },
+        { key: 'followed', label: 'Followed' },
+        { key: 'reason', label: 'Reason' },
+        { key: 'actual_vehicle', label: 'Actual Vehicle' },
+        { key: 'reported', label: 'Reported' },
+        { key: 'remarks', label: 'Remarks' },
+      ]
+      const filename = from === to
+        ? `ride-plan-report-${from}.csv`
+        : `ride-plan-report-${from}-to-${to}.csv`
+      downloadCsv(filename, toCsv(cols, csvData))
+      toast.success(`Exported ${csvData.length} row(s)`)
+      setExportRangeOpen(false)
+    } finally {
+      setExportRangeBusy(false)
+    }
   }
 
   // Off-mode simple follow: mark main row + paired row as followed directly.
@@ -1879,7 +2036,7 @@ export default function RidePlan() {
               </button>
             )}
             {rows.length > 0 && (
-              <button className="btn btn-ghost btn-square btn-sm" onClick={doExportReport}>
+              <button className="btn btn-ghost btn-square btn-sm" onClick={() => setExportRangeOpen(true)}>
                 <Download size={14} /> Export Report
               </button>
             )}
@@ -2341,6 +2498,39 @@ export default function RidePlan() {
               )
             })}
           </div>
+        </Modal>
+      )}
+
+      {/* ── Export Report · Date Range modal ── */}
+      {exportRangeOpen && (
+        <Modal
+          open
+          title="Export Report"
+          width="min(560px, 97vw)"
+          onClose={() => !exportRangeBusy && setExportRangeOpen(false)}
+          footer={
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => setExportRangeOpen(false)} disabled={exportRangeBusy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={exportRangeBusy || !exportRange.from || !exportRange.to}
+                onClick={doExportRange}
+              >
+                {exportRangeBusy ? 'Exporting…' : 'Export CSV'}
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <label>Date range</label>
+            <DateRangePicker value={exportRange} onChange={setExportRange} />
+          </div>
+          <p className="secondary" style={{ marginTop: 10, fontSize: 12 }}>
+            Exports all plan rows for the selected range{cityName !== 'All cities' ? ` · ${cityName}` : ''}.
+          </p>
         </Modal>
       )}
     </div>

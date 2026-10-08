@@ -5,8 +5,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 16px 56px;
-  gap: 24px;
+  padding: 32px 16px 40px;
+  gap: 20px;
 }
 
 .dpp-loading,
@@ -27,9 +27,9 @@
   overflow: hidden;
 }
 
-/* Logo strip — BusCaro orange, centered logo */
+/* Logo strip */
 .dpp-logo-strip {
-  background: #FF6600;
+  background: #fe8c03;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -39,25 +39,29 @@
 .dpp-logo {
   height: 38px;
   object-fit: contain;
-  /* logo.png has a dark/coloured mark — invert to white on the blue strip */
   filter: brightness(0) invert(1);
 }
 
-/* Photo + identity */
+/* ── Body: photo centered, name below, then fields ── */
 .dpp-body {
   display: flex;
-  gap: 20px;
-  padding: 22px 24px 20px;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 24px 20px;
   border-bottom: 1px solid #E4E4E4;
+  gap: 4px;
 }
 
-.dpp-photo-col {
-  flex-shrink: 0;
+/* Photo + size badge wrapper */
+.dpp-photo-wrap {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 10px;
 }
 
 .dpp-photo {
-  width: 96px;
-  height: 112px;
+  width: 100px;
+  height: 116px;
   object-fit: cover;
   border-radius: 10px;
   border: 1.5px solid #E4E4E4;
@@ -66,20 +70,32 @@
 }
 
 .dpp-photo.dpp-photo-empty {
-  background: #FF6600;
+  background: #fe8c03;
   color: #fff;
   display: grid;
   place-items: center;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 700;
   cursor: default;
   border: none;
 }
 
-.dpp-fields-col {
-  flex: 1;
-  min-width: 0;
+/* Image size overlay at bottom of photo */
+.dpp-photo-size {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.54);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  padding: 3px 4px;
+  border-radius: 0 0 9px 9px;
+  letter-spacing: 0.3px;
+  pointer-events: none;
 }
 
 .dpp-name {
@@ -87,20 +103,22 @@
   font-size: 19px;
   font-weight: 700;
   color: #2D2C2B;
-  margin: 0 0 12px;
+  margin: 6px 0 14px;
+  text-align: center;
   line-height: 1.2;
 }
 
 .dpp-field-grid {
+  width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
+  gap: 10px 20px;
 }
 
 .dpp-field {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .dpp-field-label {
@@ -118,7 +136,7 @@
   word-break: break-word;
 }
 
-/* Dates + emergency row */
+/* ── Dates + emergency row ── */
 .dpp-dates-row {
   display: flex;
   flex-wrap: wrap;
@@ -154,10 +172,30 @@
   color: #2D2C2B;
 }
 
-/* Note */
-.dpp-note-row {
-  padding: 12px 20px;
+/* ── Authorized (Account Manager) ── */
+.dpp-manager {
+  padding: 14px 20px 16px;
   border-bottom: 1px solid #E4E4E4;
+}
+
+.dpp-manager-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #fe8c03;
+  margin-bottom: 10px;
+}
+
+.dpp-manager-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 20px;
+}
+
+/* ── Note (last inside card) ── */
+.dpp-note-row {
+  padding: 12px 20px 16px;
   display: flex;
   gap: 12px;
   align-items: flex-start;
@@ -178,26 +216,6 @@
   font-size: 13px;
   color: #2D2C2B;
   line-height: 1.5;
-}
-
-/* Account Manager */
-.dpp-manager {
-  padding: 14px 20px 18px;
-}
-
-.dpp-manager-head {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.7px;
-  color: #FF6600;
-  margin-bottom: 10px;
-}
-
-.dpp-manager-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 20px;
 }
 
 /* ── Documents section (below card) ── */
@@ -251,7 +269,7 @@
   display: grid;
   place-items: center;
   background: #f3f4f6;
-  color: #FF6600;
+  color: #fe8c03;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 18px;
   font-weight: 700;
@@ -270,7 +288,71 @@
   text-overflow: ellipsis;
 }
 
-/* ── Lightbox ── */
+/* ── Footer ── */
+.dpp-footer {
+  width: 100%;
+  max-width: 520px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  padding: 16px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  justify-content: center;
+  align-items: center;
+}
+
+.dpp-footer-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #2D2C2B;
+  text-decoration: none;
+  font-family: 'Inter', sans-serif;
+  transition: color 0.15s;
+}
+
+.dpp-footer-item:hover {
+  color: #fe8c03;
+}
+
+.dpp-footer-item svg {
+  flex-shrink: 0;
+  color: #fe8c03;
+}
+
+.dpp-footer-addr {
+  cursor: default;
+}
+
+.dpp-footer-contact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* WhatsApp circle button */
+.dpp-footer-wa {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #25D366;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.dpp-footer-wa:hover {
+  opacity: 0.85;
+}
+
+/* ── Lightbox with watermark ── */
 .dpp-lightbox {
   position: fixed;
   inset: 0;
@@ -282,11 +364,33 @@
   padding: 20px;
 }
 
-.dpp-lightbox img {
-  max-width: 100%;
-  max-height: 90vh;
+.dpp-lightbox-inner {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+.dpp-lightbox-inner img {
+  max-width: min(92vw, 860px);
+  max-height: 88vh;
   border-radius: 8px;
   box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  display: block;
+}
+
+.dpp-lightbox-watermark {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  pointer-events: none;
+  opacity: 0.32;
+}
+
+.dpp-lightbox-watermark img {
+  height: 26px;
+  filter: brightness(0) invert(1);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .dpp-lightbox-close {
@@ -302,18 +406,13 @@
   padding: 4px 8px;
 }
 
-/* Narrow screens */
+/* ── Narrow screens ── */
 @media (max-width: 480px) {
-  .dpp-body {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
   .dpp-field-grid,
   .dpp-manager-grid {
     grid-template-columns: 1fr;
   }
-  .dpp-field {
-    align-items: center;
+  .dpp-footer {
+    gap: 10px 16px;
   }
 }

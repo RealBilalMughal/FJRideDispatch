@@ -23,7 +23,7 @@ export default function DriverPublicProfile() {
           .from('drivers')
           .select(
             'id, ref_no, name, contact, photo_path, cnic_no, account, designation, ' +
-            'card_issue_date, card_valid_until, note, emergency_contact, ' +
+            'card_issue_date, card_valid_until, note, emergency_contact, employee_id, ' +
             'manager_id, qr_active, qr_inactive_reason, ' +
             'city:cities(name), manager:account_managers(id, name, designation, email, contact)',
           )
@@ -144,7 +144,7 @@ export default function DriverPublicProfile() {
           <h1 className="dpp-name">{driver.name}</h1>
 
           <div className="dpp-field-grid">
-            <Field label="Driver ID" value={driver.ref_no} />
+            <Field label={driver.employee_id ? 'Employee ID' : 'Driver ID'} value={driver.employee_id || driver.ref_no} />
             {driver.cnic_no && <Field label="CNIC" value={driver.cnic_no} />}
             {driver.account && <Field label="Account" value={driver.account} />}
             <Field label="Designation" value={driver.designation || 'Driver'} />

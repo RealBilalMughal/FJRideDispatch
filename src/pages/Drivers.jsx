@@ -26,7 +26,7 @@ const PAGE_SIZE = 15
 const SELECT =
   'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, ' +
   'photo_path, cnic_no, account, designation, card_issue_date, card_valid_until, note, ' +
-  'emergency_contact, manager_id, ' +
+  'emergency_contact, employee_id, manager_id, ' +
   'qr_active, qr_inactive_reason, ' +
   'city:cities(name), vendor:vendors(ref_no, name), ' +
   'manager:account_managers(id, name, designation, email, contact)'
@@ -1037,6 +1037,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
     card_issue_date: driver.card_issue_date ?? '',
     card_valid_until: driver.card_valid_until ?? '',
     emergency_contact: driver.emergency_contact ?? '',
+    employee_id: driver.employee_id ?? '',
     note: driver.note ?? DEFAULT_NOTE,
     manager_id: driver.manager_id ?? '',
   })
@@ -1139,6 +1140,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
       card_issue_date: card.card_issue_date || null,
       card_valid_until: card.card_valid_until || null,
       emergency_contact: card.emergency_contact.trim() || null,
+      employee_id: card.employee_id.trim() || null,
       note: card.note.trim() || null,
       manager_id: card.manager_id || null,
     }
@@ -1306,6 +1308,12 @@ function DriverDocsModal({ driver, onClose, onDone }) {
               <label className="field-label">Designation</label>
               <input className="input" value={card.designation} onChange={(e) => setC('designation', e.target.value)} placeholder="Driver" />
             </div>
+          </div>
+
+          <div className="field">
+            <label className="field-label">Employee ID</label>
+            <input className="input" value={card.employee_id} onChange={(e) => setC('employee_id', e.target.value)} placeholder="Leave blank to show system Driver ID" />
+            <span className="field-hint">Shown on public profile instead of Driver ID when filled</span>
           </div>
 
           <div className="field">

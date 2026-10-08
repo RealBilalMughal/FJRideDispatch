@@ -1040,19 +1040,21 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [cardSaving, setCardSaving] = useState(false)
   const setC = (k, v) => setCard((c) => ({ ...c, [k]: v }))
 
-  const profileUrl = `https://fj.buscaro.com/d/${driver.ref_no}`
+  const defaultProfileUrl = `https://fj.buscaro.com/d/${driver.ref_no}`
+  const [qrCustomUrl, setQrCustomUrl] = useState(defaultProfileUrl)
 
   useEffect(() => {
     loadDocs()
   }, [driver.id])
 
   useEffect(() => {
-    if (tab === 'qr') {
-      QRCode.toDataURL(profileUrl, { width: 260, margin: 2, color: { dark: '#2D2C2B', light: '#FFFFFF' } })
-        .then(setQrDataUrl)
-        .catch(() => {})
-    }
-  }, [tab, profileUrl])
+    if (tab !== 'qr') return
+    const url = qrCustomUrl.trim()
+    if (!url) return
+    QRCode.toDataURL(url, { width: 260, margin: 2, color: { dark: '#2D2C2B', light: '#FFFFFF' } })
+      .then(setQrDataUrl)
+      .catch(() => {})
+  }, [tab, qrCustomUrl])
 
   const loadDocs = async () => {
     setLoading(true)
@@ -1394,9 +1396,30 @@ function DriverDocsModal({ driver, onClose, onDone }) {
             )}
           </div>
 
-          <p className="secondary" style={{ fontSize: 12, textAlign: 'center', maxWidth: 320 }}>
-            <a href={profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{profileUrl}</a>
-          </p>
+          <div style={{ width: '100%', maxWidth: 320, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>QR Link</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                className="input"
+                style={{ fontSize: 12, flex: 1 }}
+                value={qrCustomUrl}
+                onChange={e => setQrCustomUrl(e.target.value)}
+                placeholder="https://..."
+              />
+              <button
+                type="button"
+                className="btn btn-ghost btn-square btn-sm"
+                title="Reset to default"
+                onClick={() => setQrCustomUrl(defaultProfileUrl)}
+                style={{ flexShrink: 0 }}
+              >
+                <RefreshCw size={13} />
+              </button>
+            </div>
+            {qrCustomUrl.trim() && qrCustomUrl !== defaultProfileUrl && (
+              <a href={qrCustomUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--accent)', wordBreak: 'break-all' }}>{qrCustomUrl}</a>
+            )}
+          </div>
 
           {/* Inactive reason shown when inactive */}
           {!qrActive && qrReason && (

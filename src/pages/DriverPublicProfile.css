@@ -27,9 +27,9 @@
   overflow: hidden;
 }
 
-/* Logo strip — accent background, centered logo */
+/* Logo strip — BusCaro orange, centered logo */
 .dpp-logo-strip {
-  background: #3471B8;
+  background: #FF6600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,7 +66,7 @@
 }
 
 .dpp-photo.dpp-photo-empty {
-  background: #3471B8;
+  background: #FF6600;
   color: #fff;
   display: grid;
   place-items: center;
@@ -190,7 +190,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.7px;
-  color: #3471B8;
+  color: #FF6600;
   margin-bottom: 10px;
 }
 
@@ -251,7 +251,7 @@
   display: grid;
   place-items: center;
   background: #f3f4f6;
-  color: #3471B8;
+  color: #FF6600;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 18px;
   font-weight: 700;

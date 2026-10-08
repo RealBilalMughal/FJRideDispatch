@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import toast from 'react-hot-toast'
-import { Download, Eye, FileImage, KeyRound, Pencil, Plus, QrCode, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound, X } from 'lucide-react'
+import { Camera, Download, Eye, FileImage, KeyRound, Pencil, Plus, QrCode, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { adminUsers, generatePassword } from '../lib/adminUsers'
 import { useAuth } from '../context/useAuth'
@@ -406,6 +406,7 @@ export default function Drivers() {
         <DriverDocsModal
           driver={docsFor}
           onClose={() => setDocsFor(null)}
+          onDone={() => fetchRows()}
         />
       )}
     </div>
@@ -979,15 +980,40 @@ function ImportDrivers({ vendors, allowedCities, createdBy, onClose, onDone }) {
 }
 
 // ── Driver Documents + QR Code modal ─────────────────────────────────────────
-function DriverDocsModal({ driver, onClose }) {
+function DriverDocsModal({ driver, onClose, onDone }) {
   const { profile } = useAuth()
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [label, setLabel] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState(null)
-  const [tab, setTab] = useState('docs') // 'docs' | 'qr'
+  const [tab, setTab] = useState('docs') // 'docs' | 'card' | 'qr'
   const fileRef = useRef(null)
+  const cardPhotoRef = useRef(null)
+
+  // Card Details form state
+  const [card, setCard] = useState({
+    photo_path: driver.photo_path ?? null,
+    cnic_no: driver.cnic_no ?? '',
+    account: driver.account ?? '',
+    designation: driver.designation ?? 'Driver',
+    card_issue_date: driver.card_issue_date ?? '',
+    card_valid_until: driver.card_valid_until ?? '',
+    emergency_contact: driver.emergency_contact ?? '',
+    note: driver.note ?? '',
+    manager_name: driver.manager_name ?? '',
+    manager_designation: driver.manager_designation ?? '',
+    manager_email: driver.manager_email ?? '',
+    manager_contact: driver.manager_contact ?? '',
+  })
+  const [cardPhotoFile, setCardPhotoFile] = useState(null)
+  const [cardPhotoPreview, setCardPhotoPreview] = useState(
+    driver.photo_path
+      ? supabase.storage.from('driver-docs').getPublicUrl(driver.photo_path).data.publicUrl
+      : null,
+  )
+  const [cardSaving, setCardSaving] = useState(false)
+  const setC = (k, v) => setCard((c) => ({ ...c, [k]: v }))
 
   const profileUrl = `${window.location.origin}/d/${driver.id}`
 
@@ -1052,6 +1078,46 @@ function DriverDocsModal({ driver, onClose }) {
     loadDocs()
   }
 
+  const onCardPhotoChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCardPhotoFile(file)
+    setCardPhotoPreview(URL.createObjectURL(file))
+  }
+
+  const saveCard = async () => {
+    setCardSaving(true)
+    let photoPath = card.photo_path
+    if (cardPhotoFile) {
+      const ext = cardPhotoFile.name.split('.').pop()
+      const path = `photos/${driver.id}-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('driver-docs').upload(path, cardPhotoFile, { upsert: true })
+      if (upErr) { toast.error('Photo upload failed'); setCardSaving(false); return }
+      photoPath = path
+    }
+    const payload = {
+      photo_path: photoPath,
+      cnic_no: card.cnic_no.trim() || null,
+      account: card.account.trim() || null,
+      designation: card.designation.trim() || 'Driver',
+      card_issue_date: card.card_issue_date || null,
+      card_valid_until: card.card_valid_until || null,
+      emergency_contact: card.emergency_contact.trim() || null,
+      note: card.note.trim() || null,
+      manager_name: card.manager_name.trim() || null,
+      manager_designation: card.manager_designation.trim() || null,
+      manager_email: card.manager_email.trim() || null,
+      manager_contact: card.manager_contact.trim() || null,
+    }
+    const { error } = await supabase.from('drivers').update(payload).eq('id', driver.id)
+    setCardSaving(false)
+    if (error) { toast.error(error.message); return }
+    setC('photo_path', photoPath)
+    setCardPhotoFile(null)
+    toast.success('Card details saved')
+    onDone?.()
+  }
+
   const downloadQr = () => {
     if (!qrDataUrl) return
     const a = document.createElement('a')
@@ -1061,11 +1127,14 @@ function DriverDocsModal({ driver, onClose }) {
   }
 
   return (
-    <Modal open title={`Docs · ${driver.name}`} width="min(600px, 97vw)" onClose={onClose}>
+    <Modal open title={`Docs · ${driver.name}`} width="min(640px, 97vw)" onClose={onClose}>
       {/* Tab switcher */}
       <div className="date-tabs" style={{ marginBottom: 18 }}>
         <button className={tab === 'docs' ? 'on' : ''} onClick={() => setTab('docs')}>
           Documents
+        </button>
+        <button className={tab === 'card' ? 'on' : ''} onClick={() => setTab('card')}>
+          Card Details
         </button>
         <button className={tab === 'qr' ? 'on' : ''} onClick={() => setTab('qr')}>
           QR Code
@@ -1134,6 +1203,108 @@ function DriverDocsModal({ driver, onClose }) {
         </>
       )}
 
+      {tab === 'card' && (
+        <div className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Photo */}
+          <div className="field">
+            <label className="field-label">Photo</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              {cardPhotoPreview ? (
+                <img
+                  src={cardPhotoPreview}
+                  alt="Photo"
+                  style={{ width: 72, height: 84, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', flexShrink: 0 }}
+                />
+              ) : (
+                <div style={{ width: 72, height: 84, borderRadius: 8, background: 'var(--surface)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 11, flexShrink: 0 }}>
+                  No photo
+                </div>
+              )}
+              <label className="btn btn-ghost btn-square btn-sm" style={{ cursor: 'pointer' }}>
+                <Camera size={14} /> {cardPhotoPreview ? 'Change' : 'Upload'} Photo
+                <input
+                  ref={cardPhotoRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={onCardPhotoChange}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Core fields */}
+          <div className="field-row">
+            <div className="field">
+              <label className="field-label">CNIC No</label>
+              <input className="input" value={card.cnic_no} onChange={(e) => setC('cnic_no', e.target.value)} placeholder="e.g. 35201-1234567-1" />
+            </div>
+            <div className="field">
+              <label className="field-label">Designation</label>
+              <input className="input" value={card.designation} onChange={(e) => setC('designation', e.target.value)} placeholder="Driver" />
+            </div>
+          </div>
+
+          <div className="field">
+            <label className="field-label">Account</label>
+            <input className="input" value={card.account} onChange={(e) => setC('account', e.target.value)} placeholder="e.g. Fly Jinnah - LHE" />
+          </div>
+
+          <div className="field-row">
+            <div className="field">
+              <label className="field-label">Card Issue Date</label>
+              <input className="input" type="date" value={card.card_issue_date} onChange={(e) => setC('card_issue_date', e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">Card Valid Until</label>
+              <input className="input" type="date" value={card.card_valid_until} onChange={(e) => setC('card_valid_until', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="field">
+            <label className="field-label">Emergency Contact</label>
+            <input className="input" value={card.emergency_contact} onChange={(e) => setC('emergency_contact', e.target.value)} placeholder="Phone number" />
+          </div>
+
+          <div className="field">
+            <label className="field-label">Note</label>
+            <textarea className="input" rows={2} value={card.note} onChange={(e) => setC('note', e.target.value)} style={{ resize: 'vertical' }} />
+          </div>
+
+          {/* Account Manager */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 2 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--muted)', marginBottom: 12 }}>Account Manager</p>
+            <div className="field-row" style={{ marginBottom: 10 }}>
+              <div className="field">
+                <label className="field-label">Name</label>
+                <input className="input" value={card.manager_name} onChange={(e) => setC('manager_name', e.target.value)} />
+              </div>
+              <div className="field">
+                <label className="field-label">Designation</label>
+                <input className="input" value={card.manager_designation} onChange={(e) => setC('manager_designation', e.target.value)} />
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label className="field-label">Email</label>
+                <input className="input" type="email" value={card.manager_email} onChange={(e) => setC('manager_email', e.target.value)} />
+              </div>
+              <div className="field">
+                <label className="field-label">Contact No</label>
+                <input className="input" value={card.manager_contact} onChange={(e) => setC('manager_contact', e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-actions" style={{ marginTop: 6 }}>
+            <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>Close</button>
+            <button type="button" className="btn" onClick={saveCard} disabled={cardSaving}>
+              {cardSaving ? 'Saving…' : 'Save Card Details'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {tab === 'qr' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0 4px' }}>
           {qrDataUrl ? (
@@ -1151,9 +1322,11 @@ function DriverDocsModal({ driver, onClose }) {
         </div>
       )}
 
-      <div className="modal-actions" style={{ marginTop: 20 }}>
-        <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>Close</button>
-      </div>
+      {tab !== 'card' && (
+        <div className="modal-actions" style={{ marginTop: 20 }}>
+          <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>Close</button>
+        </div>
+      )}
     </Modal>
   )
 }

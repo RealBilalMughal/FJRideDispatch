@@ -49,7 +49,13 @@ export default function DriverPublicProfile() {
       setInfo(bi ?? {})
       // Log scan only for active profiles (inactive screen shows instead of profile)
       if (drv?.id && drv?.qr_active !== false) {
-        supabase.from('driver_qr_scans').insert({ driver_id: drv.id })
+        const ua = navigator.userAgent || null
+        let ip = null
+        try {
+          const r = await fetch('https://api.ipify.org?format=json')
+          if (r.ok) ip = (await r.json()).ip ?? null
+        } catch { /* best-effort */ }
+        supabase.from('driver_qr_scans').insert({ driver_id: drv.id, user_agent: ua, ip_address: ip })
       }
       setLoading(false)
     }

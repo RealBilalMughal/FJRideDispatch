@@ -1002,13 +1002,29 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const loadScans = async () => {
     let q = supabase
       .from('driver_qr_scans')
-      .select('scanned_at')
+      .select('scanned_at, user_agent, ip_address')
       .eq('driver_id', driver.id)
       .order('scanned_at', { ascending: false })
     if (scanFrom) q = q.gte('scanned_at', scanFrom)
     if (scanTo)   q = q.lte('scanned_at', scanTo + 'T23:59:59')
     const { data } = await q
     setScans(data ?? [])
+  }
+
+  const parseScanDevice = (ua) => {
+    if (!ua) return null
+    let device = 'Desktop'
+    if (/iPhone/i.test(ua)) device = 'iPhone'
+    else if (/iPad/i.test(ua)) device = 'iPad'
+    else if (/Android.*Mobile/i.test(ua)) device = 'Android Phone'
+    else if (/Android/i.test(ua)) device = 'Android Tablet'
+    let browser = ''
+    if (/Edg\//i.test(ua)) browser = 'Edge'
+    else if (/OPR|Opera/i.test(ua)) browser = 'Opera'
+    else if (/Chrome\/\d/i.test(ua)) browser = 'Chrome'
+    else if (/Firefox\/\d/i.test(ua)) browser = 'Firefox'
+    else if (/Safari\/\d/i.test(ua)) browser = 'Safari'
+    return browser ? `${device} · ${browser}` : device
   }
 
   // Card Details form state
@@ -1497,16 +1513,35 @@ function DriverDocsModal({ driver, onClose, onDone }) {
           ) : scans.length === 0 ? (
             <p className="secondary" style={{ fontSize: 12, textAlign: 'center' }}>No scans found</p>
           ) : (
-            <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {scans.map((s, i) => {
-                const d = new Date(s.scanned_at)
-                return (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 6px', background: i % 2 === 0 ? 'var(--surface)' : 'transparent', borderRadius: 4 }}>
-                    <span>{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
-                    <span className="secondary">{d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                )
-              })}
+            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ position: 'sticky', top: 0, background: 'var(--bg)' }}>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--muted)', fontWeight: 600, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>Date</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--muted)', fontWeight: 600, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>Time</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--muted)', fontWeight: 600, borderBottom: '1px solid var(--border)' }}>Device / IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scans.map((s, i) => {
+                    const d = new Date(s.scanned_at)
+                    const device = parseScanDevice(s.user_agent)
+                    const info = device || s.ip_address || '—'
+                    return (
+                      <tr key={i} style={{ background: i % 2 === 0 ? 'var(--surface)' : 'transparent' }}>
+                        <td style={{ padding: '5px 6px', whiteSpace: 'nowrap' }}>{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                        <td style={{ padding: '5px 6px', whiteSpace: 'nowrap', color: 'var(--muted)' }}>{d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={{ padding: '5px 6px' }}>
+                          <span>{info}</span>
+                          {device && s.ip_address && (
+                            <span className="secondary" style={{ marginLeft: 6 }}>{s.ip_address}</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

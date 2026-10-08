@@ -27,7 +27,7 @@ const SELECT =
   'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, ' +
   'photo_path, cnic_no, account, designation, card_issue_date, card_valid_until, note, ' +
   'emergency_contact, employee_id, manager_id, ' +
-  'qr_active, qr_inactive_reason, ' +
+  'qr_active, qr_inactive_reason, qr_redirect_url, ' +
   'city:cities(name), vendor:vendors(ref_no, name), ' +
   'manager:account_managers(id, name, designation, email, contact)'
 
@@ -1050,8 +1050,20 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [cardSaving, setCardSaving] = useState(false)
   const setC = (k, v) => setCard((c) => ({ ...c, [k]: v }))
 
-  const defaultProfileUrl = `https://fj.buscaro.com/d/${driver.ref_no}`
-  const [qrCustomUrl, setQrCustomUrl] = useState(defaultProfileUrl)
+  const stableQrUrl = `https://fj.buscaro.com/d/${driver.ref_no}`
+  const [redirectUrl, setRedirectUrl] = useState(driver.qr_redirect_url ?? '')
+  const [redirectSaving, setRedirectSaving] = useState(false)
+
+  const saveRedirectUrl = async () => {
+    setRedirectSaving(true)
+    const { error } = await supabase
+      .from('drivers')
+      .update({ qr_redirect_url: redirectUrl.trim() || null })
+      .eq('id', driver.id)
+    setRedirectSaving(false)
+    if (error) toast.error('Failed to save redirect URL')
+    else toast.success('Redirect URL saved')
+  }
 
   useEffect(() => {
     loadDocs()
@@ -1059,12 +1071,10 @@ function DriverDocsModal({ driver, onClose, onDone }) {
 
   useEffect(() => {
     if (tab !== 'qr') return
-    const url = qrCustomUrl.trim()
-    if (!url) return
-    QRCode.toDataURL(url, { width: 260, margin: 2, color: { dark: '#2D2C2B', light: '#FFFFFF' } })
+    QRCode.toDataURL(stableQrUrl, { width: 260, margin: 2, color: { dark: '#2D2C2B', light: '#FFFFFF' } })
       .then(setQrDataUrl)
       .catch(() => {})
-  }, [tab, qrCustomUrl])
+  }, [tab])
 
   const loadDocs = async () => {
     setLoading(true)
@@ -1398,29 +1408,39 @@ function DriverDocsModal({ driver, onClose, onDone }) {
             )}
           </div>
 
+          {/* Stable QR link — never changes */}
           <div style={{ width: '100%', maxWidth: 320, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>QR Link</label>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>QR Link (permanent)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
+              <span style={{ fontSize: 12, flex: 1, wordBreak: 'break-all', color: 'var(--heading)' }}>{stableQrUrl}</span>
+              <button type="button" className="btn btn-ghost btn-square btn-sm" title="Copy link"
+                onClick={() => { navigator.clipboard.writeText(stableQrUrl); toast.success('Copied') }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>This link is encoded in the QR code and never changes.</span>
+          </div>
+
+          {/* Redirect URL — optional, saved to DB */}
+          <div style={{ width: '100%', maxWidth: 320, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Redirect To (optional)</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 className="input"
                 style={{ fontSize: 12, flex: 1 }}
-                value={qrCustomUrl}
-                onChange={e => setQrCustomUrl(e.target.value)}
-                placeholder="https://..."
+                value={redirectUrl}
+                onChange={e => setRedirectUrl(e.target.value)}
+                placeholder="https://... — leave blank for default profile"
               />
-              <button
-                type="button"
-                className="btn btn-ghost btn-square btn-sm"
-                title="Reset to default"
-                onClick={() => setQrCustomUrl(defaultProfileUrl)}
-                style={{ flexShrink: 0 }}
-              >
-                <RefreshCw size={13} />
+              <button type="button" className="btn btn-sm" onClick={saveRedirectUrl} disabled={redirectSaving} style={{ flexShrink: 0 }}>
+                {redirectSaving ? '…' : 'Save'}
               </button>
             </div>
-            {qrCustomUrl.trim() && qrCustomUrl !== defaultProfileUrl && (
-              <a href={qrCustomUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--accent)', wordBreak: 'break-all' }}>{qrCustomUrl}</a>
-            )}
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              {redirectUrl.trim()
+                ? 'Scanning the QR will open this URL instead of the default profile.'
+                : 'Leave blank to show the default driver profile page.'}
+            </span>
           </div>
 
           {/* Inactive reason shown when inactive */}

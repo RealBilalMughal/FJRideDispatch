@@ -23,7 +23,7 @@ export default function DriverPublicProfile() {
           .from('drivers')
           .select(
             'id, ref_no, name, contact, photo_path, cnic_no, account, designation, ' +
-            'card_issue_date, card_valid_until, note, emergency_contact, employee_id, ' +
+            'card_issue_date, card_valid_until, note, emergency_contact, employee_id, qr_redirect_url, ' +
             'manager_id, qr_active, qr_inactive_reason, ' +
             'city:cities(name), manager:account_managers(id, name, designation, email, contact)',
           )
@@ -47,6 +47,11 @@ export default function DriverPublicProfile() {
       setDriver(drv ?? null)
       setDocs(dd)
       setInfo(bi ?? {})
+      // Redirect if a custom destination is set (QR code itself never changes)
+      if (drv?.qr_active !== false && drv?.qr_redirect_url) {
+        window.location.replace(drv.qr_redirect_url)
+        return
+      }
       // Log scan only for active profiles (inactive screen shows instead of profile)
       if (drv?.id && drv?.qr_active !== false) {
         const ua = navigator.userAgent || null

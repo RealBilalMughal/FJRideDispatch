@@ -24,7 +24,10 @@ import StatCards from '../components/data/StatCards'
 
 const PAGE_SIZE = 15
 const SELECT =
-  'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, city:cities(name), vendor:vendors(ref_no, name)'
+  'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, ' +
+  'photo_path, cnic_no, account, designation, card_issue_date, card_valid_until, note, ' +
+  'emergency_contact, manager_name, manager_designation, manager_email, manager_contact, ' +
+  'city:cities(name), vendor:vendors(ref_no, name)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -412,6 +415,7 @@ export default function Drivers() {
 // ── Driver Add / View / Edit modal ────────────────────────────────────────
 function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowedCities, defaultCityId, createdBy, vehicleMap, onChangePw, onClose, onDone }) {
   const isAdd = !row
+  const { profile: authProfile } = useAuth()
   const [editing, setEditing] = useState(isAdd || startInEdit)
   const [form, setForm] = useState({
     name: row?.name ?? '',
@@ -419,11 +423,35 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
     city_id: row?.city_id ?? defaultCityId ?? allowedCities[0]?.id ?? '',
     vendor_id: row?.vendor_id ?? '',
     password: '',
+    cnic_no: row?.cnic_no ?? '',
+    account: row?.account ?? '',
+    designation: row?.designation ?? 'Driver',
+    card_issue_date: row?.card_issue_date ?? '',
+    card_valid_until: row?.card_valid_until ?? '',
+    note: row?.note ?? '',
+    emergency_contact: row?.emergency_contact ?? '',
+    manager_name: row?.manager_name ?? '',
+    manager_designation: row?.manager_designation ?? '',
+    manager_email: row?.manager_email ?? '',
+    manager_contact: row?.manager_contact ?? '',
   })
+  const [photoFile, setPhotoFile] = useState(null) // File | null
+  const [photoPreview, setPhotoPreview] = useState(
+    row?.photo_path
+      ? supabase.storage.from('driver-docs').getPublicUrl(row.photo_path).data.publicUrl
+      : null,
+  )
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const phoneErr = pkPhoneError(form.phone)
+
+  const onPhotoChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPhotoFile(file)
+    setPhotoPreview(URL.createObjectURL(file))
+  }
   const title = isAdd ? 'Add Driver' : editing ? `Edit ${row.name}` : `${row.name} · ID ${row.ref_no}`
 
   const cityVendors = useMemo(
@@ -450,11 +478,34 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
     if (isAdd && form.password.length < 8) return setErr('Password must be at least 8 characters')
     setBusy(true)
 
+    // Upload photo if a new one was picked
+    let photoPath = row?.photo_path ?? null
+    if (photoFile) {
+      const ext = photoFile.name.split('.').pop()
+      const tempId = row?.id ?? 'new'
+      const path = `photos/${tempId}-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('driver-docs').upload(path, photoFile, { upsert: true })
+      if (upErr) { setErr('Photo upload failed: ' + upErr.message); setBusy(false); return }
+      photoPath = path
+    }
+
     const payload = {
       name: form.name.trim(),
       contact: toStored(form.phone),
       city_id: Number(form.city_id),
       vendor_id: form.vendor_id,
+      photo_path: photoPath,
+      cnic_no: form.cnic_no.trim() || null,
+      account: form.account.trim() || null,
+      designation: form.designation.trim() || 'Driver',
+      card_issue_date: form.card_issue_date || null,
+      card_valid_until: form.card_valid_until || null,
+      note: form.note.trim() || null,
+      emergency_contact: form.emergency_contact.trim() || null,
+      manager_name: form.manager_name.trim() || null,
+      manager_designation: form.manager_designation.trim() || null,
+      manager_email: form.manager_email.trim() || null,
+      manager_contact: form.manager_contact.trim() || null,
     }
 
     if (isAdd) {
@@ -465,6 +516,13 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
         .select('id')
         .single()
       if (insErr) { setErr(insErr.message); setBusy(false); return }
+
+      // If photo was uploaded with 'new' placeholder, rename path with real id
+      if (photoFile && inserted.id) {
+        const newPath = `photos/${inserted.id}-${Date.now()}.${photoFile.name.split('.').pop()}`
+        await supabase.storage.from('driver-docs').move(photoPath, newPath).catch(() => {})
+        await supabase.from('drivers').update({ photo_path: newPath }).eq('id', inserted.id)
+      }
 
       // 2. create auth account (phone login)
       try {
@@ -523,6 +581,60 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
             <span className="view-label">Status</span>
             <span className="view-value">{row.is_active ? 'Active' : 'Inactive'}</span>
           </div>
+          {row.cnic_no && (
+            <div className="view-row">
+              <span className="view-label">CNIC</span>
+              <span className="view-value">{row.cnic_no}</span>
+            </div>
+          )}
+          {row.account && (
+            <div className="view-row">
+              <span className="view-label">Account</span>
+              <span className="view-value">{row.account}</span>
+            </div>
+          )}
+          {row.designation && (
+            <div className="view-row">
+              <span className="view-label">Designation</span>
+              <span className="view-value">{row.designation}</span>
+            </div>
+          )}
+          {row.card_issue_date && (
+            <div className="view-row">
+              <span className="view-label">Card Issued</span>
+              <span className="view-value">{fmtDate(row.card_issue_date)}</span>
+            </div>
+          )}
+          {row.card_valid_until && (
+            <div className="view-row">
+              <span className="view-label">Valid Until</span>
+              <span className="view-value">{fmtDate(row.card_valid_until)}</span>
+            </div>
+          )}
+          {row.emergency_contact && (
+            <div className="view-row">
+              <span className="view-label">Emergency</span>
+              <span className="view-value">{row.emergency_contact}</span>
+            </div>
+          )}
+          {row.note && (
+            <div className="view-row">
+              <span className="view-label">Note</span>
+              <span className="view-value">{row.note}</span>
+            </div>
+          )}
+          {(row.manager_name || row.manager_email) && (
+            <>
+              <div className="view-row" style={{ marginTop: 6 }}>
+                <span className="view-label" style={{ fontWeight: 700, color: 'var(--heading)' }}>Account Manager</span>
+                <span className="view-value" />
+              </div>
+              {row.manager_name && <div className="view-row"><span className="view-label">Name</span><span className="view-value">{row.manager_name}</span></div>}
+              {row.manager_designation && <div className="view-row"><span className="view-label">Designation</span><span className="view-value">{row.manager_designation}</span></div>}
+              {row.manager_email && <div className="view-row"><span className="view-label">Email</span><span className="view-value">{row.manager_email}</span></div>}
+              {row.manager_contact && <div className="view-row"><span className="view-label">Contact</span><span className="view-value">{row.manager_contact}</span></div>}
+            </>
+          )}
           <div className="view-row">
             <span className="view-label">Login</span>
             <span className="view-value">
@@ -619,6 +731,75 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
             <span className="field-hint">Driver signs in with their phone number + this password.</span>
           </div>
         )}
+
+        {/* ── ID Card fields ── */}
+        <div className="field" style={{ marginTop: 8 }}>
+          <label>Driver Photo</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {photoPreview && (
+              <img src={photoPreview} alt="Driver" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', flexShrink: 0 }} />
+            )}
+            <label className="btn btn-ghost btn-square btn-sm" style={{ cursor: 'pointer' }}>
+              <Upload size={13} /> {photoPreview ? 'Change Photo' : 'Upload Photo'}
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={onPhotoChange} />
+            </label>
+          </div>
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="d-cnic">CNIC No</label>
+            <input id="d-cnic" className="input" placeholder="XXXXX-XXXXXXX-X" value={form.cnic_no} onChange={(e) => set('cnic_no', e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="d-desig">Designation</label>
+            <input id="d-desig" className="input" value={form.designation} onChange={(e) => set('designation', e.target.value)} />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="d-account">Account (e.g. Fly Jinnah - LHE)</label>
+          <input id="d-account" className="input" placeholder="Fly Jinnah - LHE" value={form.account} onChange={(e) => set('account', e.target.value)} />
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="d-issue">Card Issue Date</label>
+            <input id="d-issue" type="date" className="input" value={form.card_issue_date} onChange={(e) => set('card_issue_date', e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="d-valid">Card Valid Until</label>
+            <input id="d-valid" type="date" className="input" value={form.card_valid_until} onChange={(e) => set('card_valid_until', e.target.value)} />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="d-emerg">Emergency Contact No</label>
+          <input id="d-emerg" className="input" placeholder="+92 3XX XXXXXXX" value={form.emergency_contact} onChange={(e) => set('emergency_contact', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="d-note">Note</label>
+          <textarea id="d-note" className="input" rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} />
+        </div>
+
+        <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--muted)', margin: '10px 0 6px' }}>Account Manager</p>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="d-mname">Name</label>
+            <input id="d-mname" className="input" value={form.manager_name} onChange={(e) => set('manager_name', e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="d-mdesig">Designation</label>
+            <input id="d-mdesig" className="input" value={form.manager_designation} onChange={(e) => set('manager_designation', e.target.value)} />
+          </div>
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="d-memail">Email</label>
+            <input id="d-memail" type="email" className="input" value={form.manager_email} onChange={(e) => set('manager_email', e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="d-mcontact">Contact No</label>
+            <input id="d-mcontact" className="input" value={form.manager_contact} onChange={(e) => set('manager_contact', e.target.value)} />
+          </div>
+        </div>
+
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>
             Cancel

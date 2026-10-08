@@ -25,6 +25,7 @@ export default function DriverPublicProfile() {
             'id, ref_no, name, contact, photo_path, cnic_no, account, designation, ' +
             'card_issue_date, card_valid_until, note, emergency_contact, ' +
             'manager_name, manager_designation, manager_email, manager_contact, ' +
+            'qr_active, qr_inactive_reason, ' +
             'city:cities(name)',
           )
           .eq('id', driverId)
@@ -56,6 +57,35 @@ export default function DriverPublicProfile() {
 
   const accent      = info?.theme_color || '#fe8c03'
   const logoUrl     = storageUrl(info?.logo_path, 'company-assets') || '/logo.png'
+
+  // Inactive screen — shown before the full profile render
+  if (driver.qr_active === false) {
+    return (
+      <div className="dpp-shell" style={{ '--dpp-accent': accent }}>
+        <div className="dpp-id-card">
+          <div className="dpp-logo-strip">
+            <img src={logoUrl} alt="BusCaro" className="dpp-logo" />
+          </div>
+          <div style={{ padding: '40px 28px 36px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#fee2e2', display: 'grid', placeItems: 'center' }}>
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: '#2D2C2B', margin: 0 }}>
+              This profile has been deactivated
+            </h2>
+            {driver.qr_inactive_reason && (
+              <p style={{ fontSize: 13, color: '#727272', margin: 0, maxWidth: 320, lineHeight: 1.6 }}>
+                {driver.qr_inactive_reason}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
   const wmUrl       = storageUrl(info?.watermark_path, 'company-assets')
   const photoUrl    = storageUrl(driver.photo_path)
   const hasAuth     = driver.manager_name || driver.manager_email

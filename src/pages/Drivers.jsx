@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import toast from 'react-hot-toast'
-import { Camera, Download, Eye, FileImage, KeyRound, Pencil, Plus, QrCode, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound, X } from 'lucide-react'
+import { Camera, Download, Eye, FileImage, KeyRound, Lock, Pencil, Plus, QrCode, RefreshCw, Shield, Trash2, Unlock, Upload, UserCheck, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { adminUsers, generatePassword } from '../lib/adminUsers'
 import { useAuth } from '../context/useAuth'
@@ -27,6 +27,7 @@ const SELECT =
   'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, ' +
   'photo_path, cnic_no, account, designation, card_issue_date, card_valid_until, note, ' +
   'emergency_contact, manager_name, manager_designation, manager_email, manager_contact, ' +
+  'qr_active, qr_inactive_reason, ' +
   'city:cities(name), vendor:vendors(ref_no, name)'
 
 const EXPORT_COLS = [
@@ -991,6 +992,13 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const fileRef = useRef(null)
   const cardPhotoRef = useRef(null)
 
+  // QR active/inactive state (local copy so UI updates without closing modal)
+  const [qrActive, setQrActive] = useState(driver.qr_active ?? true)
+  const [qrReason, setQrReason] = useState(driver.qr_inactive_reason ?? '')
+  const [deactivating, setDeactivating] = useState(false) // show reason form
+  const [reasonInput, setReasonInput] = useState('')
+  const [qrBusy, setQrBusy] = useState(false)
+
   // Card Details form state
   const [card, setCard] = useState({
     photo_path: driver.photo_path ?? null,
@@ -1115,6 +1123,36 @@ function DriverDocsModal({ driver, onClose, onDone }) {
     setC('photo_path', photoPath)
     setCardPhotoFile(null)
     toast.success('Card details saved')
+    onDone?.()
+  }
+
+  const doDeactivate = async () => {
+    setQrBusy(true)
+    const { error } = await supabase
+      .from('drivers')
+      .update({ qr_active: false, qr_inactive_reason: reasonInput.trim() || null })
+      .eq('id', driver.id)
+    setQrBusy(false)
+    if (error) { toast.error(error.message); return }
+    setQrActive(false)
+    setQrReason(reasonInput.trim())
+    setDeactivating(false)
+    setReasonInput('')
+    toast.success('QR link deactivated')
+    onDone?.()
+  }
+
+  const doActivate = async () => {
+    setQrBusy(true)
+    const { error } = await supabase
+      .from('drivers')
+      .update({ qr_active: true, qr_inactive_reason: null })
+      .eq('id', driver.id)
+    setQrBusy(false)
+    if (error) { toast.error(error.message); return }
+    setQrActive(true)
+    setQrReason('')
+    toast.success('QR link activated')
     onDone?.()
   }
 
@@ -1307,18 +1345,101 @@ function DriverDocsModal({ driver, onClose, onDone }) {
 
       {tab === 'qr' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0 4px' }}>
-          {qrDataUrl ? (
-            <img src={qrDataUrl} alt="QR Code" style={{ width: 220, height: 220, border: '1px solid var(--border)', borderRadius: 10, padding: 8 }} />
-          ) : (
-            <div style={{ width: 220, height: 220, border: '1px solid var(--border)', borderRadius: 10, display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Generating…</div>
-          )}
+          {/* Status pill */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+              background: qrActive ? '#dcfce7' : '#fee2e2',
+              color: qrActive ? '#166534' : '#991b1b',
+            }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: qrActive ? '#16a34a' : '#dc2626', display: 'inline-block' }} />
+              {qrActive ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+
+          {/* QR image — dimmed when inactive */}
+          <div style={{ position: 'relative' }}>
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="QR Code"
+                style={{ width: 200, height: 200, border: '1px solid var(--border)', borderRadius: 10, padding: 8, opacity: qrActive ? 1 : 0.35 }}
+              />
+            ) : (
+              <div style={{ width: 200, height: 200, border: '1px solid var(--border)', borderRadius: 10, display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Generating…</div>
+            )}
+            {/* Big lock overlay when inactive */}
+            {!qrActive && (
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 40 }}>🔒</span>
+              </div>
+            )}
+          </div>
+
           <p className="secondary" style={{ fontSize: 12, textAlign: 'center', maxWidth: 320 }}>
-            Scan to view {driver.name}'s uploaded documents.<br />
             <a href={profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{profileUrl}</a>
           </p>
-          <button className="btn btn-ghost btn-square btn-sm" onClick={downloadQr} disabled={!qrDataUrl}>
-            <Download size={14} /> Download QR
-          </button>
+
+          {/* Inactive reason shown when inactive */}
+          {!qrActive && qrReason && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 14px', maxWidth: 320, textAlign: 'center', fontSize: 12, color: '#7f1d1d' }}>
+              <span style={{ fontWeight: 700, display: 'block', marginBottom: 2 }}>Reason:</span>
+              {qrReason}
+            </div>
+          )}
+
+          {/* Deactivate reason form */}
+          {deactivating && (
+            <div style={{ width: '100%', maxWidth: 320, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <textarea
+                className="input"
+                rows={3}
+                placeholder="Reason for deactivating (optional)"
+                value={reasonInput}
+                onChange={(e) => setReasonInput(e.target.value)}
+                autoFocus
+                style={{ resize: 'vertical' }}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={() => { setDeactivating(false); setReasonInput('') }}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-sm" style={{ background: '#dc2626', borderColor: '#dc2626' }} onClick={doDeactivate} disabled={qrBusy}>
+                  {qrBusy ? 'Saving…' : 'Confirm Deactivate'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button className="btn btn-ghost btn-square btn-sm" onClick={downloadQr} disabled={!qrDataUrl}>
+              <Download size={14} /> Download QR
+            </button>
+            {!deactivating && (
+              qrActive ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ background: '#dc2626', borderColor: '#dc2626', color: '#fff' }}
+                  onClick={() => { setDeactivating(true); setReasonInput('') }}
+                >
+                  <Lock size={13} /> Deactivate Link
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff' }}
+                  onClick={doActivate}
+                  disabled={qrBusy}
+                >
+                  <Unlock size={13} /> Activate Link
+                </button>
+              )
+            )}
+          </div>
         </div>
       )}
 

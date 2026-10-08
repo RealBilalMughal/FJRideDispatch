@@ -999,6 +999,23 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [reasonInput, setReasonInput] = useState('')
   const [qrBusy, setQrBusy] = useState(false)
 
+  // Scan history
+  const [scans, setScans] = useState(null) // null = not loaded yet
+  const [scanFrom, setScanFrom] = useState('')
+  const [scanTo, setScanTo] = useState('')
+
+  const loadScans = async () => {
+    let q = supabase
+      .from('driver_qr_scans')
+      .select('scanned_at')
+      .eq('driver_id', driver.id)
+      .order('scanned_at', { ascending: false })
+    if (scanFrom) q = q.gte('scanned_at', scanFrom)
+    if (scanTo)   q = q.lte('scanned_at', scanTo + 'T23:59:59')
+    const { data } = await q
+    setScans(data ?? [])
+  }
+
   // Card Details form state
   const [card, setCard] = useState({
     photo_path: driver.photo_path ?? null,
@@ -1023,7 +1040,9 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [cardSaving, setCardSaving] = useState(false)
   const setC = (k, v) => setCard((c) => ({ ...c, [k]: v }))
 
-  const profileUrl = `${window.location.origin}/d/${driver.ref_no}`
+  // Always use the permanent Vercel URL so printed QR codes never break
+  // even if the custom domain (fj.buscaro.com) has DNS/SSL issues.
+  const profileUrl = `https://fjride.vercel.app/d/${driver.ref_no}`
 
   useEffect(() => {
     loadDocs()
@@ -1344,7 +1363,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
       )}
 
       {tab === 'qr' && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0 4px' }}>
+        <><div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0 4px' }}>
           {/* Status pill */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
@@ -1441,6 +1460,58 @@ function DriverDocsModal({ driver, onClose, onDone }) {
             )}
           </div>
         </div>
+
+        {/* ── Scan History ── */}
+        <div style={{ width: '100%', maxWidth: 360, marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--muted)' }}>
+              Scan History {scans !== null && <span style={{ color: 'var(--accent)', marginLeft: 4 }}>{scans.length}</span>}
+            </span>
+            <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={loadScans} title="Refresh">
+              <RefreshCw size={13} />
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+            <input
+              type="date"
+              className="input"
+              style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
+              value={scanFrom}
+              onChange={e => setScanFrom(e.target.value)}
+              placeholder="From"
+            />
+            <span style={{ color: 'var(--muted)', fontSize: 12 }}>–</span>
+            <input
+              type="date"
+              className="input"
+              style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
+              value={scanTo}
+              onChange={e => setScanTo(e.target.value)}
+              placeholder="To"
+            />
+            <button type="button" className="btn btn-sm" onClick={loadScans} style={{ whiteSpace: 'nowrap' }}>
+              Filter
+            </button>
+          </div>
+          {scans === null ? (
+            <p className="secondary" style={{ fontSize: 12, textAlign: 'center' }}>Click refresh to load scan history</p>
+          ) : scans.length === 0 ? (
+            <p className="secondary" style={{ fontSize: 12, textAlign: 'center' }}>No scans found</p>
+          ) : (
+            <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {scans.map((s, i) => {
+                const d = new Date(s.scanned_at)
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 6px', background: i % 2 === 0 ? 'var(--surface)' : 'transparent', borderRadius: 4 }}>
+                    <span>{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                    <span className="secondary">{d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        </>
       )}
 
       {tab !== 'card' && (

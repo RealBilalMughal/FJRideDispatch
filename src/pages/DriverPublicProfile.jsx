@@ -48,6 +48,10 @@ export default function DriverPublicProfile() {
       setDriver(drv ?? null)
       setDocs(dd)
       setInfo(bi ?? {})
+      // Log scan only for active profiles (inactive screen shows instead of profile)
+      if (drv?.id && drv?.qr_active !== false) {
+        supabase.from('driver_qr_scans').insert({ driver_id: drv.id })
+      }
       setLoading(false)
     }
     load()

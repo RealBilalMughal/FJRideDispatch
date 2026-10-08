@@ -5,20 +5,11 @@ import { supabase } from '../lib/supabase'
 import { fmtDate } from '../lib/format'
 import './DriverPublicProfile.css'
 
-// ── Company contact info (shown in page footer) ───────────────────────────
-const COMPANY = {
-  website: 'www.buscaro.com',
-  websiteHref: 'https://www.buscaro.com',
-  email: 'info@buscaro.com',
-  phone: '+92 300 000 0000',
-  phoneRaw: '+923000000000',
-  address: 'Lahore, Pakistan',
-}
-
 export default function DriverPublicProfile() {
   const { driverId } = useParams()
   const [driver, setDriver] = useState(null)
   const [docs, setDocs] = useState([])
+  const [info, setInfo] = useState(null) // buscaro_info row
   const [loading, setLoading] = useState(true)
   const [lightbox, setLightbox] = useState(null)
   const [photoDims, setPhotoDims] = useState(null)
@@ -27,7 +18,7 @@ export default function DriverPublicProfile() {
     if (!driverId) return
     const load = async () => {
       setLoading(true)
-      const [{ data: drv }, { data: dd }] = await Promise.all([
+      const [{ data: drv }, { data: dd }, { data: bi }] = await Promise.all([
         supabase
           .from('drivers')
           .select(
@@ -43,43 +34,62 @@ export default function DriverPublicProfile() {
           .select('id, label, storage_path, uploaded_at')
           .eq('driver_id', driverId)
           .order('uploaded_at', { ascending: false }),
+        supabase
+          .from('buscaro_info')
+          .select('website, email, contact, address, theme_color, logo_path, watermark_path')
+          .eq('id', 1)
+          .single(),
       ])
       setDriver(drv ?? null)
       setDocs(dd ?? [])
+      setInfo(bi ?? {})
       setLoading(false)
     }
     load()
   }, [driverId])
 
-  const storageUrl = (path) =>
-    path ? supabase.storage.from('driver-docs').getPublicUrl(path).data.publicUrl : null
+  const storageUrl = (path, bucket = 'driver-docs') =>
+    path ? supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl : null
 
   if (loading) return <div className="dpp-shell"><div className="dpp-loading">Loading…</div></div>
   if (!driver) return <div className="dpp-shell"><div className="dpp-notfound">Driver not found.</div></div>
 
-  const photoUrl = storageUrl(driver.photo_path)
-  const hasAuth = driver.manager_name || driver.manager_email
+  const accent      = info?.theme_color || '#fe8c03'
+  const logoUrl     = storageUrl(info?.logo_path, 'company-assets') || '/logo.png'
+  const wmUrl       = storageUrl(info?.watermark_path, 'company-assets')
+  const photoUrl    = storageUrl(driver.photo_path)
+  const hasAuth     = driver.manager_name || driver.manager_email
+  const phoneRaw    = info?.contact?.replace(/[\s\-()]/g, '') || ''
+
+  // Tiling watermark style — applied as a CSS var so all overlay divs pick it up
+  const wmStyle = wmUrl
+    ? { '--dpp-wm': `url(${wmUrl})` }
+    : {}
 
   return (
-    <div className="dpp-shell">
+    <div className="dpp-shell" style={{ '--dpp-accent': accent, ...wmStyle }}>
       {/* ── ID Card ── */}
       <div className="dpp-id-card">
         {/* Logo strip */}
         <div className="dpp-logo-strip">
-          <img src="/logo.png" alt="BusCaro" className="dpp-logo" />
+          <img src={logoUrl} alt="BusCaro" className="dpp-logo" />
         </div>
 
         {/* Photo (centered) + name below it */}
         <div className="dpp-body">
           <div className="dpp-photo-wrap">
             {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt={driver.name}
-                className="dpp-photo"
-                onClick={() => setLightbox(photoUrl)}
-                onLoad={(e) => setPhotoDims({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
-              />
+              <>
+                <img
+                  src={photoUrl}
+                  alt={driver.name}
+                  className="dpp-photo"
+                  onClick={() => setLightbox(photoUrl)}
+                  onLoad={(e) => setPhotoDims({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+                />
+                {/* Tiling watermark over the card photo */}
+                {wmUrl && <div className="dpp-photo-wm" />}
+              </>
             ) : (
               <div className="dpp-photo dpp-photo-empty">{driver.name?.charAt(0)?.toUpperCase() || '?'}</div>
             )}
@@ -161,10 +171,12 @@ export default function DriverPublicProfile() {
                       {d.label && <span className="dpp-label">{d.label}</span>}
                     </a>
                   ) : (
-                    <>
+                    <div className="dpp-thumb-wrap">
                       <img src={url} alt={d.label || 'Document'} className="dpp-thumb" />
+                      {/* Tiling watermark over doc thumbnails */}
+                      {wmUrl && <div className="dpp-thumb-wm" />}
                       {d.label && <span className="dpp-label">{d.label}</span>}
-                    </>
+                    </div>
                   )}
                 </div>
               )
@@ -174,40 +186,50 @@ export default function DriverPublicProfile() {
       )}
 
       {/* ── Footer ── */}
-      <footer className="dpp-footer">
-        <a href={COMPANY.websiteHref} className="dpp-footer-item" target="_blank" rel="noopener noreferrer">
-          <Globe size={14} /> {COMPANY.website}
-        </a>
-        <a href={`mailto:${COMPANY.email}`} className="dpp-footer-item">
-          <Mail size={14} /> {COMPANY.email}
-        </a>
-        <div className="dpp-footer-contact">
-          <a href={`tel:${COMPANY.phoneRaw}`} className="dpp-footer-item">
-            <Phone size={14} /> {COMPANY.phone}
-          </a>
-          <a
-            href={`https://wa.me/${COMPANY.phoneRaw.replace('+', '')}`}
-            className="dpp-footer-wa"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Chat on WhatsApp"
-          >
-            <WaIcon />
-          </a>
-        </div>
-        <div className="dpp-footer-item dpp-footer-addr">
-          <MapPin size={14} /> {COMPANY.address}
-        </div>
-      </footer>
+      {(info?.website || info?.email || info?.contact || info?.address) && (
+        <footer className="dpp-footer">
+          {info.website && (
+            <a href={`https://${info.website.replace(/^https?:\/\//, '')}`} className="dpp-footer-item" target="_blank" rel="noopener noreferrer">
+              <Globe size={14} /> {info.website}
+            </a>
+          )}
+          {info.email && (
+            <a href={`mailto:${info.email}`} className="dpp-footer-item">
+              <Mail size={14} /> {info.email}
+            </a>
+          )}
+          {info.contact && (
+            <div className="dpp-footer-contact">
+              <a href={`tel:${phoneRaw}`} className="dpp-footer-item">
+                <Phone size={14} /> {info.contact}
+              </a>
+              {phoneRaw && (
+                <a
+                  href={`https://wa.me/${phoneRaw.replace('+', '')}`}
+                  className="dpp-footer-wa"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Chat on WhatsApp"
+                >
+                  <WaIcon />
+                </a>
+              )}
+            </div>
+          )}
+          {info.address && (
+            <div className="dpp-footer-item dpp-footer-addr">
+              <MapPin size={14} /> {info.address}
+            </div>
+          )}
+        </footer>
+      )}
 
-      {/* ── Lightbox with watermark ── */}
+      {/* ── Lightbox with tiling watermark ── */}
       {lightbox && (
         <div className="dpp-lightbox" onClick={() => setLightbox(null)}>
           <div className="dpp-lightbox-inner" onClick={(e) => e.stopPropagation()}>
             <img src={lightbox} alt="" />
-            <div className="dpp-lightbox-watermark">
-              <img src="/logo.png" alt="BusCaro" />
-            </div>
+            {wmUrl && <div className="dpp-lightbox-wm" />}
           </div>
           <button className="dpp-lightbox-close" onClick={() => setLightbox(null)}>✕</button>
         </div>

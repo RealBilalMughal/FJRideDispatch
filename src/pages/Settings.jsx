@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MapPinned, Pencil, Ruler, Satellite, Shield, Timer, LayoutList } from 'lucide-react'
+import { Building2, MapPinned, Pencil, Ruler, Satellite, Shield, Timer, LayoutList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -28,6 +28,7 @@ const SECTIONS = [
   { key: 'blockkm', label: 'Block KM Buffer', icon: Ruler },
   { key: 'tracker', label: 'Live Tracker', icon: Satellite },
   { key: 'rideplan', label: 'Ride Plan', icon: LayoutList },
+  { key: 'buscaroinfo', label: 'BusCaro Info', icon: Building2 },
   // 'notify' hidden until a real WhatsApp/SMS provider is set up (see
   // Rides.jsx's NOTIFY_ENABLED) - NotificationsPanel/cities.notify_* are
   // untouched, just not reachable from this list right now.
@@ -84,6 +85,8 @@ export default function Settings() {
             <LiveTrackerPanel />
           ) : section === 'rideplan' ? (
             <RidePlanSettingsPanel />
+          ) : section === 'buscaroinfo' ? (
+            <BusCaroInfoPanel />
           ) : (
             <NotificationsPanel />
           )}
@@ -1101,6 +1104,265 @@ function RidePlanSettingsPanel() {
             </div>
           )
         })}
+      </div>
+    </>
+  )
+}
+
+// ── BusCaro Info ─────────────────────────────────────────────────────────
+// Global company info shown on every driver's public profile page
+// (website, email, contact, address, theme colour, logo, watermark).
+// Stored in public.buscaro_info singleton row (id = 1); public read
+// so the unauthenticated /d/:id page can fetch it; super_admin update only.
+function BusCaroInfoPanel() {
+  const logoRef = useRef(null)
+  const wmRef = useRef(null)
+
+  const [info, setInfo] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const [form, setForm] = useState({
+    website: '', email: '', contact: '', address: '', theme_color: '#fe8c03',
+  })
+  const [logoFile, setLogoFile] = useState(null)
+  const [logoPreview, setLogoPreview] = useState(null)
+  const [wmFile, setWmFile] = useState(null)
+  const [wmPreview, setWmPreview] = useState(null)
+
+  const assetUrl = (path) =>
+    path ? supabase.storage.from('company-assets').getPublicUrl(path).data.publicUrl : null
+
+  useEffect(() => {
+    supabase.from('buscaro_info').select('*').eq('id', 1).single()
+      .then(({ data }) => {
+        setInfo(data ?? {})
+        setLoading(false)
+      })
+  }, [])
+
+  const startEdit = () => {
+    if (!info) return
+    setForm({
+      website: info.website ?? '',
+      email: info.email ?? '',
+      contact: info.contact ?? '',
+      address: info.address ?? '',
+      theme_color: info.theme_color ?? '#fe8c03',
+    })
+    setLogoFile(null); setLogoPreview(assetUrl(info.logo_path))
+    setWmFile(null);   setWmPreview(assetUrl(info.watermark_path))
+    setErr('')
+    setEditing(true)
+  }
+
+  const cancel = () => { setErr(''); setEditing(false) }
+
+  const uploadAsset = async (file, name) => {
+    const ext = file.name.split('.').pop()
+    const path = `${name}.${ext}`
+    const { error } = await supabase.storage.from('company-assets').upload(path, file, { upsert: true })
+    if (error) throw error
+    return path
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setErr('')
+    setBusy(true)
+    try {
+      const payload = {
+        website: form.website.trim() || null,
+        email: form.email.trim() || null,
+        contact: form.contact.trim() || null,
+        address: form.address.trim() || null,
+        theme_color: form.theme_color || '#fe8c03',
+        updated_at: new Date().toISOString(),
+      }
+      if (logoFile) payload.logo_path = await uploadAsset(logoFile, 'logo')
+      if (wmFile)   payload.watermark_path = await uploadAsset(wmFile, 'watermark')
+
+      const { error } = await supabase.from('buscaro_info').update(payload).eq('id', 1)
+      if (error) throw error
+
+      // refresh local state
+      const { data: fresh } = await supabase.from('buscaro_info').select('*').eq('id', 1).single()
+      setInfo(fresh ?? info)
+      setEditing(false)
+      toast.success('BusCaro Info updated')
+    } catch (ex) {
+      setErr(ex.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (loading) return <p className="field-hint" style={{ padding: 20 }}>Loading…</p>
+
+  const logoUrl  = assetUrl(info?.logo_path)
+  const wmUrl    = assetUrl(info?.watermark_path)
+  const accent   = info?.theme_color || '#fe8c03'
+
+  return (
+    <>
+      <div className="set-panel-head">
+        <div>
+          <h3>BusCaro Info</h3>
+          <div className="sub">
+            Company details shown on every driver&rsquo;s public QR profile page —
+            website, contact, logo and the watermark that tiles over images to
+            prevent misuse.
+          </div>
+        </div>
+        {!editing && (
+          <button type="button" className="btn btn-ghost btn-square btn-sm" onClick={startEdit}>
+            <Pencil size={13} /> Edit
+          </button>
+        )}
+      </div>
+
+      <div className="set-form">
+        {editing ? (
+          <form className="modal-form" onSubmit={submit}>
+            {err && <div className="modal-error">{err}</div>}
+
+            <div className="field-row">
+              <div className="field">
+                <label className="field-label">Website</label>
+                <input className="input" value={form.website}
+                  onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))}
+                  placeholder="www.buscaro.com" />
+              </div>
+              <div className="field">
+                <label className="field-label">Email</label>
+                <input className="input" type="email" value={form.email}
+                  onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="info@buscaro.com" />
+              </div>
+            </div>
+
+            <div className="field-row">
+              <div className="field">
+                <label className="field-label">Contact</label>
+                <input className="input" value={form.contact}
+                  onChange={(e) => setForm(f => ({ ...f, contact: e.target.value }))}
+                  placeholder="+92 300 000 0000" />
+              </div>
+              <div className="field">
+                <label className="field-label">Address</label>
+                <input className="input" value={form.address}
+                  onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
+                  placeholder="Lahore, Pakistan" />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="field-label">Theme Color</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="color"
+                  value={form.theme_color}
+                  onChange={(e) => setForm(f => ({ ...f, theme_color: e.target.value }))}
+                  style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', padding: 2 }}
+                />
+                <input className="input" style={{ width: 110 }} value={form.theme_color}
+                  onChange={(e) => setForm(f => ({ ...f, theme_color: e.target.value }))}
+                  placeholder="#fe8c03" maxLength={7} />
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Used for logo strip, headings, and icons on the public profile
+                </span>
+              </div>
+            </div>
+
+            <div className="field-row">
+              {/* Logo upload */}
+              <div className="field">
+                <label className="field-label">Logo</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="Logo" style={{ height: 40, maxWidth: 100, objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 6, background: accent, padding: '4px 8px' }} />
+                  ) : (
+                    <div style={{ width: 60, height: 40, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)', display: 'grid', placeItems: 'center', fontSize: 10, color: 'var(--muted)' }}>None</div>
+                  )}
+                  <label className="btn btn-ghost btn-square btn-sm" style={{ cursor: 'pointer' }}>
+                    Upload
+                    <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)) } }} />
+                  </label>
+                </div>
+                <span className="field-hint">PNG/SVG on a transparent or coloured background</span>
+              </div>
+
+              {/* Watermark upload */}
+              <div className="field">
+                <label className="field-label">Watermark Image</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {wmPreview ? (
+                    <img src={wmPreview} alt="Watermark" style={{ height: 40, maxWidth: 100, objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 6, background: '#eee', padding: 4 }} />
+                  ) : (
+                    <div style={{ width: 60, height: 40, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)', display: 'grid', placeItems: 'center', fontSize: 10, color: 'var(--muted)' }}>None</div>
+                  )}
+                  <label className="btn btn-ghost btn-square btn-sm" style={{ cursor: 'pointer' }}>
+                    Upload
+                    <input ref={wmRef} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) { setWmFile(f); setWmPreview(URL.createObjectURL(f)) } }} />
+                  </label>
+                </div>
+                <span className="field-hint">Tiled over images on the public profile to prevent misuse</span>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost btn-square" onClick={cancel}>Cancel</button>
+              <button type="submit" className="btn btn-square" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            {/* Color swatch row */}
+            <div className="view-row">
+              <span className="view-label">Theme Color</span>
+              <span className="view-value" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 18, height: 18, borderRadius: 4, background: accent, border: '1px solid var(--border)', display: 'inline-block' }} />
+                {accent}
+              </span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Website</span>
+              <span className="view-value">{info?.website || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Email</span>
+              <span className="view-value">{info?.email || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Contact</span>
+              <span className="view-value">{info?.contact || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Address</span>
+              <span className="view-value">{info?.address || '—'}</span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Logo</span>
+              <span className="view-value">
+                {logoUrl
+                  ? <img src={logoUrl} alt="Logo" style={{ height: 34, objectFit: 'contain', background: accent, borderRadius: 6, padding: '3px 8px' }} />
+                  : '— (using default /logo.png)'}
+              </span>
+            </div>
+            <div className="view-row">
+              <span className="view-label">Watermark</span>
+              <span className="view-value">
+                {wmUrl
+                  ? <img src={wmUrl} alt="Watermark" style={{ height: 34, objectFit: 'contain', background: '#eee', borderRadius: 6, padding: 4 }} />
+                  : '— (none set)'}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

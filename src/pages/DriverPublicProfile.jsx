@@ -6,7 +6,7 @@ import { fmtDate } from '../lib/format'
 import './DriverPublicProfile.css'
 
 export default function DriverPublicProfile() {
-  const { driverId } = useParams()
+  const { refNo } = useParams()
   const [driver, setDriver] = useState(null)
   const [docs, setDocs] = useState([])
   const [info, setInfo] = useState(null) // buscaro_info row
@@ -15,10 +15,10 @@ export default function DriverPublicProfile() {
   const [photoDims, setPhotoDims] = useState(null)
 
   useEffect(() => {
-    if (!driverId) return
+    if (!refNo) return
     const load = async () => {
       setLoading(true)
-      const [{ data: drv }, { data: dd }, { data: bi }] = await Promise.all([
+      const [{ data: drv }, { data: bi }] = await Promise.all([
         supabase
           .from('drivers')
           .select(
@@ -28,26 +28,30 @@ export default function DriverPublicProfile() {
             'qr_active, qr_inactive_reason, ' +
             'city:cities(name)',
           )
-          .eq('id', driverId)
+          .eq('ref_no', refNo)
           .single(),
-        supabase
-          .from('driver_docs')
-          .select('id, label, storage_path, uploaded_at')
-          .eq('driver_id', driverId)
-          .order('uploaded_at', { ascending: false }),
         supabase
           .from('buscaro_info')
           .select('website, email, contact, address, theme_color, logo_path, watermark_path')
           .eq('id', 1)
           .single(),
       ])
+      let dd = []
+      if (drv?.id) {
+        const { data } = await supabase
+          .from('driver_docs')
+          .select('id, label, storage_path, uploaded_at')
+          .eq('driver_id', drv.id)
+          .order('uploaded_at', { ascending: false })
+        dd = data ?? []
+      }
       setDriver(drv ?? null)
-      setDocs(dd ?? [])
+      setDocs(dd)
       setInfo(bi ?? {})
       setLoading(false)
     }
     load()
-  }, [driverId])
+  }, [refNo])
 
   const storageUrl = (path, bucket = 'driver-docs') =>
     path ? supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl : null

@@ -1023,7 +1023,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [cardSaving, setCardSaving] = useState(false)
   const setC = (k, v) => setCard((c) => ({ ...c, [k]: v }))
 
-  const profileUrl = `${window.location.origin}/d/${driver.id}`
+  const profileUrl = `${window.location.origin}/d/${driver.ref_no}`
 
   useEffect(() => {
     loadDocs()

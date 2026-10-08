@@ -30,7 +30,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
 
       {/* Public route — no auth needed, opened when a driver QR code is scanned */}
-      <Route path="/d/:driverId" element={<DriverPublicProfile />} />
+      <Route path="/d/:refNo" element={<DriverPublicProfile />} />
 
       <Route element={<ProtectedRoute />}>
         {/* Driver-only route — no sidebar, full-page form */}

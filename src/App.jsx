@@ -22,11 +22,15 @@ const RoleAccess = lazy(() => import('./pages/RoleAccess'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Odometer = lazy(() => import('./pages/Odometer'))
 const Profile = lazy(() => import('./pages/Profile'))
+const DriverPublicProfile = lazy(() => import('./pages/DriverPublicProfile'))
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+
+      {/* Public route — no auth needed, opened when a driver QR code is scanned */}
+      <Route path="/d/:driverId" element={<DriverPublicProfile />} />
 
       <Route element={<ProtectedRoute />}>
         {/* Driver-only route — no sidebar, full-page form */}

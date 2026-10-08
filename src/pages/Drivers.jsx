@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 import toast from 'react-hot-toast'
-import { Download, Eye, KeyRound, Pencil, Plus, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound } from 'lucide-react'
+import { Download, Eye, FileImage, KeyRound, Pencil, Plus, QrCode, RefreshCw, Shield, Trash2, Upload, UserCheck, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { adminUsers, generatePassword } from '../lib/adminUsers'
 import { useAuth } from '../context/useAuth'
@@ -102,6 +103,7 @@ export default function Drivers() {
   const [importOpen, setImportOpen] = useState(false)
   const [pending, setPending] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [docsFor, setDocsFor] = useState(null) // driver row | null
   const { selected, toggle, toggleAll, clear } = useSelection()
 
   const list = useMemo(
@@ -234,6 +236,11 @@ export default function Drivers() {
           {canEdit && r.profile_id && (
             <button title="Change password" onClick={() => setPwTarget(r)}>
               <KeyRound size={13} />
+            </button>
+          )}
+          {canEdit && (
+            <button title="Documents / QR Code" onClick={() => setDocsFor(r)}>
+              <FileImage size={13} />
             </button>
           )}
           {canDelete && (
@@ -391,6 +398,13 @@ export default function Drivers() {
         onConfirm={doDelete}
         onClose={() => !deleting && setPending(null)}
       />
+
+      {docsFor && (
+        <DriverDocsModal
+          driver={docsFor}
+          onClose={() => setDocsFor(null)}
+        />
+      )}
     </div>
   )
 }
@@ -778,6 +792,186 @@ function ImportDrivers({ vendors, allowedCities, createdBy, onClose, onDone }) {
             {busy ? 'Importing…' : `Import ${parsed?.ok.length || 0}`}
           </button>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Driver Documents + QR Code modal ─────────────────────────────────────────
+function DriverDocsModal({ driver, onClose }) {
+  const { profile } = useAuth()
+  const [docs, setDocs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [label, setLabel] = useState('')
+  const [qrDataUrl, setQrDataUrl] = useState(null)
+  const [tab, setTab] = useState('docs') // 'docs' | 'qr'
+  const fileRef = useRef(null)
+
+  const profileUrl = `${window.location.origin}/d/${driver.id}`
+
+  useEffect(() => {
+    loadDocs()
+  }, [driver.id])
+
+  useEffect(() => {
+    if (tab === 'qr') {
+      QRCode.toDataURL(profileUrl, { width: 260, margin: 2, color: { dark: '#2D2C2B', light: '#FFFFFF' } })
+        .then(setQrDataUrl)
+        .catch(() => {})
+    }
+  }, [tab, profileUrl])
+
+  const loadDocs = async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('driver_docs')
+      .select('id, label, storage_path, uploaded_at')
+      .eq('driver_id', driver.id)
+      .order('uploaded_at', { ascending: false })
+    setDocs(data ?? [])
+    setLoading(false)
+  }
+
+  const publicUrl = (path) =>
+    supabase.storage.from('driver-docs').getPublicUrl(path).data.publicUrl
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const ext = file.name.split('.').pop()
+    const path = `${driver.id}/${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('driver-docs').upload(path, file, { upsert: false })
+    if (upErr) { toast.error('Upload failed'); setUploading(false); return }
+    const { error: dbErr } = await supabase.from('driver_docs').insert({
+      driver_id: driver.id,
+      city_id: driver.city_id,
+      label: label.trim() || null,
+      storage_path: path,
+      uploaded_by: profile?.id ?? null,
+    })
+    if (dbErr) {
+      await supabase.storage.from('driver-docs').remove([path])
+      toast.error('Could not save document record')
+    } else {
+      toast.success('Uploaded')
+      setLabel('')
+      loadDocs()
+    }
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  const handleDelete = async (doc) => {
+    const { error: stErr } = await supabase.storage.from('driver-docs').remove([doc.storage_path])
+    if (stErr) { toast.error('Could not delete file'); return }
+    await supabase.from('driver_docs').delete().eq('id', doc.id)
+    toast.success('Deleted')
+    loadDocs()
+  }
+
+  const downloadQr = () => {
+    if (!qrDataUrl) return
+    const a = document.createElement('a')
+    a.href = qrDataUrl
+    a.download = `driver-qr-${driver.name?.replace(/\s+/g, '-')}-${driver.id}.png`
+    a.click()
+  }
+
+  return (
+    <Modal open title={`Docs · ${driver.name}`} width="min(600px, 97vw)" onClose={onClose}>
+      {/* Tab switcher */}
+      <div className="date-tabs" style={{ marginBottom: 18 }}>
+        <button className={tab === 'docs' ? 'on' : ''} onClick={() => setTab('docs')}>
+          Documents
+        </button>
+        <button className={tab === 'qr' ? 'on' : ''} onClick={() => setTab('qr')}>
+          QR Code
+        </button>
+      </div>
+
+      {tab === 'docs' && (
+        <>
+          {/* Upload row */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 18 }}>
+            <input
+              className="input"
+              style={{ flex: 1 }}
+              placeholder="Label (optional, e.g. CNIC Front)"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+            <label className="btn btn-ghost btn-square btn-sm" style={{ cursor: 'pointer' }}>
+              <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload'}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,.pdf"
+                style={{ display: 'none' }}
+                disabled={uploading}
+                onChange={handleUpload}
+              />
+            </label>
+          </div>
+
+          {loading ? (
+            <p className="secondary" style={{ textAlign: 'center', padding: '20px 0' }}>Loading…</p>
+          ) : docs.length === 0 ? (
+            <p className="secondary" style={{ textAlign: 'center', padding: '20px 0' }}>No documents uploaded yet.</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+              {docs.map((d) => {
+                const url = publicUrl(d.storage_path)
+                const isPdf = d.storage_path.toLowerCase().endsWith('.pdf')
+                return (
+                  <div key={d.id} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
+                    {isPdf ? (
+                      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', aspectRatio: '4/3', background: 'var(--surface)', display: 'grid', placeItems: 'center', color: 'var(--accent)', fontWeight: 700, textDecoration: 'none' }}>PDF</a>
+                    ) : (
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        <img src={url} alt={d.label || 'doc'} style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} />
+                      </a>
+                    )}
+                    {d.label && (
+                      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, padding: '5px 8px', borderTop: '1px solid var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {d.label}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleDelete(d)}
+                      title="Delete"
+                      style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, border: 'none', borderRadius: 4, background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'qr' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0 4px' }}>
+          {qrDataUrl ? (
+            <img src={qrDataUrl} alt="QR Code" style={{ width: 220, height: 220, border: '1px solid var(--border)', borderRadius: 10, padding: 8 }} />
+          ) : (
+            <div style={{ width: 220, height: 220, border: '1px solid var(--border)', borderRadius: 10, display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Generating…</div>
+          )}
+          <p className="secondary" style={{ fontSize: 12, textAlign: 'center', maxWidth: 320 }}>
+            Scan to view {driver.name}'s uploaded documents.<br />
+            <a href={profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{profileUrl}</a>
+          </p>
+          <button className="btn btn-ghost btn-square btn-sm" onClick={downloadQr} disabled={!qrDataUrl}>
+            <Download size={14} /> Download QR
+          </button>
+        </div>
+      )}
+
+      <div className="modal-actions" style={{ marginTop: 20 }}>
+        <button type="button" className="btn btn-ghost btn-square" onClick={onClose}>Close</button>
       </div>
     </Modal>
   )

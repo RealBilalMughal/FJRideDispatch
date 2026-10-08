@@ -1040,9 +1040,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [cardSaving, setCardSaving] = useState(false)
   const setC = (k, v) => setCard((c) => ({ ...c, [k]: v }))
 
-  // Always use the permanent Vercel URL so printed QR codes never break
-  // even if the custom domain (fj.buscaro.com) has DNS/SSL issues.
-  const profileUrl = `https://fjride.vercel.app/d/${driver.ref_no}`
+  const profileUrl = `https://fj.buscaro.com/d/${driver.ref_no}`
 
   useEffect(() => {
     loadDocs()

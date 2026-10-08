@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Building2, MapPinned, Pencil, Ruler, Satellite, Shield, Timer, LayoutList } from 'lucide-react'
+import { Building2, MapPinned, Pencil, Plus, Ruler, Satellite, Shield, Timer, Trash2, UserCheck, LayoutList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -29,6 +29,7 @@ const SECTIONS = [
   { key: 'tracker', label: 'Live Tracker', icon: Satellite },
   { key: 'rideplan', label: 'Ride Plan', icon: LayoutList },
   { key: 'buscaroinfo', label: 'BusCaro Info', icon: Building2 },
+  { key: 'accountmanager', label: 'Account Manager', icon: UserCheck },
   // 'notify' hidden until a real WhatsApp/SMS provider is set up (see
   // Rides.jsx's NOTIFY_ENABLED) - NotificationsPanel/cities.notify_* are
   // untouched, just not reachable from this list right now.
@@ -87,6 +88,8 @@ export default function Settings() {
             <RidePlanSettingsPanel />
           ) : section === 'buscaroinfo' ? (
             <BusCaroInfoPanel />
+          ) : section === 'accountmanager' ? (
+            <AccountManagerPanel />
           ) : (
             <NotificationsPanel />
           )}
@@ -1364,6 +1367,133 @@ function BusCaroInfoPanel() {
           </div>
         )}
       </div>
+    </>
+  )
+}
+
+// ── Account Manager ──────────────────────────────────────────────────────────
+const BLANK_AM = { name: '', designation: '', email: '', contact: '' }
+
+function AccountManagerPanel() {
+  const [rows, setRows]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [editId, setEditId]   = useState(null) // uuid = editing, 'new' = adding
+  const [form, setForm]       = useState(BLANK_AM)
+  const [saving, setSaving]   = useState(false)
+  const [deleting, setDeleting] = useState(null)
+
+  const load = async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('account_managers')
+      .select('id, name, designation, email, contact')
+      .order('name')
+    setRows(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const openAdd = () => { setForm(BLANK_AM); setEditId('new') }
+  const openEdit = (r) => { setForm({ name: r.name, designation: r.designation ?? '', email: r.email ?? '', contact: r.contact ?? '' }); setEditId(r.id) }
+  const cancel = () => { setEditId(null); setForm(BLANK_AM) }
+
+  const save = async () => {
+    if (!form.name.trim()) { toast.error('Name is required'); return }
+    setSaving(true)
+    const payload = { name: form.name.trim(), designation: form.designation.trim() || null, email: form.email.trim() || null, contact: form.contact.trim() || null }
+    const { error } = editId === 'new'
+      ? await supabase.from('account_managers').insert(payload)
+      : await supabase.from('account_managers').update(payload).eq('id', editId)
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(editId === 'new' ? 'Account manager added' : 'Saved')
+    cancel()
+    load()
+  }
+
+  const doDelete = async (id) => {
+    setDeleting(id)
+    const { error } = await supabase.from('account_managers').delete().eq('id', id)
+    setDeleting(null)
+    if (error) { toast.error(error.message); return }
+    toast.success('Deleted')
+    load()
+  }
+
+  const f = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
+
+  return (
+    <>
+      <div className="set-panel-head">
+        <h2 className="set-panel-title">Account Manager</h2>
+        {editId === null && (
+          <button className="btn btn-sm" onClick={openAdd}><Plus size={14} /> Add</button>
+        )}
+      </div>
+      <div style={{ borderBottom: '1px solid var(--border)', marginBottom: 16 }} />
+
+      {/* Add / Edit form */}
+      {editId !== null && (
+        <div style={{ marginBottom: 20, padding: '16px', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 700 }}>{editId === 'new' ? 'Add Account Manager' : 'Edit Account Manager'}</h3>
+          <div className="field-row" style={{ marginBottom: 10 }}>
+            <div className="field">
+              <label className="label">Name <span style={{ color: 'red' }}>*</span></label>
+              <input className="input" value={form.name} onChange={f('name')} placeholder="Full name" />
+            </div>
+            <div className="field">
+              <label className="label">Designation</label>
+              <input className="input" value={form.designation} onChange={f('designation')} placeholder="e.g. Operations Manager" />
+            </div>
+          </div>
+          <div className="field-row" style={{ marginBottom: 14 }}>
+            <div className="field">
+              <label className="label">Email</label>
+              <input className="input" type="email" value={form.email} onChange={f('email')} placeholder="email@buscaro.com" />
+            </div>
+            <div className="field">
+              <label className="label">Contact</label>
+              <input className="input" value={form.contact} onChange={f('contact')} placeholder="+92 3XX XXXXXXX" />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-square btn-sm" onClick={cancel}>Cancel</button>
+            <button className="btn btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {loading ? (
+        <p className="secondary">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="secondary">No account managers yet.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['Name', 'Designation', 'Email', 'Contact', ''].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--muted)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '8px 10px', fontWeight: 600 }}>{r.name}</td>
+                <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{r.designation || '—'}</td>
+                <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{r.email || '—'}</td>
+                <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{r.contact || '—'}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <button className="btn btn-ghost btn-square btn-sm" onClick={() => openEdit(r)} style={{ marginRight: 4 }}><Pencil size={13} /></button>
+                  <button className="btn btn-ghost btn-square btn-sm" onClick={() => doDelete(r.id)} disabled={deleting === r.id} style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   )
 }

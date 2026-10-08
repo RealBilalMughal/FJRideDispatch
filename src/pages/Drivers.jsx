@@ -991,6 +991,12 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   const [tab, setTab] = useState('docs') // 'docs' | 'card' | 'qr'
   const fileRef = useRef(null)
   const cardPhotoRef = useRef(null)
+  const [accountManagers, setAccountManagers] = useState([])
+
+  useEffect(() => {
+    supabase.from('account_managers').select('id,name,designation,email,contact').order('name')
+      .then(({ data }) => setAccountManagers(data ?? []))
+  }, [])
 
   // QR active/inactive state (local copy so UI updates without closing modal)
   const [qrActive, setQrActive] = useState(driver.qr_active ?? true)
@@ -1331,6 +1337,27 @@ function DriverDocsModal({ driver, onClose, onDone }) {
           {/* Account Manager */}
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 2 }}>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--muted)', marginBottom: 12 }}>Account Manager</p>
+            {/* Dropdown to select from saved account managers */}
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label className="field-label">Select from list</label>
+              <select
+                className="input"
+                value=""
+                onChange={(e) => {
+                  const am = accountManagers.find(a => a.id === e.target.value)
+                  if (!am) return
+                  setC('manager_name', am.name ?? '')
+                  setC('manager_designation', am.designation ?? '')
+                  setC('manager_email', am.email ?? '')
+                  setC('manager_contact', am.contact ?? '')
+                }}
+              >
+                <option value="">— Pick an account manager —</option>
+                {accountManagers.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}{a.designation ? ` · ${a.designation}` : ''}</option>
+                ))}
+              </select>
+            </div>
             <div className="field-row" style={{ marginBottom: 10 }}>
               <div className="field">
                 <label className="field-label">Name</label>

@@ -26,9 +26,10 @@ const PAGE_SIZE = 15
 const SELECT =
   'id, ref_no, name, contact, city_id, vendor_id, profile_id, is_active, created_at, ' +
   'photo_path, cnic_no, account, designation, card_issue_date, card_valid_until, note, ' +
-  'emergency_contact, manager_name, manager_designation, manager_email, manager_contact, ' +
+  'emergency_contact, manager_id, ' +
   'qr_active, qr_inactive_reason, ' +
-  'city:cities(name), vendor:vendors(ref_no, name)'
+  'city:cities(name), vendor:vendors(ref_no, name), ' +
+  'manager:account_managers(id, name, designation, email, contact)'
 
 const EXPORT_COLS = [
   { key: 'ref_no', label: 'ID' },
@@ -432,10 +433,7 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
     card_valid_until: row?.card_valid_until ?? '',
     note: row?.note ?? '',
     emergency_contact: row?.emergency_contact ?? '',
-    manager_name: row?.manager_name ?? '',
-    manager_designation: row?.manager_designation ?? '',
-    manager_email: row?.manager_email ?? '',
-    manager_contact: row?.manager_contact ?? '',
+    manager_id: row?.manager_id ?? '',
   })
   const [photoFile, setPhotoFile] = useState(null) // File | null
   const [photoPreview, setPhotoPreview] = useState(
@@ -445,8 +443,14 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
   )
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [accountManagers, setAccountManagers] = useState([])
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const phoneErr = pkPhoneError(form.phone)
+
+  useEffect(() => {
+    supabase.from('account_managers').select('id,name,designation,email,contact').order('name')
+      .then(({ data }) => setAccountManagers(data ?? []))
+  }, [])
 
   const onPhotoChange = (e) => {
     const file = e.target.files?.[0]
@@ -504,10 +508,7 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
       card_valid_until: form.card_valid_until || null,
       note: form.note.trim() || null,
       emergency_contact: form.emergency_contact.trim() || null,
-      manager_name: form.manager_name.trim() || null,
-      manager_designation: form.manager_designation.trim() || null,
-      manager_email: form.manager_email.trim() || null,
-      manager_contact: form.manager_contact.trim() || null,
+      manager_id: form.manager_id || null,
     }
 
     if (isAdd) {
@@ -625,16 +626,16 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
               <span className="view-value">{row.note}</span>
             </div>
           )}
-          {(row.manager_name || row.manager_email) && (
+          {(row.manager?.name || row.manager?.email) && (
             <>
               <div className="view-row" style={{ marginTop: 6 }}>
                 <span className="view-label" style={{ fontWeight: 700, color: 'var(--heading)' }}>Account Manager</span>
                 <span className="view-value" />
               </div>
-              {row.manager_name && <div className="view-row"><span className="view-label">Name</span><span className="view-value">{row.manager_name}</span></div>}
-              {row.manager_designation && <div className="view-row"><span className="view-label">Designation</span><span className="view-value">{row.manager_designation}</span></div>}
-              {row.manager_email && <div className="view-row"><span className="view-label">Email</span><span className="view-value">{row.manager_email}</span></div>}
-              {row.manager_contact && <div className="view-row"><span className="view-label">Contact</span><span className="view-value">{row.manager_contact}</span></div>}
+              {row.manager?.name && <div className="view-row"><span className="view-label">Name</span><span className="view-value">{row.manager.name}</span></div>}
+              {row.manager?.designation && <div className="view-row"><span className="view-label">Designation</span><span className="view-value">{row.manager.designation}</span></div>}
+              {row.manager?.email && <div className="view-row"><span className="view-label">Email</span><span className="view-value">{row.manager.email}</span></div>}
+              {row.manager?.contact && <div className="view-row"><span className="view-label">Contact</span><span className="view-value">{row.manager.contact}</span></div>}
             </>
           )}
           <div className="view-row">
@@ -780,26 +781,14 @@ function DriverModal({ row, startInEdit = false, canEdit = true, vendors, allowe
           <textarea id="d-note" className="input" rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} />
         </div>
 
-        <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--muted)', margin: '10px 0 6px' }}>Account Manager</p>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="d-mname">Name</label>
-            <input id="d-mname" className="input" value={form.manager_name} onChange={(e) => set('manager_name', e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="d-mdesig">Designation</label>
-            <input id="d-mdesig" className="input" value={form.manager_designation} onChange={(e) => set('manager_designation', e.target.value)} />
-          </div>
-        </div>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="d-memail">Email</label>
-            <input id="d-memail" type="email" className="input" value={form.manager_email} onChange={(e) => set('manager_email', e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="d-mcontact">Contact No</label>
-            <input id="d-mcontact" className="input" value={form.manager_contact} onChange={(e) => set('manager_contact', e.target.value)} />
-          </div>
+        <div className="field">
+          <label htmlFor="d-manager">Account Manager</label>
+          <select id="d-manager" className="input" value={form.manager_id} onChange={(e) => set('manager_id', e.target.value)}>
+            <option value="">— None —</option>
+            {accountManagers.map(a => (
+              <option key={a.id} value={a.id}>{a.name}{a.designation ? ` · ${a.designation}` : ''}</option>
+            ))}
+          </select>
         </div>
 
         <div className="modal-actions">
@@ -1023,6 +1012,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
   }
 
   // Card Details form state
+  const DEFAULT_NOTE = 'Driver and vehicle are provided by a third-party service provider. All employment and related responsibilities remain with the service provider.'
   const [card, setCard] = useState({
     photo_path: driver.photo_path ?? null,
     cnic_no: driver.cnic_no ?? '',
@@ -1031,11 +1021,8 @@ function DriverDocsModal({ driver, onClose, onDone }) {
     card_issue_date: driver.card_issue_date ?? '',
     card_valid_until: driver.card_valid_until ?? '',
     emergency_contact: driver.emergency_contact ?? '',
-    note: driver.note ?? '',
-    manager_name: driver.manager_name ?? '',
-    manager_designation: driver.manager_designation ?? '',
-    manager_email: driver.manager_email ?? '',
-    manager_contact: driver.manager_contact ?? '',
+    note: driver.note ?? DEFAULT_NOTE,
+    manager_id: driver.manager_id ?? '',
   })
   const [cardPhotoFile, setCardPhotoFile] = useState(null)
   const [cardPhotoPreview, setCardPhotoPreview] = useState(
@@ -1137,10 +1124,7 @@ function DriverDocsModal({ driver, onClose, onDone }) {
       card_valid_until: card.card_valid_until || null,
       emergency_contact: card.emergency_contact.trim() || null,
       note: card.note.trim() || null,
-      manager_name: card.manager_name.trim() || null,
-      manager_designation: card.manager_designation.trim() || null,
-      manager_email: card.manager_email.trim() || null,
-      manager_contact: card.manager_contact.trim() || null,
+      manager_id: card.manager_id || null,
     }
     const { error } = await supabase.from('drivers').update(payload).eq('id', driver.id)
     setCardSaving(false)
@@ -1336,47 +1320,14 @@ function DriverDocsModal({ driver, onClose, onDone }) {
 
           {/* Account Manager */}
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 2 }}>
-            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--muted)', marginBottom: 12 }}>Account Manager</p>
-            {/* Dropdown to select from saved account managers */}
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label className="field-label">Select from list</label>
-              <select
-                className="input"
-                value=""
-                onChange={(e) => {
-                  const am = accountManagers.find(a => a.id === e.target.value)
-                  if (!am) return
-                  setC('manager_name', am.name ?? '')
-                  setC('manager_designation', am.designation ?? '')
-                  setC('manager_email', am.email ?? '')
-                  setC('manager_contact', am.contact ?? '')
-                }}
-              >
-                <option value="">— Pick an account manager —</option>
+            <div className="field">
+              <label className="field-label">Account Manager</label>
+              <select className="input" value={card.manager_id} onChange={(e) => setC('manager_id', e.target.value)}>
+                <option value="">— None —</option>
                 {accountManagers.map(a => (
                   <option key={a.id} value={a.id}>{a.name}{a.designation ? ` · ${a.designation}` : ''}</option>
                 ))}
               </select>
-            </div>
-            <div className="field-row" style={{ marginBottom: 10 }}>
-              <div className="field">
-                <label className="field-label">Name</label>
-                <input className="input" value={card.manager_name} onChange={(e) => setC('manager_name', e.target.value)} />
-              </div>
-              <div className="field">
-                <label className="field-label">Designation</label>
-                <input className="input" value={card.manager_designation} onChange={(e) => setC('manager_designation', e.target.value)} />
-              </div>
-            </div>
-            <div className="field-row">
-              <div className="field">
-                <label className="field-label">Email</label>
-                <input className="input" type="email" value={card.manager_email} onChange={(e) => setC('manager_email', e.target.value)} />
-              </div>
-              <div className="field">
-                <label className="field-label">Contact No</label>
-                <input className="input" value={card.manager_contact} onChange={(e) => setC('manager_contact', e.target.value)} />
-              </div>
             </div>
           </div>
 

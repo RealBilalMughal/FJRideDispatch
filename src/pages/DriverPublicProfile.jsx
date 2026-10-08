@@ -24,9 +24,8 @@ export default function DriverPublicProfile() {
           .select(
             'id, ref_no, name, contact, photo_path, cnic_no, account, designation, ' +
             'card_issue_date, card_valid_until, note, emergency_contact, ' +
-            'manager_name, manager_designation, manager_email, manager_contact, ' +
-            'qr_active, qr_inactive_reason, ' +
-            'city:cities(name)',
+            'manager_id, qr_active, qr_inactive_reason, ' +
+            'city:cities(name), manager:account_managers(id, name, designation, email, contact)',
           )
           .eq('ref_no', refNo)
           .single(),
@@ -96,7 +95,7 @@ export default function DriverPublicProfile() {
   }
   const wmUrl       = storageUrl(info?.watermark_path, 'company-assets')
   const photoUrl    = storageUrl(driver.photo_path)
-  const hasAuth     = driver.manager_name || driver.manager_email
+  const hasAuth     = driver.manager?.name || driver.manager?.email
   const phoneRaw    = info?.contact?.replace(/[\s\-()]/g, '') || ''
 
   // Tiling watermark style — applied as a CSS var so all overlay divs pick it up
@@ -176,10 +175,10 @@ export default function DriverPublicProfile() {
           <div className="dpp-manager">
             <div className="dpp-manager-head">Authorized</div>
             <div className="dpp-manager-grid">
-              {driver.manager_name && <Field label="Name" value={driver.manager_name} />}
-              {driver.manager_designation && <Field label="Designation" value={driver.manager_designation} />}
-              {driver.manager_email && <Field label="Email" value={driver.manager_email} />}
-              {driver.manager_contact && <Field label="Contact No" value={driver.manager_contact} />}
+              {driver.manager?.name && <Field label="Name" value={driver.manager.name} />}
+              {driver.manager?.designation && <Field label="Designation" value={driver.manager.designation} />}
+              {driver.manager?.email && <Field label="Email" value={driver.manager.email} />}
+              {driver.manager?.contact && <Field label="Contact No" value={driver.manager.contact} />}
             </div>
           </div>
         )}

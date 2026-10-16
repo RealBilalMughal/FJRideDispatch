@@ -527,7 +527,6 @@ export default function RidePlan() {
 
       if (!totalUpdated) { toast('No matching crew found in selected dates'); return }
       toast.success(`Filled KM for ${totalUpdated} row${totalUpdated > 1 ? 's' : ''} across ${fillToDateVals.size} date${fillToDateVals.size > 1 ? 's' : ''}`)
-      setFillFromDateOpen(false)
     } finally {
       setFillFromDateLoading(false)
     }

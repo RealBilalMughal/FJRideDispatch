@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Ban, Check, ChevronLeft, ChevronRight, Download, Eye, GanttChart, Globe, Hash, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
+import { Ban, CalendarSearch, Check, ChevronLeft, ChevronRight, Copy, Download, Eye, GanttChart, Globe, Hash, LayoutList, MessageSquare, Navigation, Pencil, Plus, RefreshCw, RotateCcw, Sigma, Trash2, Upload, UserPlus, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
 import { useCity } from '../context/useCity'
@@ -391,6 +391,168 @@ export default function RidePlan() {
   const [vehicles, setVehicles] = useState([])
   const [drivers, setDrivers] = useState([])
 
+  // FJ KM inline edits: { [rowId]: string } — local until blur/Enter saves
+  const [fjKmEdits, setFjKmEdits] = useState({})
+  const [fjKmLoading, setFjKmLoading] = useState({})
+
+  const saveFjKm = useCallback(async (rowId, raw) => {
+    const val = raw.trim() === '' ? null : Number(raw)
+    if (raw.trim() !== '' && isNaN(val)) return
+    await supabase.from('ride_plan_rows').update({ fj_km: val }).eq('id', rowId)
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, fj_km: val } : r))
+    setFjKmEdits((prev) => { const n = { ...prev }; delete n[rowId]; return n })
+  }, [])
+
+  // FJ Map link inline edits: { [rowId]: string } — local until blur/Enter saves
+  const [fjMapLinkEdits, setFjMapLinkEdits] = useState({})
+
+  const saveFjMapLink = useCallback(async (rowId, raw) => {
+    const val = raw.trim() === '' ? null : raw.trim()
+    await supabase.from('ride_plan_rows').update({ fj_map_link: val }).eq('id', rowId)
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, fj_map_link: val } : r))
+    setFjMapLinkEdits((prev) => { const n = { ...prev }; delete n[rowId]; return n })
+  }, [])
+
+  const fillRepeatedCrewKm = useCallback(async () => {
+    const filled = rows.filter((r) => !r.isExtra && r.fj_km != null)
+    if (!filled.length) { toast.error('No rows with KM to spread'); return }
+    const toUpdate = []
+    const seen = new Set()
+    for (const src of filled) {
+      const srcCrewIds = new Set((src.crew_matches || []).map((m) => m.crew_id))
+      if (!srcCrewIds.size) continue
+      rows.forEach((r) => {
+        if (r.id === src.id || r.isExtra || r.fj_km != null || seen.has(r.id)) return
+        if (r.city_id !== src.city_id) return
+        const shares = (r.crew_matches || []).some((m) => srcCrewIds.has(m.crew_id))
+        if (!shares) return
+        seen.add(r.id)
+        toUpdate.push({ id: r.id, fj_km: src.fj_km })
+      })
+    }
+    if (!toUpdate.length) { toast('No unfilled rows with matching crew found'); return }
+    const byKm = {}
+    toUpdate.forEach(({ id, fj_km }) => { (byKm[fj_km] = byKm[fj_km] || []).push(id) })
+    await Promise.all(Object.entries(byKm).map(([km, idList]) =>
+      supabase.from('ride_plan_rows').update({ fj_km: Number(km) }).in('id', idList)
+    ))
+    setRows((prev) => prev.map((r) => {
+      const match = toUpdate.find((x) => x.id === r.id)
+      return match ? { ...r, fj_km: match.fj_km } : r
+    }))
+    toast.success(`Filled KM for ${toUpdate.length} row${toUpdate.length > 1 ? 's' : ''}`)
+  }, [rows])
+
+  const [resetSimKmOpen, setResetSimKmOpen] = useState(false)
+
+  const doResetSimKm = useCallback(async () => {
+    const ids = rows.filter((r) => !r.isExtra && r.fj_km != null).map((r) => r.id)
+    if (!ids.length) return
+    await supabase.from('ride_plan_rows').update({ fj_km: null }).in('id', ids)
+    setRows((prev) => prev.map((r) => ids.includes(r.id) ? { ...r, fj_km: null } : r))
+    setResetSimKmOpen(false)
+    toast.success(`Cleared Sim vs Actual KM for ${ids.length} row${ids.length > 1 ? 's' : ''}`)
+  }, [rows])
+
+  const [fillFromDateOpen, setFillFromDateOpen] = useState(false)
+  const [fillFromDateVal, setFillFromDateVal] = useState('')
+  const [fillToDateVals, setFillToDateVals] = useState(new Set())
+  const [fillFromDateLoading, setFillFromDateLoading] = useState(false)
+
+  const toggleFillToDate = useCallback((iso) => {
+    setFillToDateVals((prev) => {
+      const next = new Set(prev)
+      next.has(iso) ? next.delete(iso) : next.add(iso)
+      return next
+    })
+  }, [])
+
+  const runFillFromDate = useCallback(async () => {
+    if (!fillFromDateVal || !fillToDateVals.size) return
+    setFillFromDateLoading(true)
+    try {
+      // fetch source rows
+      let q = supabase
+        .from('ride_plan_rows')
+        .select('crew_matches, fj_km, city_id, block_type')
+        .eq('plan_date', fillFromDateVal)
+        .not('fj_km', 'is', null)
+      if (cityId) q = q.eq('city_id', cityId)
+      const { data: srcRows } = await q
+      if (!srcRows?.length) { toast.error('No Sim vs Actual KM found for that date'); return }
+
+      // build map: "sortedCrewIds|block_type" -> fj_km
+      const crewBlockKmMap = {}
+      srcRows.forEach((r) => {
+        const key = (r.crew_matches || []).map((m) => m.crew_id).sort().join(',') + '|' + r.block_type
+        if (key && crewBlockKmMap[key] == null) crewBlockKmMap[key] = r.fj_km
+      })
+
+      // for each target date, fetch its rows and apply
+      let totalUpdated = 0
+      await Promise.all([...fillToDateVals].map(async (targetDate) => {
+        let tq = supabase
+          .from('ride_plan_rows')
+          .select('id, crew_matches, block_type, fj_km')
+          .eq('plan_date', targetDate)
+          .is('fj_km', null)
+        if (cityId) tq = tq.eq('city_id', cityId)
+        const { data: targetRows } = await tq
+        if (!targetRows?.length) return
+
+        const toUpdate = []
+        const seen = new Set()
+        targetRows.forEach((r) => {
+          if (seen.has(r.id) || r.fj_km != null) return
+          const key = (r.crew_matches || []).map((m) => m.crew_id).sort().join(',') + '|' + r.block_type
+          if (!key || crewBlockKmMap[key] == null) return
+          seen.add(r.id)
+          toUpdate.push({ id: r.id, fj_km: crewBlockKmMap[key] })
+        })
+        if (!toUpdate.length) return
+
+        const byKm = {}
+        toUpdate.forEach(({ id, fj_km }) => { (byKm[fj_km] = byKm[fj_km] || []).push(id) })
+        await Promise.all(Object.entries(byKm).map(([km, idList]) =>
+          supabase.from('ride_plan_rows').update({ fj_km: Number(km) }).in('id', idList)
+        ))
+        totalUpdated += toUpdate.length
+
+        // update local state only for the currently-viewed date
+        if (targetDate === planDate) {
+          const updateMap = Object.fromEntries(toUpdate.map(({ id, fj_km }) => [id, fj_km]))
+          setRows((prev) => prev.map((r) => updateMap[r.id] != null ? { ...r, fj_km: updateMap[r.id] } : r))
+        }
+      }))
+
+      if (!totalUpdated) { toast('No matching crew found in selected dates'); return }
+      toast.success(`Filled KM for ${totalUpdated} row${totalUpdated > 1 ? 's' : ''} across ${fillToDateVals.size} date${fillToDateVals.size > 1 ? 's' : ''}`)
+      setFillFromDateOpen(false)
+    } finally {
+      setFillFromDateLoading(false)
+    }
+  }, [fillFromDateVal, fillToDateVals, cityId, planDate])
+
+  const autoFjKm = useCallback(async (r) => {
+    if (!r.crew_matches?.length) { toast.error('No crew to calculate route'); return }
+    const rowCity = allowedCities.find((c) => c.id === r.city_id)
+    if (!rowCity?.airport_lat) { toast.error('Airport not configured for this city'); return }
+    const airport = { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+    const crewList = r.crew_matches.map((m) => crew.find((c) => c.id === m.crew_id)).filter(Boolean)
+    const dhMode = r.block_type === 'deadhead' ? (crewList.length >= 2 ? 'crew' : 'airport') : null
+    const pts = buildRoutePoints(r.block_type, dhMode, crewList, airport)
+    const coords = pts.map((p) => [p.lat, p.lng]).filter(([a, b]) => a != null && b != null)
+    if (coords.length < 2) { toast.error('Not enough coordinates'); return }
+    setFjKmLoading((prev) => ({ ...prev, [r.id]: true }))
+    try {
+      const info = await routeInfo(coords)
+      const km = info?.distanceKm != null ? Number(info.distanceKm).toFixed(2) : ''
+      setFjKmEdits((prev) => ({ ...prev, [r.id]: km }))
+      if (km) await saveFjKm(r.id, km)
+    } catch { toast.error('Route calculation failed') }
+    finally { setFjKmLoading((prev) => { const n = { ...prev }; delete n[r.id]; return n }) }
+  }, [allowedCities, crew, rows, saveFjKm])
+
   useEffect(() => {
     if (!canView) return
     supabase
@@ -705,6 +867,8 @@ export default function RidePlan() {
           actual_vehicle: r.actual_vehicle_no || '',
           reported: r.reported_by_name || '',
           remarks: r.report_remarks || '',
+          sim_vs_actual_km: r.fj_km != null ? Number(r.fj_km).toFixed(2) : '',
+          map_link: r.fj_map_link || '',
         }
       })
 
@@ -721,6 +885,8 @@ export default function RidePlan() {
       { key: 'start_time', label: 'Start Time' },
       { key: 'end_time', label: 'End Time' },
       { key: 'distance_km', label: 'Distance (km)' },
+      { key: 'sim_vs_actual_km', label: 'Sim vs Actual KM' },
+      { key: 'map_link', label: 'Map Link' },
       { key: 'actual_km', label: 'Actual KM' },
       { key: 'crew_count', label: 'Crew Count' },
       { key: 'crew', label: 'Crew' },
@@ -851,6 +1017,8 @@ export default function RidePlan() {
           actual_vehicle: actualVehicleNo,
           reported: r.reported_by_name || '',
           remarks: r.report_remarks || '',
+          sim_vs_actual_km: r.fj_km != null ? Number(r.fj_km).toFixed(2) : '',
+          map_link: r.fj_map_link || '',
         }
       })
 
@@ -867,6 +1035,8 @@ export default function RidePlan() {
         { key: 'start_time', label: 'Start Time' },
         { key: 'end_time', label: 'End Time' },
         { key: 'distance_km', label: 'Distance (km)' },
+        { key: 'sim_vs_actual_km', label: 'Sim vs Actual KM' },
+        { key: 'map_link', label: 'Map Link' },
         { key: 'actual_km', label: 'Actual KM' },
         { key: 'crew_count', label: 'Crew Count' },
         { key: 'crew', label: 'Crew' },
@@ -1505,10 +1675,11 @@ export default function RidePlan() {
     // Extra (synthetic) rows are not real plan rows — exclude from all counts
     const planRows = rows.filter((r) => !r.isExtra)
     return {
-      followed:  planRows.filter((r) => r.status === 'followed' && !r.via_no).length,
-      noFollow:  planRows.filter((r) => r.status === 'followed' && r.via_no).length,
-      cancelled: planRows.filter((r) => r.status === 'skipped').length,
-      pending:   planRows.filter((r) => r.status === 'pending').length,
+      followed:      planRows.filter((r) => r.status === 'followed' && !r.via_no).length,
+      noFollow:      planRows.filter((r) => r.status === 'followed' && r.via_no).length,
+      cancelled:     planRows.filter((r) => r.status === 'skipped').length,
+      pending:       planRows.filter((r) => r.status === 'pending').length,
+      pendingSimKm:  planRows.filter((r) => r.fj_km == null).length,
     }
   }, [rows])
   const totalDelta = summary.total.actualKm - summary.total.plannedKm
@@ -1757,6 +1928,83 @@ export default function RidePlan() {
           <a href={planUrl} target="_blank" rel="noreferrer" className="icon-btn" title="Planned crew route" style={{ padding: 2 }}>
             <Navigation size={12} />
           </a>
+        </span>
+      )
+    } },
+    { key: 'fj_km', header: 'Sim vs Actual', align: 'right', render: (r) => {
+      if (r.isExtra) return null
+      const rowCity = allowedCities.find((c) => c.id === r.city_id)
+      const airport = rowCity?.airport_lat
+        ? { name: rowCity.airport_name, lat: rowCity.airport_lat, lng: rowCity.airport_lng }
+        : null
+      const crewList = (r.crew_matches || []).map((m) => crew.find((c) => c.id === m.crew_id)).filter(Boolean)
+      // Deadhead mode: 1 crew = airport→crew, 2 crew = crew→crew (same rule as ride form)
+      const dhMode = r.block_type === 'deadhead' ? (crewList.length >= 2 ? 'crew' : 'airport') : null
+      const mapUrl = airport && crewList.length
+        ? gmapsRoute(buildRoutePoints(r.block_type, dhMode, crewList, airport))
+        : null
+      const isEditing = r.id in fjKmEdits
+      const editVal = fjKmEdits[r.id] ?? ''
+      const savedKm = r.fj_km != null ? Number(r.fj_km).toFixed(2) : null
+      const isLoading = !!fjKmLoading[r.id]
+      const openEdit = () => setFjKmEdits((prev) => ({ ...prev, [r.id]: savedKm ?? '' }))
+      const isEditingLink = r.id in fjMapLinkEdits
+      const linkEditVal = fjMapLinkEdits[r.id] ?? ''
+      const savedLink = r.fj_map_link || null
+      const openLinkEdit = () => setFjMapLinkEdits((prev) => ({ ...prev, [r.id]: savedLink ?? '' }))
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+          {/* KM: show value+edit icon when saved, open input when empty or editing */}
+          {!isEditing && savedKm != null ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 12 }}>{savedKm}</span>
+              <button type="button" onClick={openEdit} title="Edit" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
+                <Pencil size={11} />
+              </button>
+            </span>
+          ) : (
+            <input
+              type="text"
+              autoFocus={isEditing}
+              value={editVal}
+              placeholder=""
+              onChange={(e) => setFjKmEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
+              onBlur={(e) => saveFjKm(r.id, e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setFjKmEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
+              style={{ width: 54, fontSize: 12, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
+            />
+          )}
+          {mapUrl && (
+            <a href={mapUrl} target="_blank" rel="noreferrer" title="Open crew route on map" style={{ padding: 1, color: 'var(--muted)', lineHeight: 1, flexShrink: 0 }}>
+              <Navigation size={12} />
+            </a>
+          )}
+          {/* Map link: saved = clickable globe + edit; not saved = add-link button; editing = inline input */}
+          {!isEditingLink && savedLink ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+              <a href={savedLink} target="_blank" rel="noreferrer" title={savedLink} style={{ padding: 1, color: 'var(--accent)', lineHeight: 1, flexShrink: 0 }}>
+                <Globe size={12} />
+              </a>
+              <button type="button" onClick={openLinkEdit} title="Edit map link" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
+                <Pencil size={10} />
+              </button>
+            </span>
+          ) : !isEditingLink ? (
+            <button type="button" onClick={openLinkEdit} title="Add map link" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1, flexShrink: 0 }}>
+              <Globe size={12} />
+            </button>
+          ) : (
+            <input
+              type="text"
+              autoFocus
+              value={linkEditVal}
+              placeholder="https://..."
+              onChange={(e) => setFjMapLinkEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
+              onBlur={(e) => saveFjMapLink(r.id, e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setFjMapLinkEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
+              style={{ width: 130, fontSize: 11, padding: '2px 4px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
+            />
+          )}
         </span>
       )
     } },
@@ -2035,6 +2283,21 @@ export default function RidePlan() {
                 <Plus size={14} /> Add Ride
               </button>
             )}
+            {rows.some((r) => !r.isExtra && r.fj_km != null) && rows.some((r) => !r.isExtra && r.fj_km == null) && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={fillRepeatedCrewKm} title="Auto-fill Sim vs Actual KM for rows with matching crew">
+                <Copy size={14} /> Fill KM
+              </button>
+            )}
+            {rows.some((r) => !r.isExtra && r.fj_km != null) && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={() => setResetSimKmOpen(true)} title="Clear all Sim vs Actual KM for this date">
+                <RotateCcw size={14} /> Reset Sim KM
+              </button>
+            )}
+            {rows.some((r) => !r.isExtra && r.fj_km == null) && (
+              <button className="btn btn-ghost btn-square btn-sm" onClick={() => { setFillFromDateVal(''); setFillToDateVals(new Set()); setFillFromDateOpen(true) }} title="Fill Sim vs Actual KM from a previous date">
+                <CalendarSearch size={14} /> Fill from Date
+              </button>
+            )}
             {rows.length > 0 && (
               <button className="btn btn-ghost btn-square btn-sm" onClick={() => setExportRangeOpen(true)}>
                 <Download size={14} /> Export Report
@@ -2096,6 +2359,12 @@ export default function RidePlan() {
               label: 'Cancelled',
               value: statusCounts.cancelled,
               hint: `${statusCounts.pending} pending`,
+            },
+            {
+              key: 'sim-km-pending',
+              label: 'Sim KM Pending',
+              value: statusCounts.pendingSimKm,
+              hint: statusCounts.pendingSimKm > 0 ? 'rows without Sim vs Actual KM' : 'all rows filled',
             },
           ]}
         />
@@ -2418,6 +2687,16 @@ export default function RidePlan() {
       />
 
       <ConfirmDialog
+        open={resetSimKmOpen}
+        title="Reset Sim vs Actual KM?"
+        message={`This will clear all Sim vs Actual KM values for ${planDate}. This cannot be undone.`}
+        confirmLabel="Reset"
+        tone="danger"
+        onConfirm={doResetSimKm}
+        onClose={() => setResetSimKmOpen(false)}
+      />
+
+      <ConfirmDialog
         open={Boolean(resetConfirm)}
         title="Reset report?"
         message={`This will clear all reported fields (actual crew, vehicle, KM, reason) and set the row back to pending.${resetConfirm && findPairedRow(resetConfirm, { ignoreStatus: true }) ? ' The paired deadhead / return leg row will also be reset.' : ''}`}
@@ -2502,6 +2781,33 @@ export default function RidePlan() {
       )}
 
       {/* ── Export Report · Date Range modal ── */}
+      {fillFromDateOpen && (
+        <Modal open title="Fill Sim vs Actual KM" width="min(680px, 97vw)" onClose={() => !fillFromDateLoading && setFillFromDateOpen(false)}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ borderRight: '1px solid var(--border)', paddingBottom: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.05em', margin: '14px 20px 4px' }}>Fill from (source)</p>
+              <FillFromDateCalendar selected={fillFromDateVal} onSelect={setFillFromDateVal} />
+            </div>
+            <div style={{ paddingBottom: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.05em', margin: '14px 20px 4px' }}>
+                Apply to · {fillToDateVals.size > 0 ? `${fillToDateVals.size} selected` : 'click dates to select'}
+              </p>
+              <FillFromDateCalendar
+                selected={null}
+                multiSelected={fillToDateVals}
+                onSelect={toggleFillToDate}
+              />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={() => setFillFromDateOpen(false)} disabled={fillFromDateLoading}>Cancel</button>
+            <button className="btn" onClick={runFillFromDate} disabled={!fillFromDateVal || !fillToDateVals.size || fillFromDateLoading}>
+              {fillFromDateLoading ? 'Filling…' : `Apply to ${fillToDateVals.size || 0} date${fillToDateVals.size !== 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {exportRangeOpen && (
         <Modal
           open
@@ -3009,5 +3315,91 @@ function ImportModal({ allowedCities, flights, crew, vehicles, cityId, createdBy
         </div>
       </div>
     </Modal>
+  )
+}
+const CAL_WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+function calMonthCells(year, month) {
+  const first = new Date(Date.UTC(year, month, 1))
+  const startDay = (first.getUTCDay() + 6) % 7
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  const cells = []
+  for (let i = 0; i < startDay; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+  return cells
+}
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function FillFromDateCalendar({ selected, onSelect, multiSelected }) {
+  const today = pkToday()
+  const initYear = selected ? Number(selected.slice(0, 4)) : Number(today.slice(0, 4))
+  const initMonth = selected ? Number(selected.slice(5, 7)) - 1 : Number(today.slice(5, 7)) - 1
+  const [year, setYear] = useState(initYear)
+  const [month, setMonth] = useState(initMonth)
+  const [pickingMonth, setPickingMonth] = useState(false)
+
+  const cells = calMonthCells(year, month)
+  const isoCell = (d) => `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+  return (
+    <div style={{ padding: '16px 20px 8px', userSelect: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <button type="button"
+          onClick={() => pickingMonth ? setYear(y => y - 1) : (month === 0 ? (setMonth(11), setYear(y => y - 1)) : setMonth(m => m - 1))}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: '2px 6px', borderRadius: 4 }}>
+          <ChevronLeft size={15} />
+        </button>
+        <button type="button" onClick={() => setPickingMonth(v => !v)}
+          style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 600, color: 'var(--heading)', textAlign: 'center', padding: '2px 0' }}>
+          {pickingMonth ? year : `${MONTHS[month]} ${year}`}
+        </button>
+        <button type="button"
+          onClick={() => pickingMonth ? setYear(y => y + 1) : (month === 11 ? (setMonth(0), setYear(y => y + 1)) : setMonth(m => m + 1))}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: '2px 6px', borderRadius: 4 }}>
+          <ChevronRight size={15} />
+        </button>
+      </div>
+
+      {pickingMonth ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 4 }}>
+          {MONTHS.map((m, i) => (
+            <button key={m} type="button"
+              onClick={() => { setMonth(i); setPickingMonth(false) }}
+              style={{ padding: '7px 4px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                background: i === month ? 'var(--accent)' : 'var(--surface)',
+                color: i === month ? '#fff' : 'var(--body)' }}>
+              {m}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+          {CAL_WEEKDAYS.map((d) => (
+            <div key={d} style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', padding: '2px 0', fontWeight: 500 }}>{d}</div>
+          ))}
+          {cells.map((d, i) => {
+            if (!d) return <div key={i} />
+            const iso = isoCell(d)
+            const isSel = multiSelected ? multiSelected.has(iso) : iso === selected
+            const isTod = iso === today
+            return (
+              <button key={i} type="button" onClick={() => onSelect(iso)}
+                style={{ padding: '6px 0', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: isSel ? 700 : 400,
+                  border: isTod && !isSel ? '1px solid var(--accent)' : '1px solid transparent',
+                  background: isSel ? 'var(--accent)' : 'transparent',
+                  color: isSel ? '#fff' : 'var(--heading)' }}>
+                {d}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {!multiSelected && selected && (
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 0', textAlign: 'center' }}>
+          Selected: {fmtDate(selected)}
+        </p>
+      )}
+    </div>
   )
 }

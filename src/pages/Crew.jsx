@@ -307,41 +307,39 @@ export default function Crew() {
           : null
 
         return (
-          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-              {!isEditing && savedKm != null ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                  <span style={{ fontSize: 12 }}>{savedKm}</span>
-                  {canEdit && (
-                    <button type="button" onClick={openEdit} title="Edit" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
-                      <Pencil size={11} />
-                    </button>
-                  )}
-                </span>
-              ) : canEdit ? (
-                <input
-                  type="text"
-                  autoFocus={isEditing}
-                  value={editVal}
-                  placeholder="km"
-                  onChange={(e) => setAirportKmEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                  onBlur={(e) => saveAirportKm(r.id, e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setAirportKmEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
-                  style={{ width: 54, fontSize: 12, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
-                />
-              ) : <span className="secondary">—</span>}
-              {canEdit && hasCoords && hasAirport && (
-                <button
-                  type="button"
-                  onClick={() => calcAirportKm(r)}
-                  disabled={isCalc}
-                  title="Calculate from ORS"
-                  style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}
-                >
-                  <RefreshCw size={11} style={isCalc ? { animation: 'spin 1s linear infinite' } : {}} />
-                </button>
-              )}
-            </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {!isEditing && savedKm != null ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 12 }}>{savedKm}</span>
+                {canEdit && (
+                  <button type="button" onClick={openEdit} title="Edit" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
+                    <Pencil size={11} />
+                  </button>
+                )}
+              </span>
+            ) : canEdit ? (
+              <input
+                type="text"
+                autoFocus={isEditing}
+                value={editVal}
+                placeholder="km"
+                onChange={(e) => setAirportKmEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                onBlur={(e) => saveAirportKm(r.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setAirportKmEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
+                style={{ width: 54, fontSize: 12, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
+              />
+            ) : <span className="secondary">—</span>}
+            {canEdit && hasCoords && hasAirport && (
+              <button
+                type="button"
+                onClick={() => calcAirportKm(r)}
+                disabled={isCalc}
+                title="Calculate from ORS"
+                style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}
+              >
+                <RefreshCw size={11} style={isCalc ? { animation: 'spin 1s linear infinite' } : {}} />
+              </button>
+            )}
             {mapLink && (
               <a href={mapLink} target="_blank" rel="noreferrer" title="Open airport → stop route on Google Maps" style={{ padding: 1, color: 'var(--accent)', lineHeight: 1 }}>
                 <Globe size={12} />

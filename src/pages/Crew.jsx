@@ -4,6 +4,7 @@ import {
   Copy,
   Download,
   Eye,
+  Globe,
   MapPin,
   Navigation,
   Pencil,
@@ -22,6 +23,7 @@ import { pkToday } from '../lib/time'
 import { parseLatLng, fmtLatLng } from '../lib/geo'
 import { formatPkPhone, fromStored, isValidPkMobile, pkPhoneError, toLocal, toStored } from '../lib/phone'
 import { checkHeaders, downloadCsv, parseCsvObjects, toCsv } from '../lib/csv'
+import { routeInfo } from '../lib/ors'
 import { useSelection } from '../lib/useSelection'
 import Modal from '../components/Modal'
 import ConfirmDelete from '../components/ConfirmDelete'
@@ -45,6 +47,7 @@ const EXPORT_COLS = [
   { key: 'city', label: 'City' },
   { key: 'stop_name', label: 'Stop' },
   { key: 'coordinates', label: 'Coordinates' },
+  { key: 'airport_km', label: 'Airport KM' },
   { key: 'is_active', label: 'Active' },
   { key: 'created_at', label: 'Created' },
 ]
@@ -122,11 +125,40 @@ export default function Crew() {
   const [deleting, setDeleting] = useState(false)
   const { selected, toggle, toggleAll, clear } = useSelection()
 
+  // Airport KM inline edits: { [id]: string }
+  const [airportKmEdits, setAirportKmEdits] = useState({})
+  const [airportKmCalc, setAirportKmCalc] = useState({}) // { [id]: true } while ORS running
+
+  const saveAirportKm = useCallback(async (rowId, raw) => {
+    const val = raw.trim() === '' ? null : Number(raw)
+    if (raw.trim() !== '' && isNaN(val)) return
+    await supabase.from('crew').update({ airport_km: val }).eq('id', rowId)
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, airport_km: val } : r))
+    setAirportKmEdits((prev) => { const n = { ...prev }; delete n[rowId]; return n })
+  }, [])
+
+  const calcAirportKm = useCallback(async (row) => {
+    if (!row.stop_lat || !row.stop_lng) { toast.error('No coordinates for this crew member'); return }
+    const city = allowedCities.find((c) => c.id === row.city_id)
+    if (!city?.airport_lat || !city?.airport_lng) { toast.error('Airport location not set for this city'); return }
+    setAirportKmCalc((prev) => ({ ...prev, [row.id]: true }))
+    try {
+      const info = await routeInfo([[city.airport_lng, city.airport_lat], [row.stop_lng, row.stop_lat]])
+      if (!info) { toast.error('Could not calculate route'); return }
+      const km = Math.round(info.distanceKm * 100) / 100
+      await supabase.from('crew').update({ airport_km: km }).eq('id', row.id)
+      setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, airport_km: km } : r))
+      toast.success(`Airport KM set to ${km} for ${row.name}`)
+    } finally {
+      setAirportKmCalc((prev) => { const n = { ...prev }; delete n[row.id]; return n })
+    }
+  }, [allowedCities])
+
   const fetchRows = useCallback(async () => {
     setLoading(true)
     let q = supabase
       .from('crew')
-      .select('id, ref_no, name, contact, designation, employee_no, city_id, stop_name, stop_lat, stop_lng, is_active, created_at, city:cities(name)')
+      .select('id, ref_no, name, contact, designation, employee_no, city_id, stop_name, stop_lat, stop_lng, airport_km, is_active, created_at, city:cities(name)')
       .order('ref_no', { ascending: false })
     if (cityId != null) q = q.eq('city_id', cityId)
     const { data, error } = await q
@@ -215,6 +247,7 @@ export default function Crew() {
       city: r.city_name,
       stop_name: r.stop_name ?? '',
       coordinates: fmtLatLng(r.stop_lat, r.stop_lng),
+      airport_km: r.airport_km != null ? Number(r.airport_km).toFixed(2) : '',
       is_active: r.is_active ? 'yes' : 'no',
       created_at: r.created_at,
     }))
@@ -253,6 +286,70 @@ export default function Crew() {
       key: 'coords',
       header: 'Coordinates',
       render: (r) => <CoordCell lat={r.stop_lat} lng={r.stop_lng} />,
+    },
+    {
+      key: 'airport_km',
+      header: 'Airport KM',
+      align: 'right',
+      render: (r) => {
+        const city = allowedCities.find((c) => c.id === r.city_id)
+        const hasCoords = r.stop_lat != null && r.stop_lng != null
+        const hasAirport = city?.airport_lat != null && city?.airport_lng != null
+        const savedKm = r.airport_km != null ? Number(r.airport_km).toFixed(2) : null
+        const isEditing = r.id in airportKmEdits
+        const editVal = airportKmEdits[r.id] ?? ''
+        const isCalc = !!airportKmCalc[r.id]
+        const openEdit = () => setAirportKmEdits((prev) => ({ ...prev, [r.id]: savedKm ?? '' }))
+
+        // Google Maps link: airport → crew stop
+        const mapLink = hasAirport && hasCoords
+          ? `https://www.google.com/maps/dir/?api=1&origin=${city.airport_lat},${city.airport_lng}&destination=${r.stop_lat},${r.stop_lng}`
+          : null
+
+        return (
+          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              {!isEditing && savedKm != null ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  <span style={{ fontSize: 12 }}>{savedKm}</span>
+                  {canEdit && (
+                    <button type="button" onClick={openEdit} title="Edit" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                </span>
+              ) : canEdit ? (
+                <input
+                  type="text"
+                  autoFocus={isEditing}
+                  value={editVal}
+                  placeholder="km"
+                  onChange={(e) => setAirportKmEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                  onBlur={(e) => saveAirportKm(r.id, e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setAirportKmEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
+                  style={{ width: 54, fontSize: 12, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
+                />
+              ) : <span className="secondary">—</span>}
+              {canEdit && hasCoords && hasAirport && (
+                <button
+                  type="button"
+                  onClick={() => calcAirportKm(r)}
+                  disabled={isCalc}
+                  title="Calculate from ORS"
+                  style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}
+                >
+                  <RefreshCw size={11} style={isCalc ? { animation: 'spin 1s linear infinite' } : {}} />
+                </button>
+              )}
+            </span>
+            {mapLink && (
+              <a href={mapLink} target="_blank" rel="noreferrer" title="Open airport → stop route on Google Maps" style={{ padding: 1, color: 'var(--accent)', lineHeight: 1 }}>
+                <Globe size={12} />
+              </a>
+            )}
+          </span>
+        )
+      },
     },
     {
       key: 'status',

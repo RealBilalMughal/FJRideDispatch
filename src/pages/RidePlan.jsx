@@ -1953,33 +1953,35 @@ export default function RidePlan() {
       const savedLink = r.fj_map_link || null
       const openLinkEdit = () => setFjMapLinkEdits((prev) => ({ ...prev, [r.id]: savedLink ?? '' }))
       return (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
-          {/* KM: show value+edit icon when saved, open input when empty or editing */}
-          {!isEditing && savedKm != null ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              <span style={{ fontSize: 12 }}>{savedKm}</span>
-              <button type="button" onClick={openEdit} title="Edit" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
-                <Pencil size={11} />
-              </button>
-            </span>
-          ) : (
-            <input
-              type="text"
-              autoFocus={isEditing}
-              value={editVal}
-              placeholder=""
-              onChange={(e) => setFjKmEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
-              onBlur={(e) => saveFjKm(r.id, e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setFjKmEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
-              style={{ width: 54, fontSize: 12, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
-            />
-          )}
-          {mapUrl && (
-            <a href={mapUrl} target="_blank" rel="noreferrer" title="Open crew route on map" style={{ padding: 1, color: 'var(--muted)', lineHeight: 1, flexShrink: 0 }}>
-              <Navigation size={12} />
-            </a>
-          )}
-          {/* Map link: saved = clickable globe + edit; not saved = add-link button; editing = inline input */}
+        <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+          {/* Row 1: KM value/input + Navigation icon */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            {!isEditing && savedKm != null ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                <span style={{ fontSize: 12 }}>{savedKm}</span>
+                <button type="button" onClick={openEdit} title="Edit" style={{ background: 'none', border: 'none', padding: 1, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>
+                  <Pencil size={11} />
+                </button>
+              </span>
+            ) : (
+              <input
+                type="text"
+                autoFocus={isEditing}
+                value={editVal}
+                placeholder=""
+                onChange={(e) => setFjKmEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                onBlur={(e) => saveFjKm(r.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setFjKmEdits((prev) => { const n={...prev}; delete n[r.id]; return n }) }}
+                style={{ width: 54, fontSize: 12, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--heading)', outline: 'none' }}
+              />
+            )}
+            {mapUrl && (
+              <a href={mapUrl} target="_blank" rel="noreferrer" title="Open crew route on map" style={{ padding: 1, color: 'var(--muted)', lineHeight: 1, flexShrink: 0 }}>
+                <Navigation size={12} />
+              </a>
+            )}
+          </span>
+          {/* Row 2: Map link — Globe icon or inline URL input */}
           {!isEditingLink && savedLink ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
               <a href={savedLink} target="_blank" rel="noreferrer" title={savedLink} style={{ padding: 1, color: 'var(--accent)', lineHeight: 1, flexShrink: 0 }}>

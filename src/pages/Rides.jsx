@@ -2707,7 +2707,7 @@ export function RideModal({
     if (hasVehicle && !startAt) return setErr('Set the ride start time for the vehicle')
     if (isAdd && alsoDeadhead && form.block_type === 'pickup' && !startAt)
       return setErr('Set the Pickup Time — the deadhead is timed to arrive just before it')
-    if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && !etaAt)
+    if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && !startAt)
       return setErr('Set the Drop Time — the return leg is timed off its arrival')
     if (form.vehicle_id && conflict)
       return setErr(`Vehicle busy on Ride ${conflict.ref_no} till ${fmtTimeOnly12(conflict.end_at)}`)
@@ -2897,7 +2897,7 @@ export function RideModal({
     // already produces, just created inline instead of as a second step.
     let rlNote = ''
     let rlRideId = null
-    if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && crewList.length && etaAt) {
+    if (isAdd && alsoReturnLeg && form.block_type === 'dropoff' && crewList.length && (etaAt || startAt)) {
       try {
         const lastC = crewList[crewList.length - 1]
         const rlPts = buildRoutePoints('return_leg', null, [{ ...lastC, crew_id: lastC.id }], airport)
@@ -2905,8 +2905,10 @@ export function RideModal({
         const rlInfo =
           rlRoute ?? (routeComplete(rlPts) ? await routeInfo(rlPts.map((p) => [p.lng, p.lat])) : null)
         const rlDrive = rlInfo?.durationMin ?? 0
+        // etaAt may be null if ORS hasn't returned yet — fall back to startAt (Drop Time) so the
+        // return leg still gets created; its timing will be slightly early but always adjustable.
         const rlStart =
-          rlStartAt ?? new Date(new Date(etaAt).getTime() + returnLegBufferMin * 60000).toISOString()
+          rlStartAt ?? new Date(new Date(etaAt ?? startAt).getTime() + returnLegBufferMin * 60000).toISOString()
         const rlEnd = new Date(new Date(rlStart).getTime() + (rlDrive + BUFFER_MIN) * 60000).toISOString()
         const rlIns = await supabase
           .from('rides')

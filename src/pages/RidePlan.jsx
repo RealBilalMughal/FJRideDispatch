@@ -860,7 +860,7 @@ export default function RidePlan() {
           reason: r.report_reason || r.skip_reason || '',
           actual_km: (() => {
             if (r.status !== 'followed') return ''
-            if (r.ride) return (Number(billableKm(r.ride)) || 0).toFixed(2)
+            if (r.ride) { const km = billableKm(r.ride); return km != null ? Number(km).toFixed(2) : '' }
             return r.actual_km != null ? Number(r.actual_km).toFixed(2) : ''
           })(),
           actual_vehicle: r.actual_vehicle_no || '',
@@ -994,7 +994,7 @@ export default function RidePlan() {
           distance_km: r.planned_km != null ? Number(r.planned_km).toFixed(2) : '',
           actual_km: (() => {
             if (r.status !== 'followed') return ''
-            if (r.ride) return (Number(billableKm(r.ride)) || 0).toFixed(2)
+            if (r.ride) { const km = billableKm(r.ride); return km != null ? Number(km).toFixed(2) : '' }
             return r.actual_km != null ? Number(r.actual_km).toFixed(2) : ''
           })(),
           crew_count: r.crew_count != null ? r.crew_count : '',
@@ -2015,7 +2015,7 @@ export default function RidePlan() {
       align: 'right',
       render: (r) => {
         if (r.status !== 'followed') return '—'
-        if (r.ride) return (Number(billableKm(r.ride)) || 0).toFixed(2)
+        if (r.ride) { const km = billableKm(r.ride); return km != null ? Number(km).toFixed(2) : '—' }
         if (r.actual_km != null) return Number(r.actual_km).toFixed(2)
         return '—'
       },
